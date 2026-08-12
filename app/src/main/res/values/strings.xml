@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">LightMeter</string>
+    <string name="camera_permission_title">需要相机权限</string>
+    <string name="camera_permission_message">LightMeter 需要访问相机，才能预览画面并计算当前场景的曝光值。</string>
+    <string name="grant_camera_permission">授权相机</string>
+    <string name="open_settings">打开系统设置</string>
+</resources>
