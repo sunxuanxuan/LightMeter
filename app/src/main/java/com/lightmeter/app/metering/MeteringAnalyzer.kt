@@ -1,5 +1,6 @@
 package com.lightmeter.app.metering
 
+import android.graphics.Rect
 import android.hardware.camera2.CameraCaptureSession
 import android.hardware.camera2.CaptureRequest
 import android.hardware.camera2.CaptureResult
@@ -22,22 +23,29 @@ class MeteringAnalyzer(
     private val onResult: (MeteringResult) -> Unit,
 ) : CameraCaptureSession.CaptureCallback(), ImageAnalysis.Analyzer {
     private val config = AtomicReference(initialConfig)
+    private val configLock = Any()
     private val fallbackAperture = AtomicReference<Double?>(null)
+    private val exposureSnapshot = AtomicReference<ExposureSnapshot?>(null)
     private val metadataByTimestamp = ConcurrentHashMap<Long, CameraExposureMetadata>()
 
-    @Volatile
-    private var latestMetadata: CameraExposureMetadata? = null
     private var lastAnalyzedTimestampNs = 0L
     private var smoothedEv: Double? = null
     private var previousConfig = initialConfig
 
     fun updateConfig(newConfig: MeteringConfig) {
-        config.set(newConfig)
+        synchronized(configLock) {
+            val oldConfig = config.getAndSet(newConfig)
+            if (oldConfig != newConfig) {
+                exposureSnapshot.set(null)
+            }
+        }
     }
 
     fun updateFallbackAperture(aperture: Double?) {
         fallbackAperture.set(aperture?.takeIf { it > 0.0 })
     }
+
+    fun latestExposureSnapshot(): ExposureSnapshot? = exposureSnapshot.get()
 
     override fun onCaptureCompleted(
         session: CameraCaptureSession,
@@ -51,6 +59,11 @@ class MeteringAnalyzer(
         val sensorSensitivity = result.get(CaptureResult.SENSOR_SENSITIVITY)
             ?.takeIf { it > 0 }
             ?: return
+        val postRawSensitivityBoost = result.get(
+            CaptureResult.CONTROL_POST_RAW_SENSITIVITY_BOOST,
+        )
+            ?.takeIf { it > 0 }
+            ?: 100
         val aperture = result.get(CaptureResult.LENS_APERTURE)
             ?.toDouble()
             ?.takeIf { it > 0.0 }
@@ -60,11 +73,11 @@ class MeteringAnalyzer(
         val metadata = CameraExposureMetadata(
             exposureTimeNs = exposureTimeNs,
             sensorSensitivity = sensorSensitivity,
+            postRawSensitivityBoost = postRawSensitivityBoost,
             aperture = aperture,
             timestampNs = timestamp,
         )
         metadataByTimestamp[timestamp] = metadata
-        latestMetadata = metadata
 
         if (metadataByTimestamp.size > MAX_METADATA_ENTRIES) {
             metadataByTimestamp.keys
@@ -79,34 +92,57 @@ class MeteringAnalyzer(
             val timestampNs = image.imageInfo.timestamp
             if (timestampNs - lastAnalyzedTimestampNs < ANALYSIS_INTERVAL_NS) return
 
-            val metadata = metadataByTimestamp.remove(timestampNs)
-                ?: latestMetadata?.takeIf {
-                    val metadataTimestamp = it.timestampNs ?: return@takeIf false
-                    kotlin.math.abs(metadataTimestamp - timestampNs) <= METADATA_TOLERANCE_NS
-                }
-                ?: return
+            val metadata = metadataForTimestamp(timestampNs) ?: return
             val currentConfig = config.get()
+            if (!currentConfig.isZoomReady) return
             val luminance = measureLuminance(image, currentConfig) ?: return
             val ev = calculateEv100(metadata, luminance, currentConfig.calibrationOffset)
-            val configChanged = currentConfig != previousConfig
-            val newWeight = if (configChanged) FAST_SMOOTHING_WEIGHT else SMOOTHING_WEIGHT
-            val filteredEv = smoothedEv?.let { previous ->
-                previous * (1.0 - newWeight) + ev * newWeight
-            } ?: ev
+            val currentExposureMap = createExposureMap(image, metadata, currentConfig)
+            synchronized(configLock) {
+                if (config.get() != currentConfig) return
+                currentExposureMap?.let { map ->
+                    exposureSnapshot.set(
+                        ExposureSnapshot(
+                            exposureMap = map,
+                            meteredEv100 = ev,
+                            timestampNs = timestampNs,
+                            revision = currentConfig.revision,
+                        ),
+                    )
+                }
+                val configChanged = currentConfig != previousConfig
+                val filteredEv = if (configChanged) {
+                    ev
+                } else {
+                    smoothedEv?.let { previous ->
+                        previous * (1.0 - SMOOTHING_WEIGHT) + ev * SMOOTHING_WEIGHT
+                    } ?: ev
+                }
 
-            previousConfig = currentConfig
-            smoothedEv = filteredEv
-            lastAnalyzedTimestampNs = timestampNs
-            onResult(
-                MeteringResult(
-                    ev100 = filteredEv,
-                    measuredLuminance = luminance,
-                    timestampNs = timestampNs,
-                ),
-            )
+                previousConfig = currentConfig
+                smoothedEv = filteredEv
+                lastAnalyzedTimestampNs = timestampNs
+                onResult(
+                    MeteringResult(
+                        ev100 = filteredEv,
+                        measuredLuminance = luminance,
+                        timestampNs = timestampNs,
+                        revision = currentConfig.revision,
+                    ),
+                )
+            }
         } finally {
             image.close()
         }
+    }
+
+    private fun metadataForTimestamp(timestampNs: Long): CameraExposureMetadata? {
+        metadataByTimestamp.remove(timestampNs)?.let { return it }
+        val nearestTimestamp = metadataByTimestamp.keys
+            .minByOrNull { abs(it - timestampNs) }
+            ?.takeIf { abs(it - timestampNs) <= METADATA_TOLERANCE_NS }
+            ?: return null
+        return metadataByTimestamp.remove(nearestTimestamp)
     }
 
     private fun measureLuminance(
@@ -115,8 +151,7 @@ class MeteringAnalyzer(
     ): Double? {
         val plane = image.planes.firstOrNull() ?: return null
         val buffer = plane.buffer
-        val width = image.width
-        val height = image.height
+        val cropRect = image.cropRect
         val rowStride = plane.rowStride
         val pixelStride = plane.pixelStride
         val primaryHistogram = IntArray(256)
@@ -145,19 +180,17 @@ class MeteringAnalyzer(
             SAMPLE_STEP
         }
 
-        var y = 0
-        while (y < height) {
-            var x = 0
-            while (x < width) {
+        var y = cropRect.top
+        while (y < cropRect.bottom) {
+            var x = cropRect.left
+            while (x < cropRect.right) {
                 val index = y * rowStride + x * pixelStride
                 if (index < buffer.limit()) {
                     val previewPoint = mapImagePointToPreview(
                         x = x,
                         y = y,
                         rotationDegrees = image.imageInfo.rotationDegrees,
-                        imageWidth = width,
-                        imageHeight = height,
-                        previewAspectRatio = previewAspectRatio,
+                        cropRect = cropRect,
                     )
                     if (!viewfinder.contains(previewPoint.first, previewPoint.second)) {
                         x += sampleStep
@@ -254,62 +287,140 @@ class MeteringAnalyzer(
         calibrationOffset: Double,
     ): Double {
         val exposureSeconds = metadata.exposureTimeNs / 1_000_000_000.0
-        val settingEv100 = log2(metadata.aperture * metadata.aperture / exposureSeconds) -
-            log2(metadata.sensorSensitivity / 100.0)
+        val settingEv100 = cameraSettingEv100(metadata, exposureSeconds)
         return settingEv100 + log2(luminance / TARGET_LUMINANCE) + calibrationOffset
+    }
+
+    private fun createExposureMap(
+        image: ImageProxy,
+        metadata: CameraExposureMetadata,
+        meteringConfig: MeteringConfig,
+    ): ExposureMap? {
+        val plane = image.planes.firstOrNull() ?: return null
+        val cropRect = image.cropRect
+        if (cropRect.width() <= 0 || cropRect.height() <= 0) return null
+
+        val previewAspectRatio = meteringConfig.previewAspectRatio
+        val mapWidth: Int
+        val mapHeight: Int
+        if (previewAspectRatio <= 1.0) {
+            mapHeight = EXPOSURE_MAP_LONG_EDGE
+            mapWidth = (mapHeight * previewAspectRatio).toInt().coerceAtLeast(1)
+        } else {
+            mapWidth = EXPOSURE_MAP_LONG_EDGE
+            mapHeight = (mapWidth / previewAspectRatio).toInt().coerceAtLeast(1)
+        }
+
+        val exposureSeconds = metadata.exposureTimeNs / 1_000_000_000.0
+        val settingEv100 = cameraSettingEv100(metadata, exposureSeconds)
+        val pixelEv100 = FloatArray(mapWidth * mapHeight)
+        val clippedHighlights = BooleanArray(mapWidth * mapHeight)
+        val buffer = plane.buffer
+
+        for (mapY in 0 until mapHeight) {
+            val previewY = (mapY + 0.5) / mapHeight
+            for (mapX in 0 until mapWidth) {
+                val previewX = (mapX + 0.5) / mapWidth
+                if (!meteringConfig.viewfinderRect.contains(previewX, previewY)) {
+                    pixelEv100[mapY * mapWidth + mapX] = Float.NaN
+                    continue
+                }
+                val imagePoint = mapPreviewPointToImage(
+                    previewX = previewX,
+                    previewY = previewY,
+                    rotationDegrees = image.imageInfo.rotationDegrees,
+                    cropRect = cropRect,
+                )
+                val index = imagePoint.second * plane.rowStride +
+                    imagePoint.first * plane.pixelStride
+                val rawLuminance = if (index < buffer.limit()) {
+                    buffer.get(index).toInt() and 0xFF
+                } else {
+                    0
+                }
+                val linearLuminance = linearLuminance(rawLuminance)
+                clippedHighlights[mapY * mapWidth + mapX] =
+                    rawLuminance >= HIGHLIGHT_CLIP_LEVEL
+                pixelEv100[mapY * mapWidth + mapX] = (
+                    settingEv100 +
+                        log2(linearLuminance / TARGET_LUMINANCE) +
+                        meteringConfig.calibrationOffset
+                    ).toFloat()
+            }
+        }
+
+        return ExposureMap(
+            width = mapWidth,
+            height = mapHeight,
+            pixelEv100 = pixelEv100,
+            clippedHighlights = clippedHighlights,
+            timestampNs = image.imageInfo.timestamp,
+            revision = meteringConfig.revision,
+        )
+    }
+
+    private fun cameraSettingEv100(
+        metadata: CameraExposureMetadata,
+        exposureSeconds: Double,
+    ): Double {
+        return log2(metadata.aperture * metadata.aperture / exposureSeconds) -
+            log2(metadata.effectiveSensitivity / 100.0)
     }
 
     private fun mapImagePointToPreview(
         x: Int,
         y: Int,
         rotationDegrees: Int,
-        imageWidth: Int,
-        imageHeight: Int,
-        previewAspectRatio: Double,
+        cropRect: Rect,
     ): Pair<Double, Double> {
-        val rawX = x / imageWidth.toDouble()
-        val rawY = y / imageHeight.toDouble()
-        val (uprightX, uprightY) = when (rotationDegrees) {
+        val rawX = (x - cropRect.left) / cropRect.width().toDouble()
+        val rawY = (y - cropRect.top) / cropRect.height().toDouble()
+        return when (rotationDegrees) {
             90 -> Pair(1.0 - rawY, rawX)
             180 -> Pair(1.0 - rawX, 1.0 - rawY)
             270 -> Pair(rawY, 1.0 - rawX)
             else -> Pair(rawX, rawY)
         }
-        val uprightWidth = if (rotationDegrees == 90 || rotationDegrees == 270) {
-            imageHeight
-        } else {
-            imageWidth
-        }
-        val uprightHeight = if (rotationDegrees == 90 || rotationDegrees == 270) {
-            imageWidth
-        } else {
-            imageHeight
-        }
-        val imageAspectRatio = uprightWidth / uprightHeight.toDouble()
+    }
 
-        return if (imageAspectRatio > previewAspectRatio) {
-            val visibleWidthFraction = previewAspectRatio / imageAspectRatio
-            val crop = (1.0 - visibleWidthFraction) / 2.0
-            Pair((uprightX - crop) / visibleWidthFraction, uprightY)
-        } else {
-            val visibleHeightFraction = imageAspectRatio / previewAspectRatio
-            val crop = (1.0 - visibleHeightFraction) / 2.0
-            Pair(uprightX, (uprightY - crop) / visibleHeightFraction)
+    private fun mapPreviewPointToImage(
+        previewX: Double,
+        previewY: Double,
+        rotationDegrees: Int,
+        cropRect: Rect,
+    ): Pair<Int, Int> {
+        val (rawX, rawY) = when (rotationDegrees) {
+            90 -> Pair(previewY, 1.0 - previewX)
+            180 -> Pair(1.0 - previewX, 1.0 - previewY)
+            270 -> Pair(1.0 - previewY, previewX)
+            else -> Pair(previewX, previewY)
         }
+        val x = (cropRect.left + rawX * cropRect.width())
+            .toInt()
+            .coerceIn(cropRect.left, cropRect.right - 1)
+        val y = (cropRect.top + rawY * cropRect.height())
+            .toInt()
+            .coerceIn(cropRect.top, cropRect.bottom - 1)
+        return Pair(x, y)
+    }
+
+    private fun linearLuminance(rawLuminance: Int): Double {
+        return max((rawLuminance / 255.0).pow(GAMMA), MIN_LUMINANCE)
     }
 
     companion object {
         private const val ANALYSIS_INTERVAL_NS = 100_000_000L
         private const val METADATA_TOLERANCE_NS = 50_000_000L
         private const val MAX_METADATA_ENTRIES = 24
+        private const val EXPOSURE_MAP_LONG_EDGE = 240
         private const val SAMPLE_STEP = 4
         private const val FINE_SAMPLE_STEP = 2
         private const val MIN_SAMPLE_COUNT = 32
         private const val TRIM_RATIO = 0.05
         private const val GAMMA = 2.2
         private const val TARGET_LUMINANCE = 0.18
+        private const val HIGHLIGHT_CLIP_LEVEL = 235
         private const val MIN_LUMINANCE = 1e-6
         private const val SMOOTHING_WEIGHT = 0.25
-        private const val FAST_SMOOTHING_WEIGHT = 0.60
     }
 }

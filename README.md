@@ -8,8 +8,8 @@
 - CameraX `Preview` 与 `ImageAnalysis` 管线。
 - 相机运行时权限处理。
 - 点测光、中央重点测光与平均测光，支持点击画面临时点测光。
-- 定格画面后锁定 EV 测算结果。
-- 135、APS-C 与 6×4.5 画幅的取景范围模拟。
+- 定格画面后锁定 EV，并以红色/绿色提示高光与暗部曝光风险。
+- 135、APS-C、6×4.5 与 6×6 画幅选择，以及 20–120mm 焦距自动变焦取景。
 - 1/3 档光圈、经典整档快门与等效曝光组合。
 - ISO、曝光补偿和主推荐曝光组合。
 - 相机、测光、曝光和 UI 分层包结构。
@@ -57,6 +57,8 @@ app/src/main/java/com/lightmeter/app/
 - [曝光计算设计](docs/exposure-calculation-design.md)
 - [Android 技术架构设计](docs/android-technical-architecture.md)
 - [MVP 核心算法技术文档](docs/mvp-core-algorithms.md)
+- [冻结画面曝光风险预览设计](docs/exposure-risk-preview-design.md)
+- [画幅与焦距自动变焦设计](docs/auto-zoom-viewfinder-design.md)
 
 ## License
 

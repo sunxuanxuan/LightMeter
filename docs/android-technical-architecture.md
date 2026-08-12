@@ -103,41 +103,46 @@ MeteringScreen
 
 ## 4. 取景框 Overlay
 
-V1 支持以下画幅和焦段组合：
+支持以下画幅：
 
 ```text
-135 + 35mm
-135 + 50mm
-135 + 70mm
-APS-C + 50mm
-6x4.5 + 75mm
+135
+APS-C
+6×4.5
+6×6
 ```
 
-取景框是预览上的辅助框，不改变手机物理焦距。
+焦距在预览页通过 `20mm ~ 120mm` 滑块设置。系统通过 CameraX 自动变焦，
+使目标取景范围长边填满预览；设备倍率不足时保留剩余取景框。
 
 建议抽象：
 
 ```kotlin
-data class FramePreset(
-    val format: FrameFormat,
-    val focalLengthMm: Int
-)
-
-enum class FrameFormat {
-    FILM_135,
-    MEDIUM_FORMAT_645
+enum class FrameFormat(
+    val frameWidthMm: Double,
+    val frameHeightMm: Double
+) {
+    FILM_135(36.0, 24.0),
+    APS_C(23.6, 15.7),
+    FILM_645(56.0, 41.5),
+    FILM_66(56.0, 56.0)
 }
 ```
 
 Overlay 绘制规则：
 
 ```text
-1. 根据当前 preset 计算取景框宽高比和裁剪范围。
-2. 在 PreviewView 上方用 Compose Canvas 绘制边框。
-3. 框外区域可以使用半透明遮罩，帮助用户理解实际取景范围。
+1. 根据画幅、焦距和手机镜头计算未变焦取景比例。
+2. 计算长边适配 CameraX 目标倍率。
+3. 根据 CameraX 实际倍率计算最终取景框。
+4. 在 PreviewView 上方绘制边框和框外遮罩。
 ```
 
-取景框边界以归一化坐标写入 `MeteringConfig`。ImageAnalysis 将采样点映射到 `PreviewView.FILL_CENTER` 坐标后，先排除取景框外像素，再执行平均、点测光或中央重点计算。
+取景框边界以归一化坐标写入 `MeteringConfig`。`Preview` 和
+`ImageAnalysis` 使用 `PreviewView.viewPort` 构建同一个
+`UseCaseGroup`，确保共享传感器裁剪范围。ImageAnalysis 只处理
+`ImageProxy.cropRect`，将采样点旋转到 PreviewView 归一化坐标后，先
+排除取景框外像素，再执行平均、点测光或中央重点计算。
 
 ## 5. 图像分析
 
@@ -288,7 +293,8 @@ data class MeteringUiState(
     val centerAreaPercent: Int,
     val centerWeightPercent: Int,
     val cameraMeteringPreset: CameraMeteringPreset?,
-    val framePreset: FramePreset,
+    val frameFormat: FrameFormat,
+    val focalLengthMm: Double,
     val ev100Metered: Double?,
     val evTarget: Double?,
     val primaryExposure: ExposurePair?,

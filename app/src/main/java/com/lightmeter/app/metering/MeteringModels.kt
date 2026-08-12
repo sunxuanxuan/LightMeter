@@ -62,6 +62,9 @@ data class MeteringConfig(
     val centerWeightPercent: Int = 70,
     val viewfinderRect: NormalizedMeteringRect = NormalizedMeteringRect.Full,
     val previewAspectRatio: Double = 1.0,
+    val targetZoomRatio: Double = 1.0,
+    val isZoomReady: Boolean = true,
+    val revision: Long = 0L,
     val calibrationOffset: Double = 0.0,
 ) {
     init {
@@ -69,6 +72,7 @@ data class MeteringConfig(
         require(centerAreaPercent in 5..80)
         require(centerWeightPercent in 50..95)
         require(previewAspectRatio > 0.0)
+        require(targetZoomRatio > 0.0)
     }
 }
 
@@ -76,4 +80,18 @@ data class MeteringResult(
     val ev100: Double,
     val measuredLuminance: Double,
     val timestampNs: Long,
+    val revision: Long = 0L,
 )
+
+data class ExposureSnapshot(
+    val exposureMap: ExposureMap,
+    val meteredEv100: Double,
+    val timestampNs: Long,
+    val revision: Long,
+) {
+    init {
+        require(meteredEv100.isFinite())
+        require(exposureMap.timestampNs == timestampNs)
+        require(exposureMap.revision == revision)
+    }
+}

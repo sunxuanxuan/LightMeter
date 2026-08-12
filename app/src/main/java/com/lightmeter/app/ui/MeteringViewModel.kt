@@ -3,8 +3,9 @@ package com.lightmeter.app.ui
 import androidx.lifecycle.ViewModel
 import com.lightmeter.app.camera.CameraOptics
 import com.lightmeter.app.exposure.ExposurePair
-import com.lightmeter.app.exposure.FramePreset
+import com.lightmeter.app.exposure.FrameFormat
 import com.lightmeter.app.metering.CameraMeteringPreset
+import com.lightmeter.app.metering.FilmLatitudePreset
 import com.lightmeter.app.metering.MeteringMode
 import com.lightmeter.app.metering.NormalizedPoint
 import com.lightmeter.app.metering.MeteringResult
@@ -14,6 +15,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlin.math.abs
 import kotlin.math.log2
+import kotlin.math.roundToInt
 
 enum class CameraPermissionState {
     UNKNOWN,
@@ -26,6 +28,7 @@ data class MeteringUiState(
     val permissionState: CameraPermissionState = CameraPermissionState.UNKNOWN,
     val selectedIso: Int = 100,
     val exposureCompensation: Double = 0.0,
+    val meteringRevision: Long = 0L,
     val meteringPreset: MeteringMode = MeteringMode.CENTER_WEIGHTED,
     val meteringMode: MeteringMode = MeteringMode.CENTER_WEIGHTED,
     val spotMeteringPoint: NormalizedPoint? = null,
@@ -33,7 +36,8 @@ data class MeteringUiState(
     val centerAreaPercent: Int = 25,
     val centerWeightPercent: Int = 70,
     val cameraMeteringPreset: CameraMeteringPreset? = null,
-    val framePreset: FramePreset = FramePreset.FILM_135_50MM,
+    val frameFormat: FrameFormat = FrameFormat.FILM_135,
+    val focalLengthMm: Double = 50.0,
     val cameraOptics: CameraOptics? = null,
     val ev100Metered: Double? = null,
     val measuredLuminance: Double? = null,
@@ -44,6 +48,10 @@ data class MeteringUiState(
     val shutterCandidates: List<String> = shutterStops.map(ShutterStop::label),
     val selectedAperture: Double? = null,
     val calibrationOffset: Double = 0.0,
+    val exposureRiskEnabled: Boolean = true,
+    val highlightLatitudeStops: Double = 4.0,
+    val shadowLatitudeStops: Double = 3.0,
+    val filmLatitudePreset: FilmLatitudePreset? = null,
     val isCameraReady: Boolean = false,
     val isFrozen: Boolean = false,
     val freezeRequestId: Int = 0,
@@ -77,7 +85,9 @@ class MeteringViewModel : ViewModel() {
     }
 
     fun onCameraOpticsAvailable(optics: CameraOptics) {
-        mutableState.update { it.copy(cameraOptics = optics) }
+        mutableState.update {
+            it.copy(cameraOptics = optics).withoutMeteringResult()
+        }
     }
 
     fun onCameraError(error: Throwable) {
@@ -94,7 +104,7 @@ class MeteringViewModel : ViewModel() {
             it.copy(
                 meteringMode = MeteringMode.SPOT,
                 spotMeteringPoint = point,
-            )
+            ).withoutMeteringResult()
         }
     }
 
@@ -103,7 +113,7 @@ class MeteringViewModel : ViewModel() {
             it.copy(
                 meteringMode = it.meteringPreset,
                 spotMeteringPoint = null,
-            )
+            ).withoutMeteringResult()
         }
     }
 
@@ -114,7 +124,7 @@ class MeteringViewModel : ViewModel() {
                 meteringMode = mode,
                 spotMeteringPoint = null,
                 cameraMeteringPreset = null,
-            )
+            ).withoutMeteringResult()
         }
     }
 
@@ -130,7 +140,7 @@ class MeteringViewModel : ViewModel() {
                     centerAreaPercent = preset.centerAreaPercent,
                     centerWeightPercent = preset.centerWeightPercent,
                     cameraMeteringPreset = preset,
-                )
+                ).withoutMeteringResult()
             }
         }
     }
@@ -139,7 +149,7 @@ class MeteringViewModel : ViewModel() {
         mutableState.update {
             it.copy(
                 spotAreaPercent = (it.spotAreaPercent + delta).coerceIn(1, 10),
-            )
+            ).withoutMeteringResult()
         }
     }
 
@@ -148,7 +158,7 @@ class MeteringViewModel : ViewModel() {
             it.copy(
                 centerAreaPercent = (it.centerAreaPercent + delta).coerceIn(5, 80),
                 cameraMeteringPreset = null,
-            )
+            ).withoutMeteringResult()
         }
     }
 
@@ -157,13 +167,59 @@ class MeteringViewModel : ViewModel() {
             it.copy(
                 centerWeightPercent = (it.centerWeightPercent + delta).coerceIn(50, 95),
                 cameraMeteringPreset = null,
+            ).withoutMeteringResult()
+        }
+    }
+
+    fun adjustHighlightLatitude(delta: Double) {
+        mutableState.update {
+            it.copy(
+                highlightLatitudeStops = normalizeThirdStop(
+                    it.highlightLatitudeStops + delta,
+                    MIN_LATITUDE_STOPS,
+                    MAX_LATITUDE_STOPS,
+                ),
+                filmLatitudePreset = null,
+            )
+        }
+    }
+
+    fun setExposureRiskEnabled(enabled: Boolean) {
+        mutableState.update {
+            it.copy(exposureRiskEnabled = enabled)
+        }
+    }
+
+    fun selectFilmLatitudePreset(preset: FilmLatitudePreset?) {
+        mutableState.update {
+            if (preset == null) {
+                it.copy(filmLatitudePreset = null)
+            } else {
+                it.copy(
+                    highlightLatitudeStops = preset.highlightStops,
+                    shadowLatitudeStops = preset.shadowStops,
+                    filmLatitudePreset = preset,
+                )
+            }
+        }
+    }
+
+    fun adjustShadowLatitude(delta: Double) {
+        mutableState.update {
+            it.copy(
+                shadowLatitudeStops = normalizeThirdStop(
+                    it.shadowLatitudeStops + delta,
+                    MIN_LATITUDE_STOPS,
+                    MAX_LATITUDE_STOPS,
+                ),
+                filmLatitudePreset = null,
             )
         }
     }
 
     fun onMeteringResult(result: MeteringResult) {
         mutableState.update {
-            if (it.isFrozen) return@update it
+            if (it.isFrozen || result.revision != it.meteringRevision) return@update it
             it.copy(
                 ev100Metered = result.ev100,
                 measuredLuminance = result.measuredLuminance,
@@ -204,23 +260,58 @@ class MeteringViewModel : ViewModel() {
 
     fun selectIso(iso: Int) {
         mutableState.update {
-            it.copy(selectedIso = iso).withRecommendation()
+            val normalizedIso = (
+                iso.coerceIn(MIN_ISO, MAX_ISO) / ISO_STEP.toDouble()
+                ).roundToInt() * ISO_STEP
+            it.copy(selectedIso = normalizedIso).withRecommendation()
         }
     }
 
-    fun selectFramePreset(framePreset: FramePreset) {
+    fun selectFrameFormat(frameFormat: FrameFormat) {
         mutableState.update {
-            it.copy(framePreset = framePreset).withRecommendation()
+            it.copy(
+                frameFormat = frameFormat,
+                meteringMode = it.meteringPreset,
+                spotMeteringPoint = null,
+            ).withoutMeteringResult()
+        }
+    }
+
+    fun selectFocalLength(focalLengthMm: Double) {
+        mutableState.update {
+            it.copy(
+                focalLengthMm = focalLengthMm.coerceIn(
+                    MIN_FOCAL_LENGTH_MM,
+                    MAX_FOCAL_LENGTH_MM,
+                ),
+                meteringMode = it.meteringPreset,
+                spotMeteringPoint = null,
+            ).withoutMeteringResult()
         }
     }
 
     fun adjustExposureCompensation(delta: Double) {
         mutableState.update {
             it.copy(
-                exposureCompensation = (it.exposureCompensation + delta)
-                    .coerceIn(-3.0, 3.0),
+                exposureCompensation = normalizeThirdStop(
+                    it.exposureCompensation + delta,
+                    MIN_EXPOSURE_COMPENSATION,
+                    MAX_EXPOSURE_COMPENSATION,
+                ),
             )
                 .withRecommendation()
+        }
+    }
+
+    fun selectExposureCompensation(value: Double) {
+        mutableState.update {
+            it.copy(
+                exposureCompensation = normalizeThirdStop(
+                    value,
+                    MIN_EXPOSURE_COMPENSATION,
+                    MAX_EXPOSURE_COMPENSATION,
+                ),
+            ).withRecommendation()
         }
     }
 
@@ -267,8 +358,30 @@ class MeteringViewModel : ViewModel() {
     }
 
     companion object {
-        val isoOptions = listOf(50, 100, 200, 400, 800, 1600)
+        private const val MIN_ISO = 100
+        private const val MAX_ISO = 1600
+        private const val ISO_STEP = 50
+        private const val MIN_EXPOSURE_COMPENSATION = -3.0
+        private const val MAX_EXPOSURE_COMPENSATION = 3.0
+        private const val MIN_LATITUDE_STOPS = 1.0 / 3.0
+        private const val MAX_LATITUDE_STOPS = 8.0
+        const val EV_THIRD_STEP = 1.0 / 3.0
+
+        val isoOptions = (MIN_ISO..MAX_ISO step ISO_STEP).toList()
+        val exposureCompensationOptions = (-9..9).map {
+            it * EV_THIRD_STEP
+        }
+        const val MIN_FOCAL_LENGTH_MM = 20.0
+        const val MAX_FOCAL_LENGTH_MM = 120.0
     }
+}
+
+private fun normalizeThirdStop(
+    value: Double,
+    minimum: Double,
+    maximum: Double,
+): Double {
+    return (value * 3.0).roundToInt().div(3.0).coerceIn(minimum, maximum)
 }
 
 private data class ApertureStop(
@@ -332,11 +445,22 @@ private val shutterStops = listOf(
 
 private val commonAperturePriority = listOf(5.6, 8.0, 4.0, 11.0, 2.8, 16.0)
 
+private fun MeteringUiState.withoutMeteringResult(): MeteringUiState {
+    return copy(
+        meteringRevision = meteringRevision + 1L,
+        ev100Metered = null,
+        measuredLuminance = null,
+        evTarget = null,
+        primaryExposure = null,
+        equivalentExposures = emptyList(),
+    )
+}
+
 private fun MeteringUiState.withRecommendation(): MeteringUiState {
     val ev100 = ev100Metered ?: return this
     val target = targetEv(ev100, selectedIso, exposureCompensation)
     val pairs = generateExposurePairs(target)
-    val recommended = selectPrimaryPair(pairs, framePreset)
+    val recommended = selectPrimaryPair(pairs, safeShutterSeconds(focalLengthMm))
     val selected = selectedAperture?.let { aperture ->
         pairs.minByOrNull { abs(it.aperture - aperture) }
     } ?: recommended
@@ -357,9 +481,23 @@ private fun targetEv(
 }
 
 private fun generateExposurePairs(targetEv: Double): List<ExposurePair> {
-    return apertureStops.map { aperture ->
+    val nearestByAperture = apertureStops.map { aperture ->
         closestPairForAperture(aperture, targetEv)
     }
+    val withinTolerance = nearestByAperture.filter {
+        it.error <= MAX_EQUIVALENT_EXPOSURE_ERROR
+    }
+    val candidates = withinTolerance.ifEmpty {
+        val minimumError = nearestByAperture.minOf(ExposurePair::error)
+        nearestByAperture.filter {
+            abs(it.error - minimumError) < EXPOSURE_ERROR_EPSILON
+        }
+    }
+    return candidates
+        .groupBy(ExposurePair::shutterLabel)
+        .values
+        .map { sameShutter -> sameShutter.minBy(ExposurePair::error) }
+        .sortedBy(ExposurePair::shutterSeconds)
 }
 
 private fun closestPairForAperture(
@@ -398,12 +536,17 @@ private fun exposurePair(
 
 private fun selectPrimaryPair(
     pairs: List<ExposurePair>,
-    framePreset: FramePreset,
+    safeShutterSeconds: Double,
 ): ExposurePair? {
-    val safePairs = pairs.filter { it.shutterSeconds <= framePreset.safeShutterSeconds }
-    val candidates = safePairs.ifEmpty { pairs }
+    val safePairs = pairs.filter { it.shutterSeconds <= safeShutterSeconds }
+    if (safePairs.isEmpty()) {
+        return pairs.minWithOrNull(
+            compareBy<ExposurePair>(ExposurePair::error)
+                .thenBy(ExposurePair::shutterSeconds),
+        )
+    }
 
-    return candidates.minWithOrNull(
+    return safePairs.minWithOrNull(
         compareBy<ExposurePair> {
             commonAperturePriority.indexOf(it.aperture).takeIf { index -> index >= 0 }
                 ?: Int.MAX_VALUE
@@ -412,3 +555,15 @@ private fun selectPrimaryPair(
             .thenBy { it.shutterSeconds },
     )
 }
+
+private fun safeShutterSeconds(focalLengthMm: Double): Double {
+    return when {
+        focalLengthMm <= 35.0 -> 1.0 / 30.0
+        focalLengthMm <= 50.0 -> 1.0 / 60.0
+        focalLengthMm <= 90.0 -> 1.0 / 125.0
+        else -> 1.0 / 250.0
+    }
+}
+
+private const val MAX_EQUIVALENT_EXPOSURE_ERROR = 1.0 / 6.0
+private const val EXPOSURE_ERROR_EPSILON = 1e-9

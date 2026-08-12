@@ -14,6 +14,8 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.lightmeter.app.camera.CameraController
 import com.lightmeter.app.camera.CameraOptics
+import com.lightmeter.app.camera.CameraZoomState
+import com.lightmeter.app.metering.ExposureSnapshot
 import com.lightmeter.app.metering.MeteringAnalyzer
 import com.lightmeter.app.metering.MeteringConfig
 import com.lightmeter.app.metering.MeteringResult
@@ -21,11 +23,13 @@ import com.lightmeter.app.metering.MeteringResult
 @Composable
 fun CameraPreviewView(
     meteringConfig: MeteringConfig,
+    targetZoomRatio: Float,
     freezeRequestId: Int,
     shouldCaptureFrame: Boolean,
     onMeteringResult: (MeteringResult) -> Unit,
-    onFrameCaptured: (Bitmap?) -> Unit,
+    onFrameCaptured: (Bitmap?, ExposureSnapshot?) -> Unit,
     onOpticsAvailable: (CameraOptics) -> Unit,
+    onZoomStateChanged: (CameraZoomState) -> Unit,
     onReady: () -> Unit,
     onError: (Throwable) -> Unit,
     modifier: Modifier = Modifier,
@@ -49,11 +53,15 @@ fun CameraPreviewView(
 
     SideEffect {
         analyzer.updateConfig(meteringConfig)
+        cameraController.setZoomRatio(targetZoomRatio)
     }
 
     LaunchedEffect(freezeRequestId, shouldCaptureFrame) {
         if (shouldCaptureFrame && freezeRequestId > 0) {
-            currentOnFrameCaptured.value(previewView.bitmap)
+            currentOnFrameCaptured.value(
+                previewView.bitmap,
+                analyzer.latestExposureSnapshot(),
+            )
         }
     }
 
@@ -63,6 +71,7 @@ fun CameraPreviewView(
             previewView = previewView,
             analyzer = analyzer,
             onOpticsAvailable = onOpticsAvailable,
+            onZoomStateChanged = onZoomStateChanged,
             onReady = onReady,
             onError = onError,
         )

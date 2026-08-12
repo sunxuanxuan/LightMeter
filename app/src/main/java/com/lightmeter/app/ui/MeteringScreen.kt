@@ -13,7 +13,11 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -26,32 +30,39 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.GenericShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
@@ -64,6 +75,8 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.core.app.ActivityCompat
@@ -74,9 +87,16 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.lightmeter.app.R
 import com.lightmeter.app.camera.CameraOptics
+import com.lightmeter.app.camera.CameraZoomState
+import com.lightmeter.app.camera.ViewfinderProjection
+import com.lightmeter.app.camera.ViewfinderProjectionCalculator
 import com.lightmeter.app.exposure.ExposurePair
-import com.lightmeter.app.exposure.FramePreset
+import com.lightmeter.app.exposure.FrameFormat
 import com.lightmeter.app.metering.CameraMeteringPreset
+import com.lightmeter.app.metering.ExposureRiskCalculator
+import com.lightmeter.app.metering.ExposureRiskMask
+import com.lightmeter.app.metering.ExposureSnapshot
+import com.lightmeter.app.metering.FilmLatitudePreset
 import com.lightmeter.app.metering.MeteringConfig
 import com.lightmeter.app.metering.MeteringMode
 import com.lightmeter.app.metering.NormalizedMeteringRect
@@ -84,8 +104,14 @@ import com.lightmeter.app.metering.NormalizedPoint
 import com.lightmeter.app.metering.MeteringResult
 import kotlin.math.PI
 import kotlin.math.abs
-import kotlin.math.min
+import kotlin.math.roundToInt
 import kotlin.math.sqrt
+
+private val DEFAULT_CAMERA_OPTICS = CameraOptics(
+    sensorWidthMm = 36.0,
+    sensorHeightMm = 24.0,
+    focalLengthMm = 24.0,
+)
 
 @Composable
 fun MeteringRoute(
@@ -139,9 +165,14 @@ fun MeteringRoute(
         onSpotAreaChanged = viewModel::adjustSpotAreaPercent,
         onCenterAreaChanged = viewModel::adjustCenterAreaPercent,
         onCenterWeightChanged = viewModel::adjustCenterWeightPercent,
+        onExposureRiskEnabledChanged = viewModel::setExposureRiskEnabled,
+        onFilmLatitudePresetSelected = viewModel::selectFilmLatitudePreset,
+        onHighlightLatitudeChanged = viewModel::adjustHighlightLatitude,
+        onShadowLatitudeChanged = viewModel::adjustShadowLatitude,
         onIsoSelected = viewModel::selectIso,
-        onFramePresetSelected = viewModel::selectFramePreset,
-        onExposureCompensationChanged = viewModel::adjustExposureCompensation,
+        onFrameFormatSelected = viewModel::selectFrameFormat,
+        onFocalLengthChanged = viewModel::selectFocalLength,
+        onExposureCompensationSelected = viewModel::selectExposureCompensation,
         onApertureStep = viewModel::stepAperture,
         onShutterStep = viewModel::stepShutter,
         onFreezePreview = viewModel::freezePreview,
@@ -166,9 +197,14 @@ private fun MeteringScreen(
     onSpotAreaChanged: (Int) -> Unit,
     onCenterAreaChanged: (Int) -> Unit,
     onCenterWeightChanged: (Int) -> Unit,
+    onExposureRiskEnabledChanged: (Boolean) -> Unit,
+    onFilmLatitudePresetSelected: (FilmLatitudePreset?) -> Unit,
+    onHighlightLatitudeChanged: (Double) -> Unit,
+    onShadowLatitudeChanged: (Double) -> Unit,
     onIsoSelected: (Int) -> Unit,
-    onFramePresetSelected: (FramePreset) -> Unit,
-    onExposureCompensationChanged: (Double) -> Unit,
+    onFrameFormatSelected: (FrameFormat) -> Unit,
+    onFocalLengthChanged: (Double) -> Unit,
+    onExposureCompensationSelected: (Double) -> Unit,
     onApertureStep: (Int) -> Unit,
     onShutterStep: (Int) -> Unit,
     onFreezePreview: () -> Unit,
@@ -194,9 +230,14 @@ private fun MeteringScreen(
                 onSpotAreaChanged = onSpotAreaChanged,
                 onCenterAreaChanged = onCenterAreaChanged,
                 onCenterWeightChanged = onCenterWeightChanged,
+                onExposureRiskEnabledChanged = onExposureRiskEnabledChanged,
+                onFilmLatitudePresetSelected = onFilmLatitudePresetSelected,
+                onHighlightLatitudeChanged = onHighlightLatitudeChanged,
+                onShadowLatitudeChanged = onShadowLatitudeChanged,
                 onIsoSelected = onIsoSelected,
-                onFramePresetSelected = onFramePresetSelected,
-                onExposureCompensationChanged = onExposureCompensationChanged,
+                onFrameFormatSelected = onFrameFormatSelected,
+                onFocalLengthChanged = onFocalLengthChanged,
+                onExposureCompensationSelected = onExposureCompensationSelected,
                 onApertureStep = onApertureStep,
                 onShutterStep = onShutterStep,
                 onFreezePreview = onFreezePreview,
@@ -233,9 +274,14 @@ private fun CameraContent(
     onSpotAreaChanged: (Int) -> Unit,
     onCenterAreaChanged: (Int) -> Unit,
     onCenterWeightChanged: (Int) -> Unit,
+    onExposureRiskEnabledChanged: (Boolean) -> Unit,
+    onFilmLatitudePresetSelected: (FilmLatitudePreset?) -> Unit,
+    onHighlightLatitudeChanged: (Double) -> Unit,
+    onShadowLatitudeChanged: (Double) -> Unit,
     onIsoSelected: (Int) -> Unit,
-    onFramePresetSelected: (FramePreset) -> Unit,
-    onExposureCompensationChanged: (Double) -> Unit,
+    onFrameFormatSelected: (FrameFormat) -> Unit,
+    onFocalLengthChanged: (Double) -> Unit,
+    onExposureCompensationSelected: (Double) -> Unit,
     onApertureStep: (Int) -> Unit,
     onShutterStep: (Int) -> Unit,
     onFreezePreview: () -> Unit,
@@ -243,11 +289,37 @@ private fun CameraContent(
     onFreezeCaptureFailed: () -> Unit,
 ) {
     var frozenFrame by remember { mutableStateOf<Bitmap?>(null) }
+    var frozenExposureSnapshot by remember { mutableStateOf<ExposureSnapshot?>(null) }
     var previewSize by remember { mutableStateOf(IntSize.Zero) }
+    var cameraZoomState by remember { mutableStateOf(CameraZoomState()) }
+    val projection = remember(
+        previewSize,
+        state.frameFormat,
+        state.focalLengthMm,
+        state.cameraOptics,
+    ) {
+        if (previewSize.width == 0 || previewSize.height == 0) {
+            ViewfinderProjection(1.0, 1.0)
+        } else {
+            ViewfinderProjectionCalculator.calculate(
+                previewAspectRatio = previewSize.width / previewSize.height.toDouble(),
+                frameFormat = state.frameFormat,
+                targetFocalLengthMm = state.focalLengthMm,
+                cameraOptics = state.cameraOptics ?: DEFAULT_CAMERA_OPTICS,
+            )
+        }
+    }
+    val targetZoomRatio = projection.fitZoomRatio.toFloat()
+    val effectiveZoomRatio = targetZoomRatio.coerceIn(
+        cameraZoomState.minZoomRatio,
+        cameraZoomState.maxZoomRatio,
+    )
+    val isZoomReady = cameraZoomState.isInitialized &&
+        abs(cameraZoomState.zoomRatio - effectiveZoomRatio) <= 0.02f
     val normalizedViewfinder = remember(
         previewSize,
-        state.framePreset,
-        state.cameraOptics,
+        projection,
+        effectiveZoomRatio,
     ) {
         if (previewSize.width == 0 || previewSize.height == 0) {
             NormalizedMeteringRect.Full
@@ -255,8 +327,8 @@ private fun CameraContent(
             val frame = calculateViewfinderRect(
                 viewWidth = previewSize.width.toFloat(),
                 viewHeight = previewSize.height.toFloat(),
-                preset = state.framePreset,
-                optics = state.cameraOptics,
+                projection = projection,
+                zoomRatio = effectiveZoomRatio.toDouble(),
             )
             NormalizedMeteringRect(
                 left = frame.left / previewSize.width.toDouble(),
@@ -266,21 +338,73 @@ private fun CameraContent(
             )
         }
     }
+    val viewfinderClipShape = remember(normalizedViewfinder) {
+        GenericShape { size, _ ->
+            addRect(
+                Rect(
+                    left = (normalizedViewfinder.left * size.width).toFloat(),
+                    top = (normalizedViewfinder.top * size.height).toFloat(),
+                    right = (normalizedViewfinder.right * size.width).toFloat(),
+                    bottom = (normalizedViewfinder.bottom * size.height).toFloat(),
+                ),
+            )
+        }
+    }
+    val exposureRiskMask = remember(
+        frozenExposureSnapshot,
+        normalizedViewfinder,
+        state.exposureCompensation,
+        state.exposureRiskEnabled,
+        state.highlightLatitudeStops,
+        state.shadowLatitudeStops,
+    ) {
+        val snapshot = frozenExposureSnapshot
+        if (!state.exposureRiskEnabled || snapshot == null) {
+            null
+        } else {
+            val referenceEv100 = ExposureRiskCalculator.referenceEv100(
+                frozenMeteredEv100 = snapshot.meteredEv100,
+                exposureCompensation = state.exposureCompensation,
+            )
+            ExposureRiskCalculator.calculate(
+                exposureMap = snapshot.exposureMap,
+                viewfinder = normalizedViewfinder,
+                referenceEv100 = referenceEv100,
+                highlightLatitudeStops = state.highlightLatitudeStops,
+                shadowLatitudeStops = state.shadowLatitudeStops,
+            )
+        }
+    }
+    val exposureRiskBitmap = remember(exposureRiskMask) {
+        exposureRiskMask?.let {
+            Bitmap.createBitmap(
+                it.argb,
+                it.width,
+                it.height,
+                Bitmap.Config.ARGB_8888,
+            )
+        }
+    }
 
     LaunchedEffect(state.isFrozen) {
         if (!state.isFrozen) {
             frozenFrame = null
+            frozenExposureSnapshot = null
         }
     }
 
     Column(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier
+            .fillMaxSize()
+            .statusBarsPadding()
+            .navigationBarsPadding(),
     ) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .onSizeChanged { previewSize = it }
-                .weight(1.05f),
+                .weight(1f)
+                .padding(horizontal = 10.dp, vertical = 8.dp)
+                .onSizeChanged { previewSize = it },
         ) {
             CameraPreviewView(
                 meteringConfig = MeteringConfig(
@@ -295,22 +419,38 @@ private fun CameraContent(
                     } else {
                         1.0
                     },
+                    targetZoomRatio = effectiveZoomRatio.toDouble(),
+                    isZoomReady = isZoomReady,
+                    revision = state.meteringRevision,
                     calibrationOffset = state.calibrationOffset,
                 ),
+                targetZoomRatio = if (state.isFrozen) {
+                    cameraZoomState.zoomRatio
+                } else {
+                    targetZoomRatio
+                },
                 freezeRequestId = state.freezeRequestId,
                 shouldCaptureFrame = state.isFrozen,
                 onMeteringResult = onMeteringResult,
-                onFrameCaptured = { bitmap ->
-                    if (bitmap == null) {
+                onFrameCaptured = { bitmap, snapshot ->
+                    if (
+                        bitmap == null ||
+                        snapshot == null ||
+                        snapshot.revision != state.meteringRevision
+                    ) {
                         onFreezeCaptureFailed()
                     } else {
                         frozenFrame = bitmap
+                        frozenExposureSnapshot = snapshot
                     }
                 },
                 onOpticsAvailable = onCameraOpticsAvailable,
+                onZoomStateChanged = { cameraZoomState = it },
                 onReady = onCameraReady,
                 onError = onCameraError,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(viewfinderClipShape),
             )
 
             if (state.isFrozen) {
@@ -319,17 +459,40 @@ private fun CameraContent(
                         bitmap = bitmap.asImageBitmap(),
                         contentDescription = "定格测光画面",
                         contentScale = ContentScale.FillBounds,
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clip(viewfinderClipShape),
+                    )
+                }
+                exposureRiskBitmap?.let { bitmap ->
+                    Image(
+                        bitmap = bitmap.asImageBitmap(),
+                        contentDescription = "曝光风险预览",
+                        contentScale = ContentScale.FillBounds,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clip(viewfinderClipShape),
                     )
                 }
             }
 
             ViewfinderOverlay(
                 state = state,
+                viewfinder = normalizedViewfinder,
                 enabled = !state.isFrozen,
                 onSpotSelected = onSpotSelected,
                 modifier = Modifier.fillMaxSize(),
             )
+
+            if (state.isFrozen && exposureRiskMask != null) {
+                ExposureRiskLegend(
+                    riskMask = exposureRiskMask,
+                    exposureCompensation = state.exposureCompensation,
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(top = 12.dp),
+                )
+            }
 
             ExposureScaleOverlay(
                 apertureCandidates = state.apertureCandidates,
@@ -345,7 +508,9 @@ private fun CameraContent(
 
             CaptureControls(
                 isFrozen = state.isFrozen,
-                canFreeze = state.isCameraReady && state.ev100Metered != null,
+                canFreeze = state.isCameraReady &&
+                    state.ev100Metered != null &&
+                    isZoomReady,
                 meteringMode = state.meteringMode,
                 meteringPreset = state.meteringPreset,
                 hasSpotMeteringPoint = state.spotMeteringPoint != null,
@@ -361,16 +526,23 @@ private fun CameraContent(
         ExposurePanel(
             state = state,
             onIsoSelected = onIsoSelected,
-            onFramePresetSelected = onFramePresetSelected,
+            onFrameFormatSelected = onFrameFormatSelected,
             onMeteringPresetSelected = onMeteringPresetSelected,
             onCameraMeteringPresetSelected = onCameraMeteringPresetSelected,
             onSpotAreaChanged = onSpotAreaChanged,
             onCenterAreaChanged = onCenterAreaChanged,
             onCenterWeightChanged = onCenterWeightChanged,
-            onExposureCompensationChanged = onExposureCompensationChanged,
+            onExposureRiskEnabledChanged = onExposureRiskEnabledChanged,
+            onFilmLatitudePresetSelected = onFilmLatitudePresetSelected,
+            onHighlightLatitudeChanged = onHighlightLatitudeChanged,
+            onShadowLatitudeChanged = onShadowLatitudeChanged,
+            onExposureCompensationSelected = onExposureCompensationSelected,
+            zoomRatio = cameraZoomState.zoomRatio,
+            zoomLimited = targetZoomRatio < cameraZoomState.minZoomRatio - 0.01f ||
+                targetZoomRatio > cameraZoomState.maxZoomRatio + 0.01f,
+            onFocalLengthChanged = onFocalLengthChanged,
             modifier = Modifier
-                .fillMaxWidth()
-                .weight(0.95f),
+                .fillMaxWidth(),
         )
     }
 }
@@ -378,19 +550,18 @@ private fun CameraContent(
 @Composable
 private fun ViewfinderOverlay(
     state: MeteringUiState,
+    viewfinder: NormalizedMeteringRect,
     enabled: Boolean,
     onSpotSelected: (NormalizedPoint) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val interactionModifier = if (enabled) {
-        Modifier.pointerInput(state.framePreset, state.cameraOptics) {
+        Modifier.pointerInput(viewfinder) {
             detectTapGestures { offset ->
                 if (size.width == 0 || size.height == 0) return@detectTapGestures
-                val frame = calculateViewfinderRect(
-                    viewWidth = size.width.toFloat(),
-                    viewHeight = size.height.toFloat(),
-                    preset = state.framePreset,
-                    optics = state.cameraOptics,
+                val frame = viewfinder.toComposeRect(
+                    size.width.toFloat(),
+                    size.height.toFloat(),
                 )
                 if (!frame.contains(offset)) return@detectTapGestures
                 onSpotSelected(
@@ -407,13 +578,8 @@ private fun ViewfinderOverlay(
     Canvas(
         modifier = modifier.then(interactionModifier),
     ) {
-        val frame = calculateViewfinderRect(
-            viewWidth = size.width,
-            viewHeight = size.height,
-            preset = state.framePreset,
-            optics = state.cameraOptics,
-        )
-        val maskColor = Color.Black.copy(alpha = 0.58f)
+        val frame = viewfinder.toComposeRect(size.width, size.height)
+        val maskColor = Color.Black
         drawRect(
             color = maskColor,
             size = Size(size.width, frame.top),
@@ -457,7 +623,7 @@ private fun ViewfinderOverlay(
                         width = frame.width,
                         height = frame.height,
                         areaPercent = state.spotAreaPercent,
-                    ),
+                    ) * 0.25f,
                     center = center,
                     style = Stroke(width = 2.dp.toPx()),
                 )
@@ -480,39 +646,11 @@ private fun meteringRadius(
 private fun calculateViewfinderRect(
     viewWidth: Float,
     viewHeight: Float,
-    preset: FramePreset,
-    optics: CameraOptics?,
+    projection: ViewfinderProjection,
+    zoomRatio: Double,
 ): Rect {
-    val camera = optics ?: CameraOptics(
-        sensorWidthMm = 36.0,
-        sensorHeightMm = 24.0,
-        focalLengthMm = 24.0,
-    )
-    val sensorPortraitWidth = min(camera.sensorWidthMm, camera.sensorHeightMm)
-    val sensorPortraitHeight = maxOf(camera.sensorWidthMm, camera.sensorHeightMm)
-    val viewAspectRatio = viewWidth / viewHeight
-    val sensorAspectRatio = sensorPortraitWidth / sensorPortraitHeight
-
-    val displayedSensorWidth: Double
-    val displayedSensorHeight: Double
-    if (viewAspectRatio >= sensorAspectRatio) {
-        displayedSensorWidth = sensorPortraitWidth
-        displayedSensorHeight = sensorPortraitWidth / viewAspectRatio
-    } else {
-        displayedSensorHeight = sensorPortraitHeight
-        displayedSensorWidth = sensorPortraitHeight * viewAspectRatio
-    }
-
-    val targetPortraitWidth = min(preset.frameWidthMm, preset.frameHeightMm)
-    val targetPortraitHeight = maxOf(preset.frameWidthMm, preset.frameHeightMm)
-    val targetProjectionWidth =
-        camera.focalLengthMm * targetPortraitWidth / preset.focalLengthMm
-    val targetProjectionHeight =
-        camera.focalLengthMm * targetPortraitHeight / preset.focalLengthMm
-    val widthFraction = (targetProjectionWidth / displayedSensorWidth).coerceIn(0.0, 1.0)
-    val heightFraction = (targetProjectionHeight / displayedSensorHeight).coerceIn(0.0, 1.0)
-    val frameWidth = (viewWidth * widthFraction).toFloat()
-    val frameHeight = (viewHeight * heightFraction).toFloat()
+    val frameWidth = (viewWidth * projection.widthFractionAt(zoomRatio)).toFloat()
+    val frameHeight = (viewHeight * projection.heightFractionAt(zoomRatio)).toFloat()
     val left = (viewWidth - frameWidth) / 2f
     val top = (viewHeight - frameHeight) / 2f
 
@@ -522,6 +660,166 @@ private fun calculateViewfinderRect(
         right = left + frameWidth,
         bottom = top + frameHeight,
     )
+}
+
+private fun NormalizedMeteringRect.toComposeRect(
+    viewWidth: Float,
+    viewHeight: Float,
+): Rect {
+    return Rect(
+        left = (left * viewWidth).toFloat(),
+        top = (top * viewHeight).toFloat(),
+        right = (right * viewWidth).toFloat(),
+        bottom = (bottom * viewHeight).toFloat(),
+    )
+}
+
+@Composable
+@OptIn(ExperimentalMaterial3Api::class)
+private fun FocalLengthSlider(
+    frameFormat: FrameFormat,
+    focalLengthMm: Double,
+    zoomRatio: Float,
+    zoomLimited: Boolean,
+    enabled: Boolean,
+    onFocalLengthChanged: (Double) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(
+            text = buildString {
+                append(frameFormat.displayName)
+                append(" · ")
+                append(focalLengthMm.roundToInt())
+                append("mm · ")
+                append("%.1f×".format(zoomRatio))
+                if (zoomLimited) append(" 上限")
+            },
+            color = if (zoomLimited) {
+                Color(0xFFE5B567)
+            } else {
+                Color.White.copy(alpha = 0.72f)
+            },
+            style = MaterialTheme.typography.labelSmall,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Slider(
+            value = focalLengthMm.toFloat(),
+            onValueChange = {
+                onFocalLengthChanged(it.roundToInt().toDouble())
+            },
+            valueRange = MeteringViewModel.MIN_FOCAL_LENGTH_MM.toFloat()..
+                MeteringViewModel.MAX_FOCAL_LENGTH_MM.toFloat(),
+            steps = (
+                MeteringViewModel.MAX_FOCAL_LENGTH_MM -
+                    MeteringViewModel.MIN_FOCAL_LENGTH_MM
+                ).roundToInt() - 1,
+            enabled = enabled,
+            modifier = Modifier.height(28.dp),
+            thumb = {
+                Surface(
+                    color = if (enabled) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        Color.White.copy(alpha = 0.38f)
+                    },
+                    shape = RoundedCornerShape(3.dp),
+                    modifier = Modifier.size(width = 12.dp, height = 20.dp),
+                ) {}
+            },
+            track = {
+                val fraction = (
+                    (focalLengthMm - MeteringViewModel.MIN_FOCAL_LENGTH_MM) /
+                        (
+                            MeteringViewModel.MAX_FOCAL_LENGTH_MM -
+                                MeteringViewModel.MIN_FOCAL_LENGTH_MM
+                            )
+                    ).toFloat().coerceIn(0f, 1f)
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(4.dp)
+                        .background(
+                            Color.White.copy(alpha = if (enabled) 0.24f else 0.12f),
+                            RoundedCornerShape(1.dp),
+                        ),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(fraction)
+                            .height(4.dp)
+                            .background(
+                                if (enabled) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    Color.White.copy(alpha = 0.28f)
+                                },
+                                RoundedCornerShape(1.dp),
+                            ),
+                    )
+                }
+            },
+        )
+    }
+}
+
+@Composable
+private fun ExposureRiskLegend(
+    riskMask: ExposureRiskMask,
+    exposureCompensation: Double,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        color = Color.Black.copy(alpha = 0.68f),
+        shape = RoundedCornerShape(10.dp),
+        modifier = modifier,
+    ) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+        ) {
+            RiskLegendItem(
+                color = Color(0xFFFF2D2D),
+                label = "高光 %.1f%%".format(riskMask.highlightRatio * 100.0),
+            )
+            RiskLegendItem(
+                color = Color(0xFF00D26A),
+                label = "暗部 %.1f%%".format(riskMask.shadowRatio * 100.0),
+            )
+            Text(
+                text = "EC ${formatExposureCompensation(exposureCompensation)}",
+                color = Color.White.copy(alpha = 0.72f),
+                style = MaterialTheme.typography.labelSmall,
+            )
+        }
+    }
+}
+
+@Composable
+private fun RiskLegendItem(
+    color: Color,
+    label: String,
+) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(9.dp)
+                .background(color, CircleShape),
+        )
+        Text(
+            text = label,
+            color = Color.White,
+            style = MaterialTheme.typography.labelSmall,
+        )
+    }
 }
 
 @Composable
@@ -609,14 +907,12 @@ private fun ExposureScaleOverlay(
             title = "光圈",
             candidates = apertureCandidates,
             selectedIndex = selectedApertureIndex,
-            alignEnd = false,
             onStep = onApertureStep,
         )
         ExposureSideScale(
             title = "快门",
             candidates = shutterCandidates,
             selectedIndex = selectedShutterIndex,
-            alignEnd = true,
             onStep = onShutterStep,
         )
     }
@@ -627,7 +923,6 @@ private fun ExposureSideScale(
     title: String,
     candidates: List<String>,
     selectedIndex: Int,
-    alignEnd: Boolean,
     onStep: (Int) -> Unit,
 ) {
     var dragOffset by remember { mutableStateOf(0f) }
@@ -636,7 +931,7 @@ private fun ExposureSideScale(
         color = Color.Black.copy(alpha = 0.54f),
         shape = RoundedCornerShape(12.dp),
         modifier = Modifier
-            .width(82.dp)
+            .width(68.dp)
             .pointerInput(candidates, selectedIndex) {
                 var accumulatedDrag = 0f
                 val stepThreshold = 28.dp.toPx()
@@ -671,16 +966,18 @@ private fun ExposureSideScale(
             },
     ) {
         Column(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 9.dp),
-            horizontalAlignment = if (alignEnd) Alignment.End else Alignment.Start,
+            modifier = Modifier.padding(horizontal = 4.dp, vertical = 9.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Text(
                 text = title,
                 color = Color.White.copy(alpha = 0.58f),
                 style = MaterialTheme.typography.labelSmall,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
             )
             Column(
-                horizontalAlignment = if (alignEnd) Alignment.End else Alignment.Start,
+                horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(1.dp),
                 modifier = Modifier.graphicsLayer {
                     translationY = dragOffset
@@ -708,6 +1005,7 @@ private fun ExposureSideScale(
                         text = label.ifEmpty { " " },
                         color = if (offset == 0) Color(0xFFE5B567) else Color.White,
                         modifier = Modifier
+                            .fillMaxWidth()
                             .height(22.dp)
                             .graphicsLayer {
                                 scaleX = scale
@@ -719,6 +1017,7 @@ private fun ExposureSideScale(
                         } else {
                             MaterialTheme.typography.bodyMedium
                         },
+                        textAlign = TextAlign.Center,
                     )
                 }
             }
@@ -726,20 +1025,286 @@ private fun ExposureSideScale(
     }
 }
 
+private enum class QuickSetting {
+    ISO,
+    EXPOSURE_COMPENSATION,
+}
+
+@Composable
+@OptIn(ExperimentalFoundationApi::class)
+private fun QuickSettingButton(
+    label: String,
+    value: String,
+    onOpen: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        color = Color.White.copy(alpha = 0.08f),
+        shape = RoundedCornerShape(10.dp),
+        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.22f)),
+        modifier = modifier.combinedClickable(
+            onClick = onOpen,
+            onLongClick = onOpen,
+            onLongClickLabel = "设置$label",
+        ),
+    ) {
+        Column(
+            modifier = Modifier.padding(vertical = 10.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(
+                text = label,
+                color = Color.White.copy(alpha = 0.62f),
+                style = MaterialTheme.typography.labelSmall,
+            )
+            Text(
+                text = value,
+                color = Color.White,
+                style = MaterialTheme.typography.titleMedium,
+            )
+        }
+    }
+}
+
+@Composable
+private fun QuickSettingDialog(
+    setting: QuickSetting,
+    selectedIso: Int,
+    selectedExposureCompensation: Double,
+    onIsoSelected: (Int) -> Unit,
+    onExposureCompensationSelected: (Double) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val isoOptions = MeteringViewModel.isoOptions
+    val exposureCompensationOptions = MeteringViewModel.exposureCompensationOptions
+    var pendingIso by remember(setting, selectedIso) {
+        mutableStateOf(
+            isoOptions.minByOrNull { abs(it - selectedIso) }
+                ?: isoOptions.first(),
+        )
+    }
+    var pendingExposureCompensation by remember(
+        setting,
+        selectedExposureCompensation,
+    ) {
+        mutableStateOf(selectedExposureCompensation)
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        modifier = Modifier.width(260.dp),
+        containerColor = Color(0xFF1B1B1B),
+        titleContentColor = Color.White,
+        textContentColor = Color.White,
+        title = {
+            Text(
+                if (setting == QuickSetting.ISO) {
+                    "选择 ISO"
+                } else {
+                    "选择曝光补偿"
+                },
+            )
+        },
+        text = {
+            if (setting == QuickSetting.ISO) {
+                val selectedIndex = isoOptions.indexOf(pendingIso)
+                    .coerceAtLeast(0)
+                VerticalValueWheel(
+                    values = isoOptions.map(Int::toString),
+                    selectedIndex = selectedIndex,
+                    onSelectedIndexChanged = { pendingIso = isoOptions[it] },
+                )
+            } else {
+                val selectedIndex = exposureCompensationOptions
+                    .indices
+                    .minByOrNull {
+                        abs(
+                            exposureCompensationOptions[it] -
+                                pendingExposureCompensation,
+                        )
+                    } ?: 0
+                VerticalValueWheel(
+                    values = exposureCompensationOptions.map(
+                        ::formatExposureCompensation,
+                    ),
+                    selectedIndex = selectedIndex,
+                    onSelectedIndexChanged = {
+                        pendingExposureCompensation =
+                            exposureCompensationOptions[it]
+                    },
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    if (setting == QuickSetting.ISO) {
+                        onIsoSelected(pendingIso)
+                    } else {
+                        onExposureCompensationSelected(
+                            pendingExposureCompensation,
+                        )
+                    }
+                    onDismiss()
+                },
+            ) {
+                Text(
+                    text = "确定",
+                    color = Color(0xFFE5B567),
+                )
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(
+                    text = "取消",
+                    color = Color.White.copy(alpha = 0.78f),
+                )
+            }
+        },
+    )
+}
+
+@Composable
+private fun VerticalValueWheel(
+    values: List<String>,
+    selectedIndex: Int,
+    onSelectedIndexChanged: (Int) -> Unit,
+) {
+    val currentOnSelectedIndexChanged by rememberUpdatedState(
+        onSelectedIndexChanged,
+    )
+    val currentSelectedIndex by rememberUpdatedState(selectedIndex)
+    var dragOffset by remember { mutableStateOf(0f) }
+
+    Surface(
+        color = Color(0xFF0D0D0D),
+        shape = RoundedCornerShape(14.dp),
+        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.18f)),
+        modifier = Modifier
+            .fillMaxWidth()
+            .pointerInput(values) {
+                var accumulatedDrag = 0f
+                var gestureIndex = currentSelectedIndex
+                val stepThreshold = 46.dp.toPx()
+                detectVerticalDragGestures(
+                    onDragStart = {
+                        accumulatedDrag = 0f
+                        gestureIndex = currentSelectedIndex
+                        dragOffset = 0f
+                    },
+                    onDragCancel = {
+                        accumulatedDrag = 0f
+                        dragOffset = 0f
+                    },
+                    onDragEnd = {
+                        accumulatedDrag = 0f
+                        dragOffset = 0f
+                    },
+                    onVerticalDrag = { change, dragAmount ->
+                        change.consume()
+                        accumulatedDrag += dragAmount
+                        while (abs(accumulatedDrag) >= stepThreshold) {
+                            val step = if (accumulatedDrag < 0f) 1 else -1
+                            val nextIndex = (gestureIndex + step)
+                                .coerceIn(values.indices)
+                            if (nextIndex == gestureIndex) {
+                                accumulatedDrag = 0f
+                            } else {
+                                gestureIndex = nextIndex
+                                currentOnSelectedIndexChanged(nextIndex)
+                                accumulatedDrag += if (step > 0) {
+                                    stepThreshold
+                                } else {
+                                    -stepThreshold
+                                }
+                            }
+                        }
+                        dragOffset = accumulatedDrag.coerceIn(
+                            -stepThreshold,
+                            stepThreshold,
+                        )
+                    },
+                )
+            },
+    ) {
+        Column(
+            modifier = Modifier
+                .padding(vertical = 8.dp)
+                .graphicsLayer {
+                    translationY = dragOffset
+                },
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            (-2..2).forEach { offset ->
+                val value = values.getOrNull(selectedIndex + offset).orEmpty()
+                val selected = offset == 0
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(46.dp)
+                        .background(
+                            if (selected) {
+                                Color(0xFFE5B567).copy(alpha = 0.18f)
+                            } else {
+                                Color.Transparent
+                            },
+                        ),
+                ) {
+                    Text(
+                        text = value.ifEmpty { " " },
+                        color = if (selected) {
+                            Color(0xFFFFD58A)
+                        } else {
+                            Color.White.copy(
+                                alpha = if (abs(offset) == 1) 0.68f else 0.38f,
+                            )
+                        },
+                        style = if (selected) {
+                            MaterialTheme.typography.headlineMedium
+                        } else if (abs(offset) == 1) {
+                            MaterialTheme.typography.bodyMedium
+                        } else {
+                            MaterialTheme.typography.labelMedium
+                        },
+                        modifier = Modifier.graphicsLayer {
+                            scaleX = if (selected) 1f else 0.86f
+                            scaleY = if (selected) 1f else 0.86f
+                        },
+                    )
+                }
+            }
+        }
+    }
+}
+
+private fun formatExposureCompensation(value: Double): String {
+    return "%+.1f EV".format(value)
+}
+
 @Composable
 private fun ExposurePanel(
     state: MeteringUiState,
     onIsoSelected: (Int) -> Unit,
-    onFramePresetSelected: (FramePreset) -> Unit,
+    onFrameFormatSelected: (FrameFormat) -> Unit,
     onMeteringPresetSelected: (MeteringMode) -> Unit,
     onCameraMeteringPresetSelected: (CameraMeteringPreset?) -> Unit,
     onSpotAreaChanged: (Int) -> Unit,
     onCenterAreaChanged: (Int) -> Unit,
     onCenterWeightChanged: (Int) -> Unit,
-    onExposureCompensationChanged: (Double) -> Unit,
+    onExposureRiskEnabledChanged: (Boolean) -> Unit,
+    onFilmLatitudePresetSelected: (FilmLatitudePreset?) -> Unit,
+    onHighlightLatitudeChanged: (Double) -> Unit,
+    onShadowLatitudeChanged: (Double) -> Unit,
+    onExposureCompensationSelected: (Double) -> Unit,
+    zoomRatio: Float,
+    zoomLimited: Boolean,
+    onFocalLengthChanged: (Double) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var showSettings by rememberSaveable { mutableStateOf(false) }
+    var quickSetting by rememberSaveable { mutableStateOf<QuickSetting?>(null) }
 
     Surface(
         color = Color.Black.copy(alpha = 0.82f),
@@ -747,22 +1312,27 @@ private fun ExposurePanel(
     ) {
         Column(
             modifier = Modifier
-                .padding(horizontal = 18.dp, vertical = 16.dp)
-                .verticalScroll(rememberScrollState()),
+                .padding(horizontal = 18.dp, vertical = 10.dp),
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                ParameterValue(label = "ISO", value = state.selectedIso.toString())
                 ParameterValue(
                     label = "EV",
                     value = state.ev100Metered?.let { "%.1f".format(it) } ?: "--",
                 )
-                ParameterValue(
-                    label = "EC",
-                    value = "%+.1f".format(state.exposureCompensation),
+                FocalLengthSlider(
+                    frameFormat = state.frameFormat,
+                    focalLengthMm = state.focalLengthMm,
+                    zoomRatio = zoomRatio,
+                    zoomLimited = zoomLimited,
+                    enabled = !state.isFrozen,
+                    onFocalLengthChanged = onFocalLengthChanged,
+                    modifier = Modifier
+                        .width(168.dp)
+                        .padding(horizontal = 10.dp),
                 )
                 ParameterValue(
                     label = "推荐",
@@ -772,47 +1342,27 @@ private fun ExposurePanel(
                 )
             }
 
-            Spacer(modifier = Modifier.height(14.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
-            ControlLabel(text = "ISO")
-            OptionRow {
-                MeteringViewModel.isoOptions.forEach { iso ->
-                    ChoiceButton(
-                        text = iso.toString(),
-                        selected = state.selectedIso == iso,
-                        onClick = { onIsoSelected(iso) },
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            ControlLabel(text = "曝光补偿")
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                OutlinedButton(
-                    onClick = { onExposureCompensationChanged(-1.0 / 3.0) },
-                    contentPadding = PaddingValues(horizontal = 18.dp),
-                ) {
-                    Text("-1/3")
-                }
-                Text(
-                    text = "%+.1f EV".format(state.exposureCompensation),
-                    color = Color.White,
-                    style = MaterialTheme.typography.titleMedium,
+                QuickSettingButton(
+                    label = "ISO",
+                    value = state.selectedIso.toString(),
+                    onOpen = { quickSetting = QuickSetting.ISO },
+                    modifier = Modifier.weight(1f),
                 )
-                OutlinedButton(
-                    onClick = { onExposureCompensationChanged(1.0 / 3.0) },
-                    contentPadding = PaddingValues(horizontal = 18.dp),
-                ) {
-                    Text("+1/3")
-                }
+                QuickSettingButton(
+                    label = "曝光补偿",
+                    value = formatExposureCompensation(state.exposureCompensation),
+                    onOpen = { quickSetting = QuickSetting.EXPOSURE_COMPENSATION },
+                    modifier = Modifier.weight(1f),
+                )
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(6.dp))
 
             OutlinedButton(
                 onClick = { showSettings = true },
@@ -831,20 +1381,45 @@ private fun ExposurePanel(
         }
     }
 
+    quickSetting?.let { setting ->
+        QuickSettingDialog(
+            setting = setting,
+            selectedIso = state.selectedIso,
+            selectedExposureCompensation = state.exposureCompensation,
+            onIsoSelected = {
+                onIsoSelected(it)
+                quickSetting = null
+            },
+            onExposureCompensationSelected = {
+                onExposureCompensationSelected(it)
+                quickSetting = null
+            },
+            onDismiss = { quickSetting = null },
+        )
+    }
+
     if (showSettings) {
         AppSettingsDialog(
-            selectedFramePreset = state.framePreset,
+            selectedFrameFormat = state.frameFormat,
             selectedMeteringPreset = state.meteringPreset,
             selectedCameraMeteringPreset = state.cameraMeteringPreset,
             spotAreaPercent = state.spotAreaPercent,
             centerAreaPercent = state.centerAreaPercent,
             centerWeightPercent = state.centerWeightPercent,
-            onFramePresetSelected = onFramePresetSelected,
+            exposureRiskEnabled = state.exposureRiskEnabled,
+            selectedFilmLatitudePreset = state.filmLatitudePreset,
+            highlightLatitudeStops = state.highlightLatitudeStops,
+            shadowLatitudeStops = state.shadowLatitudeStops,
+            onFrameFormatSelected = onFrameFormatSelected,
             onMeteringPresetSelected = onMeteringPresetSelected,
             onCameraMeteringPresetSelected = onCameraMeteringPresetSelected,
             onSpotAreaChanged = onSpotAreaChanged,
             onCenterAreaChanged = onCenterAreaChanged,
             onCenterWeightChanged = onCenterWeightChanged,
+            onExposureRiskEnabledChanged = onExposureRiskEnabledChanged,
+            onFilmLatitudePresetSelected = onFilmLatitudePresetSelected,
+            onHighlightLatitudeChanged = onHighlightLatitudeChanged,
+            onShadowLatitudeChanged = onShadowLatitudeChanged,
             onDismiss = { showSettings = false },
         )
     }
@@ -852,20 +1427,32 @@ private fun ExposurePanel(
 
 @Composable
 private fun AppSettingsDialog(
-    selectedFramePreset: FramePreset,
+    selectedFrameFormat: FrameFormat,
     selectedMeteringPreset: MeteringMode,
     selectedCameraMeteringPreset: CameraMeteringPreset?,
     spotAreaPercent: Int,
     centerAreaPercent: Int,
     centerWeightPercent: Int,
-    onFramePresetSelected: (FramePreset) -> Unit,
+    exposureRiskEnabled: Boolean,
+    selectedFilmLatitudePreset: FilmLatitudePreset?,
+    highlightLatitudeStops: Double,
+    shadowLatitudeStops: Double,
+    onFrameFormatSelected: (FrameFormat) -> Unit,
     onMeteringPresetSelected: (MeteringMode) -> Unit,
     onCameraMeteringPresetSelected: (CameraMeteringPreset?) -> Unit,
     onSpotAreaChanged: (Int) -> Unit,
     onCenterAreaChanged: (Int) -> Unit,
     onCenterWeightChanged: (Int) -> Unit,
+    onExposureRiskEnabledChanged: (Boolean) -> Unit,
+    onFilmLatitudePresetSelected: (FilmLatitudePreset?) -> Unit,
+    onHighlightLatitudeChanged: (Double) -> Unit,
+    onShadowLatitudeChanged: (Double) -> Unit,
     onDismiss: () -> Unit,
 ) {
+    var frameFormatExpanded by rememberSaveable { mutableStateOf(true) }
+    var meteringExpanded by rememberSaveable { mutableStateOf(false) }
+    var exposureRiskExpanded by rememberSaveable { mutableStateOf(false) }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("设置") },
@@ -874,82 +1461,176 @@ private fun AppSettingsDialog(
                 modifier = Modifier
                     .heightIn(max = 520.dp)
                     .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                ControlLabel(text = "画幅与焦距")
-                OptionRow {
-                    FramePreset.entries.forEach { preset ->
-                        ChoiceButton(
-                            text = preset.displayName,
-                            selected = selectedFramePreset == preset,
-                            onClick = { onFramePresetSelected(preset) },
-                        )
+                CollapsibleSettingsSection(
+                    title = "画幅选择",
+                    expanded = frameFormatExpanded,
+                    onToggle = { frameFormatExpanded = !frameFormatExpanded },
+                ) {
+                    OptionRow {
+                        FrameFormat.entries.forEach { format ->
+                            ChoiceButton(
+                                text = format.displayName,
+                                selected = selectedFrameFormat == format,
+                                onClick = { onFrameFormatSelected(format) },
+                            )
+                        }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(18.dp))
-                ControlLabel(text = "测光预设")
-                OptionRow {
-                    MeteringMode.entries.forEach { mode ->
+                CollapsibleSettingsSection(
+                    title = "测光预设",
+                    expanded = meteringExpanded,
+                    onToggle = { meteringExpanded = !meteringExpanded },
+                ) {
+                    ControlLabel(text = "测光模式")
+                    OptionRow {
+                        MeteringMode.entries.forEach { mode ->
+                            ChoiceButton(
+                                text = mode.displayName(),
+                                selected = selectedMeteringPreset == mode,
+                                onClick = { onMeteringPresetSelected(mode) },
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+                    ControlLabel(text = "机型预设")
+                    OptionRow {
                         ChoiceButton(
-                            text = mode.displayName(),
-                            selected = selectedMeteringPreset == mode,
-                            onClick = { onMeteringPresetSelected(mode) },
+                            text = "自定义",
+                            selected = selectedCameraMeteringPreset == null,
+                            onClick = { onCameraMeteringPresetSelected(null) },
                         )
+                        CameraMeteringPreset.entries.forEach { preset ->
+                            ChoiceButton(
+                                text = preset.displayName,
+                                selected = selectedCameraMeteringPreset == preset,
+                                onClick = { onCameraMeteringPresetSelected(preset) },
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+                    when (selectedMeteringPreset) {
+                        MeteringMode.SPOT -> {
+                            PercentageControl(
+                                label = "点测光面积",
+                                value = spotAreaPercent,
+                                onDecrease = { onSpotAreaChanged(-1) },
+                                onIncrease = { onSpotAreaChanged(1) },
+                            )
+                            SettingHint("读取画面中心区域；点击画面后，测光中心移动到点击位置。")
+                        }
+
+                        MeteringMode.CENTER_WEIGHTED -> {
+                            PercentageControl(
+                                label = "中央区域面积",
+                                value = centerAreaPercent,
+                                onDecrease = { onCenterAreaChanged(-5) },
+                                onIncrease = { onCenterAreaChanged(5) },
+                            )
+                            Spacer(modifier = Modifier.height(10.dp))
+                            PercentageControl(
+                                label = "中央测光权重",
+                                value = centerWeightPercent,
+                                onDecrease = { onCenterWeightChanged(-5) },
+                                onIncrease = { onCenterWeightChanged(5) },
+                            )
+                            SettingHint(
+                                "外围区域自动使用剩余 ${100 - centerAreaPercent}% 面积和 " +
+                                    "${100 - centerWeightPercent}% 权重。",
+                            )
+                        }
+
+                        MeteringMode.AVERAGE -> {
+                            SettingHint("读取整个画面的平均亮度，不使用额外权重。")
+                        }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(18.dp))
-                ControlLabel(text = "机型测光预设")
-                OptionRow {
-                    ChoiceButton(
-                        text = "自定义",
-                        selected = selectedCameraMeteringPreset == null,
-                        onClick = { onCameraMeteringPresetSelected(null) },
-                    )
-                    CameraMeteringPreset.entries.forEach { preset ->
+                CollapsibleSettingsSection(
+                    title = "曝光风险宽容度",
+                    expanded = exposureRiskExpanded,
+                    onToggle = { exposureRiskExpanded = !exposureRiskExpanded },
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column {
+                            Text(
+                                text = "开启曝光风险预览",
+                                color = Color.White,
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                            Text(
+                                text = if (exposureRiskEnabled) "已开启" else "已关闭",
+                                color = Color.White.copy(alpha = 0.56f),
+                                style = MaterialTheme.typography.labelSmall,
+                            )
+                        }
+                        Switch(
+                            checked = exposureRiskEnabled,
+                            onCheckedChange = onExposureRiskEnabledChanged,
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(12.dp))
+                    ControlLabel(text = "胶片预设")
+                    OptionRow {
                         ChoiceButton(
-                            text = preset.displayName,
-                            selected = selectedCameraMeteringPreset == preset,
-                            onClick = { onCameraMeteringPresetSelected(preset) },
+                            text = "自定义",
+                            selected = selectedFilmLatitudePreset == null,
+                            onClick = { onFilmLatitudePresetSelected(null) },
                         )
+                        FilmLatitudePreset.entries.forEach { preset ->
+                            ChoiceButton(
+                                text = preset.displayName,
+                                selected = selectedFilmLatitudePreset == preset,
+                                onClick = { onFilmLatitudePresetSelected(preset) },
+                            )
+                        }
                     }
-                }
-
-                Spacer(modifier = Modifier.height(14.dp))
-                when (selectedMeteringPreset) {
-                    MeteringMode.SPOT -> {
-                        PercentageControl(
-                            label = "点测光面积",
-                            value = spotAreaPercent,
-                            onDecrease = { onSpotAreaChanged(-1) },
-                            onIncrease = { onSpotAreaChanged(1) },
-                        )
-                        SettingHint("读取画面中心区域；点击画面后，测光中心移动到点击位置。")
-                    }
-
-                    MeteringMode.CENTER_WEIGHTED -> {
-                        PercentageControl(
-                            label = "中央区域面积",
-                            value = centerAreaPercent,
-                            onDecrease = { onCenterAreaChanged(-5) },
-                            onIncrease = { onCenterAreaChanged(5) },
-                        )
-                        Spacer(modifier = Modifier.height(10.dp))
-                        PercentageControl(
-                            label = "中央测光权重",
-                            value = centerWeightPercent,
-                            onDecrease = { onCenterWeightChanged(-5) },
-                            onIncrease = { onCenterWeightChanged(5) },
-                        )
+                    selectedFilmLatitudePreset?.let { preset ->
                         SettingHint(
-                            "外围区域自动使用剩余 ${100 - centerAreaPercent}% 面积和 " +
-                                "${100 - centerWeightPercent}% 权重。",
+                            "${preset.evidence.displayName} · " +
+                                "高光 +%.1f EV / 暗部 -%.1f EV".format(
+                                    preset.highlightStops,
+                                    preset.shadowStops,
+                                ),
                         )
                     }
-
-                    MeteringMode.AVERAGE -> {
-                        SettingHint("读取整个画面的平均亮度，不使用额外权重。")
-                    }
+                    Spacer(modifier = Modifier.height(12.dp))
+                    StopControl(
+                        label = "高光",
+                        value = highlightLatitudeStops,
+                        enabled = exposureRiskEnabled,
+                        onDecrease = {
+                            onHighlightLatitudeChanged(-MeteringViewModel.EV_THIRD_STEP)
+                        },
+                        onIncrease = {
+                            onHighlightLatitudeChanged(MeteringViewModel.EV_THIRD_STEP)
+                        },
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    StopControl(
+                        label = "暗部",
+                        value = -shadowLatitudeStops,
+                        enabled = exposureRiskEnabled,
+                        onDecrease = {
+                            onShadowLatitudeChanged(-MeteringViewModel.EV_THIRD_STEP)
+                        },
+                        onIncrease = {
+                            onShadowLatitudeChanged(MeteringViewModel.EV_THIRD_STEP)
+                        },
+                    )
+                    SettingHint(
+                        "冻结画面后，高光风险显示红色、暗部风险显示绿色，" +
+                            "颜色随超出程度逐渐加深。" +
+                            "经验近似预设不是厂商保证值。",
+                    )
                 }
             }
         },
@@ -962,6 +1643,53 @@ private fun AppSettingsDialog(
         titleContentColor = Color.White,
         textContentColor = Color.White,
     )
+}
+
+@Composable
+private fun CollapsibleSettingsSection(
+    title: String,
+    expanded: Boolean,
+    onToggle: () -> Unit,
+    content: @Composable () -> Unit,
+) {
+    Surface(
+        color = Color.White.copy(alpha = 0.05f),
+        shape = RoundedCornerShape(10.dp),
+        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.14f)),
+    ) {
+        Column {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onToggle)
+                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = title,
+                    color = Color.White,
+                    style = MaterialTheme.typography.titleSmall,
+                )
+                Text(
+                    text = if (expanded) "▲" else "▼",
+                    color = Color.White.copy(alpha = 0.62f),
+                    style = MaterialTheme.typography.labelSmall,
+                )
+            }
+            if (expanded) {
+                Column(
+                    modifier = Modifier.padding(
+                        start = 14.dp,
+                        end = 14.dp,
+                        bottom = 14.dp,
+                    ),
+                ) {
+                    content()
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -998,6 +1726,51 @@ private fun PercentageControl(
             )
             OutlinedButton(
                 onClick = onIncrease,
+                contentPadding = PaddingValues(horizontal = 12.dp),
+            ) {
+                Text("+")
+            }
+        }
+    }
+}
+
+@Composable
+private fun StopControl(
+    label: String,
+    value: Double,
+    enabled: Boolean = true,
+    onDecrease: () -> Unit,
+    onIncrease: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = label,
+            color = Color.White.copy(alpha = if (enabled) 1f else 0.42f),
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            OutlinedButton(
+                onClick = onDecrease,
+                enabled = enabled,
+                contentPadding = PaddingValues(horizontal = 12.dp),
+            ) {
+                Text("−")
+            }
+            Text(
+                text = "%+.1f EV".format(value),
+                color = Color(0xFFE5B567).copy(alpha = if (enabled) 1f else 0.42f),
+                style = MaterialTheme.typography.titleMedium,
+            )
+            OutlinedButton(
+                onClick = onIncrease,
+                enabled = enabled,
                 contentPadding = PaddingValues(horizontal = 12.dp),
             ) {
                 Text("+")

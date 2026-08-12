@@ -23,6 +23,7 @@ V1 支持两种测光模式：
 
 - `SENSOR_EXPOSURE_TIME`：手机当前曝光时间，单位 ns。
 - `SENSOR_SENSITIVITY`：手机当前 ISO。
+- `CONTROL_POST_RAW_SENSITIVITY_BOOST`：RAW 后额外数字增益，缺失时按 100%。
 - `LENS_APERTURE`：手机镜头光圈值，通常为固定值，例如 f/1.8。
 - `ImageAnalysis` 预览帧的 YUV 数据，主要使用 Y 平面。
 
@@ -31,7 +32,8 @@ V1 支持两种测光模式：
 先计算手机当前曝光设置对应的 EV：
 
 ```text
-EV_setting = log2(N^2 / t) - log2(ISO_camera / 100)
+ISO_effective = ISO_camera * post_raw_boost / 100
+EV_setting = log2(N^2 / t) - log2(ISO_effective / 100)
 ```
 
 其中：
@@ -211,10 +213,10 @@ error <= 1/6EV
 V1 推荐使用安全快门优先：
 
 ```text
-135 + 35mm：优先快门不慢于 1/30s
-135 + 50mm：优先快门不慢于 1/60s
-135 + 70mm：优先快门不慢于 1/125s
-6x4.5 + 75mm：优先快门不慢于 1/125s
+20mm ~ 35mm：优先快门不慢于 1/30s
+36mm ~ 50mm：优先快门不慢于 1/60s
+51mm ~ 90mm：优先快门不慢于 1/125s
+91mm ~ 120mm：优先快门不慢于 1/250s
 ```
 
 选择规则：

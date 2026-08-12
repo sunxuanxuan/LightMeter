@@ -302,11 +302,16 @@ EV_filtered =
 
 ```text
 1. 从 PreviewView 获取当前 Bitmap。
-2. ViewModel 进入 isFrozen 状态。
-3. 保留最后一次 EV100。
-4. 丢弃后续 MeteringResult。
-5. 用户仍然可以调整 ISO、曝光补偿和曝光组合。
+2. 从 ImageAnalysis 保留最近一帧低分辨率逐像素 EV100 图。
+3. ViewModel 进入 isFrozen 状态。
+4. 保留最后一次 EV100。
+5. 丢弃后续 MeteringResult。
+6. 根据当前 ISO、光圈、快门和宽容度生成曝光风险蒙层。
+7. 用户仍然可以调整 ISO、曝光补偿、曝光组合和宽容度。
 ```
+
+风险预览只统计模拟取景框内部。高光超过默认 `+4 EV` 时显示红色，
+暗部低于默认 `-3 EV` 时显示绿色；两个阈值都可按 `1/3 EV` 调整。
 
 返回实时模式后重新接收 EV 更新。
 
@@ -320,7 +325,8 @@ EV_filtered =
 EV100_metered
 ISO_film
 exposureCompensation
-framePreset
+frameFormat
+focalLengthMm
 1/3 档光圈表
 经典整档快门表
 ```
@@ -425,13 +431,13 @@ error <= 1/6EV
 
 ### 3.6 默认主推荐
 
-首先根据画幅和焦段筛选满足手持安全快门的组合：
+首先根据焦距筛选满足手持安全快门的组合：
 
 ```text
-135 + 35mm：快门不慢于 1/30s
-135 + 50mm：快门不慢于 1/60s
-135 + 70mm：快门不慢于 1/125s
-6×4.5 + 75mm：快门不慢于 1/125s
+20mm ~ 35mm：快门不慢于 1/30s
+36mm ~ 50mm：快门不慢于 1/60s
+51mm ~ 90mm：快门不慢于 1/125s
+91mm ~ 120mm：快门不慢于 1/250s
 ```
 
 然后按常用光圈顺序选择：
@@ -521,29 +527,23 @@ focalLength = 24mm
 
 ### 4.3 目标画幅参数
 
-当前预设：
+当前画幅：
 
 ```text
-135 + 35mm：
+135：
     frame = 36mm × 24mm
-    focal = 35mm
 
-135 + 50mm：
-    frame = 36mm × 24mm
-    focal = 50mm
-
-135 + 70mm：
-    frame = 36mm × 24mm
-    focal = 70mm
-
-APS-C + 50mm：
+APS-C：
     frame = 23.6mm × 15.7mm
-    focal = 50mm
 
-6×4.5 + 75mm：
+6×4.5：
     frame = 56mm × 41.5mm
-    focal = 75mm
+
+6×6：
+    frame = 56mm × 56mm
 ```
+
+目标焦距由预览页滑块设置，范围为 `20mm ~ 120mm`，步长为 `1mm`。
 
 App 当前固定为竖屏，因此计算时使用：
 
@@ -611,21 +611,24 @@ heightFraction =
     targetProjectionHeight / displayedSensorHeight
 ```
 
-比例限制在：
+基础比例保留原始值，用于计算自动变焦倍率：
 
 ```text
-0.0 ~ 1.0
+fitZoom = 1 / max(widthFraction, heightFraction)
 ```
 
-当目标视野比手机当前视野更宽时，无法显示手机画面之外的内容，只能限制到完整预览范围。
+目标倍率限制在设备的 `minZoomRatio ~ maxZoomRatio` 范围。
 
 ### 4.6 取景框生成
 
-最终取景框尺寸：
+CameraX 回传实际倍率后，最终取景框尺寸：
 
 ```text
-frameWidth = previewWidth × widthFraction
-frameHeight = previewHeight × heightFraction
+frameWidth =
+    previewWidth × clamp(widthFraction × actualZoom, 0, 1)
+
+frameHeight =
+    previewHeight × clamp(heightFraction × actualZoom, 0, 1)
 ```
 
 取景框居中：
@@ -637,12 +640,12 @@ top = (previewHeight - frameHeight) / 2
 
 UI 在框外绘制半透明黑色遮罩，在框边缘绘制白色边框。
 
-焦段越长：
+焦段越长时系统请求更高 CameraX 倍率。设备能够达到目标倍率时，取景框
+长边填满预览；达到倍率上限后，画面保留剩余边框并显示上限提示。
 
 ```text
 targetProjection 越小
-取景框越小
-等效视野越窄
+fitZoom 越大
 ```
 
 ### 4.7 与点击测光的关系
@@ -672,9 +675,10 @@ UI 只允许用户在当前模拟取景框内部点击进入区域测光。
 
 ### 5.2 点击坐标
 
-当前点击坐标处理了图像旋转，但尚未完整使用 CameraX `ViewPort` 变换矩阵校正所有机型的 `FILL_CENTER` 裁剪差异。
-
-边缘区域可能存在少量视觉位置与实际 ROI 偏差。
+`Preview` 和 `ImageAnalysis` 通过同一个 CameraX `ViewPort` 和
+`UseCaseGroup` 绑定。分析器只读取 `ImageProxy.cropRect`，再根据
+`rotationDegrees` 映射到 PreviewView 归一化坐标，因此点击位置、模拟
+取景框和曝光风险蒙层共享同一裁剪范围。
 
 ### 5.3 等效取景
 
