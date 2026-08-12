@@ -325,9 +325,23 @@ private fun generateExposurePairs(targetEv: Double): List<ExposurePair> {
             .minByOrNull { it.error }
     }
     val withinTolerance = closestByAperture.filter { it.error <= 1.0 / 6.0 }
-    return (withinTolerance.ifEmpty {
-        closestByAperture.sortedBy { it.error }.take(8)
-    })
+    val candidates = withinTolerance.ifEmpty { closestByAperture }
+    val seenApertures = mutableSetOf<String>()
+    val seenShutters = mutableSetOf<String>()
+    val uniquePairs = candidates
+        .sortedBy { it.error }
+        .filter { pair ->
+            if (pair.apertureLabel in seenApertures || pair.shutterLabel in seenShutters) {
+                false
+            } else {
+                seenApertures += pair.apertureLabel
+                seenShutters += pair.shutterLabel
+                true
+            }
+        }
+
+    return uniquePairs
+        .let { if (withinTolerance.isEmpty()) it.take(8) else it }
         .sortedBy { it.shutterSeconds }
 }
 

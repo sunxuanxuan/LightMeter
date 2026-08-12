@@ -34,12 +34,14 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -631,6 +633,8 @@ private fun ExposurePanel(
     onExposureCompensationChanged: (Double) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    var showSettings by rememberSaveable { mutableStateOf(false) }
+
     Surface(
         color = Color.Black.copy(alpha = 0.82f),
         modifier = modifier,
@@ -704,15 +708,11 @@ private fun ExposurePanel(
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            ControlLabel(text = "取景范围")
-            OptionRow {
-                FramePreset.entries.forEach { preset ->
-                    ChoiceButton(
-                        text = preset.displayName,
-                        selected = state.framePreset == preset,
-                        onClick = { onFramePresetSelected(preset) },
-                    )
-                }
+            OutlinedButton(
+                onClick = { showSettings = true },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("设置")
             }
 
             state.errorMessage?.let {
@@ -724,6 +724,50 @@ private fun ExposurePanel(
             }
         }
     }
+
+    if (showSettings) {
+        FramePresetSettingsDialog(
+            selectedPreset = state.framePreset,
+            onPresetSelected = {
+                onFramePresetSelected(it)
+                showSettings = false
+            },
+            onDismiss = { showSettings = false },
+        )
+    }
+}
+
+@Composable
+private fun FramePresetSettingsDialog(
+    selectedPreset: FramePreset,
+    onPresetSelected: (FramePreset) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("画幅与焦距") },
+        text = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                FramePreset.entries.forEach { preset ->
+                    ChoiceButton(
+                        text = preset.displayName,
+                        selected = selectedPreset == preset,
+                        onClick = { onPresetSelected(preset) },
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("完成")
+            }
+        },
+        containerColor = Color(0xFF171717),
+        titleContentColor = Color.White,
+        textContentColor = Color.White,
+    )
 }
 
 @Composable

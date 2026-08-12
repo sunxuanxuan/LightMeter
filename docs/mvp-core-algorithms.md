@@ -346,9 +346,15 @@ error <= 1/6EV
 
 的组合。
 
-`1/6EV` 是 1/3 档步进的一半，可视为最近档位的合理容差。
+由于标准档位的显示值是近似小数，相邻光圈有可能匹配到同一个快门标签。候选结果按 EV 误差从小到大执行唯一性约束：
 
-如果没有任何组合满足容差：
+```text
+1. 光圈标签不能重复。
+2. 快门标签不能重复。
+3. 发生冲突时保留 EV 误差更小的组合。
+```
+
+`1/6EV` 是 1/3 档步进的一半，可视为最近档位的合理容差。
 
 ```text
 返回误差最小的 8 组组合
@@ -466,6 +472,10 @@ focalLength = 24mm
 135 + 75mm：
     frame = 36mm × 24mm
     focal = 75mm
+
+APS-C + 50mm：
+    frame = 23.6mm × 15.7mm
+    focal = 50mm
 
 6×4.5 + 75mm：
     frame = 56mm × 41.5mm
@@ -654,4 +664,3 @@ targetProjection =
 viewfinderFraction =
     targetProjection / displayedPhoneSensorDimension
 ```
-
