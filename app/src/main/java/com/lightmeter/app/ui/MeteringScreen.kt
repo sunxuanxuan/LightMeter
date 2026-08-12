@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -59,9 +60,11 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -73,12 +76,16 @@ import com.lightmeter.app.R
 import com.lightmeter.app.camera.CameraOptics
 import com.lightmeter.app.exposure.ExposurePair
 import com.lightmeter.app.exposure.FramePreset
+import com.lightmeter.app.metering.CameraMeteringPreset
 import com.lightmeter.app.metering.MeteringConfig
 import com.lightmeter.app.metering.MeteringMode
+import com.lightmeter.app.metering.NormalizedMeteringRect
 import com.lightmeter.app.metering.NormalizedPoint
 import com.lightmeter.app.metering.MeteringResult
+import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.min
+import kotlin.math.sqrt
 
 @Composable
 fun MeteringRoute(
@@ -126,11 +133,17 @@ fun MeteringRoute(
         onCameraError = viewModel::onCameraError,
         onMeteringResult = viewModel::onMeteringResult,
         onSpotSelected = viewModel::selectSpot,
-        onAverageMetering = viewModel::useAverageMetering,
+        onRestoreMeteringPreset = viewModel::restoreMeteringPreset,
+        onMeteringPresetSelected = viewModel::selectMeteringPreset,
+        onCameraMeteringPresetSelected = viewModel::selectCameraMeteringPreset,
+        onSpotAreaChanged = viewModel::adjustSpotAreaPercent,
+        onCenterAreaChanged = viewModel::adjustCenterAreaPercent,
+        onCenterWeightChanged = viewModel::adjustCenterWeightPercent,
         onIsoSelected = viewModel::selectIso,
         onFramePresetSelected = viewModel::selectFramePreset,
         onExposureCompensationChanged = viewModel::adjustExposureCompensation,
-        onExposureStep = viewModel::stepExposurePair,
+        onApertureStep = viewModel::stepAperture,
+        onShutterStep = viewModel::stepShutter,
         onFreezePreview = viewModel::freezePreview,
         onResumeLive = viewModel::resumeLivePreview,
         onFreezeCaptureFailed = viewModel::onFreezeCaptureFailed,
@@ -147,11 +160,17 @@ private fun MeteringScreen(
     onCameraError: (Throwable) -> Unit,
     onMeteringResult: (MeteringResult) -> Unit,
     onSpotSelected: (NormalizedPoint) -> Unit,
-    onAverageMetering: () -> Unit,
+    onRestoreMeteringPreset: () -> Unit,
+    onMeteringPresetSelected: (MeteringMode) -> Unit,
+    onCameraMeteringPresetSelected: (CameraMeteringPreset?) -> Unit,
+    onSpotAreaChanged: (Int) -> Unit,
+    onCenterAreaChanged: (Int) -> Unit,
+    onCenterWeightChanged: (Int) -> Unit,
     onIsoSelected: (Int) -> Unit,
     onFramePresetSelected: (FramePreset) -> Unit,
     onExposureCompensationChanged: (Double) -> Unit,
-    onExposureStep: (Int) -> Unit,
+    onApertureStep: (Int) -> Unit,
+    onShutterStep: (Int) -> Unit,
     onFreezePreview: () -> Unit,
     onResumeLive: () -> Unit,
     onFreezeCaptureFailed: () -> Unit,
@@ -169,11 +188,17 @@ private fun MeteringScreen(
                 onCameraError = onCameraError,
                 onMeteringResult = onMeteringResult,
                 onSpotSelected = onSpotSelected,
-                onAverageMetering = onAverageMetering,
+                onRestoreMeteringPreset = onRestoreMeteringPreset,
+                onMeteringPresetSelected = onMeteringPresetSelected,
+                onCameraMeteringPresetSelected = onCameraMeteringPresetSelected,
+                onSpotAreaChanged = onSpotAreaChanged,
+                onCenterAreaChanged = onCenterAreaChanged,
+                onCenterWeightChanged = onCenterWeightChanged,
                 onIsoSelected = onIsoSelected,
                 onFramePresetSelected = onFramePresetSelected,
                 onExposureCompensationChanged = onExposureCompensationChanged,
-                onExposureStep = onExposureStep,
+                onApertureStep = onApertureStep,
+                onShutterStep = onShutterStep,
                 onFreezePreview = onFreezePreview,
                 onResumeLive = onResumeLive,
                 onFreezeCaptureFailed = onFreezeCaptureFailed,
@@ -202,16 +227,45 @@ private fun CameraContent(
     onCameraError: (Throwable) -> Unit,
     onMeteringResult: (MeteringResult) -> Unit,
     onSpotSelected: (NormalizedPoint) -> Unit,
-    onAverageMetering: () -> Unit,
+    onRestoreMeteringPreset: () -> Unit,
+    onMeteringPresetSelected: (MeteringMode) -> Unit,
+    onCameraMeteringPresetSelected: (CameraMeteringPreset?) -> Unit,
+    onSpotAreaChanged: (Int) -> Unit,
+    onCenterAreaChanged: (Int) -> Unit,
+    onCenterWeightChanged: (Int) -> Unit,
     onIsoSelected: (Int) -> Unit,
     onFramePresetSelected: (FramePreset) -> Unit,
     onExposureCompensationChanged: (Double) -> Unit,
-    onExposureStep: (Int) -> Unit,
+    onApertureStep: (Int) -> Unit,
+    onShutterStep: (Int) -> Unit,
     onFreezePreview: () -> Unit,
     onResumeLive: () -> Unit,
     onFreezeCaptureFailed: () -> Unit,
 ) {
     var frozenFrame by remember { mutableStateOf<Bitmap?>(null) }
+    var previewSize by remember { mutableStateOf(IntSize.Zero) }
+    val normalizedViewfinder = remember(
+        previewSize,
+        state.framePreset,
+        state.cameraOptics,
+    ) {
+        if (previewSize.width == 0 || previewSize.height == 0) {
+            NormalizedMeteringRect.Full
+        } else {
+            val frame = calculateViewfinderRect(
+                viewWidth = previewSize.width.toFloat(),
+                viewHeight = previewSize.height.toFloat(),
+                preset = state.framePreset,
+                optics = state.cameraOptics,
+            )
+            NormalizedMeteringRect(
+                left = frame.left / previewSize.width.toDouble(),
+                top = frame.top / previewSize.height.toDouble(),
+                right = frame.right / previewSize.width.toDouble(),
+                bottom = frame.bottom / previewSize.height.toDouble(),
+            )
+        }
+    }
 
     LaunchedEffect(state.isFrozen) {
         if (!state.isFrozen) {
@@ -225,12 +279,22 @@ private fun CameraContent(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
+                .onSizeChanged { previewSize = it }
                 .weight(1.05f),
         ) {
             CameraPreviewView(
                 meteringConfig = MeteringConfig(
                     mode = state.meteringMode,
                     spotPoint = state.spotMeteringPoint,
+                    spotAreaPercent = state.spotAreaPercent,
+                    centerAreaPercent = state.centerAreaPercent,
+                    centerWeightPercent = state.centerWeightPercent,
+                    viewfinderRect = normalizedViewfinder,
+                    previewAspectRatio = if (previewSize.height > 0) {
+                        previewSize.width / previewSize.height.toDouble()
+                    } else {
+                        1.0
+                    },
                     calibrationOffset = state.calibrationOffset,
                 ),
                 freezeRequestId = state.freezeRequestId,
@@ -268,9 +332,11 @@ private fun CameraContent(
             )
 
             ExposureScaleOverlay(
-                exposures = state.equivalentExposures,
+                apertureCandidates = state.apertureCandidates,
+                shutterCandidates = state.shutterCandidates,
                 primaryExposure = state.primaryExposure,
-                onExposureStep = onExposureStep,
+                onApertureStep = onApertureStep,
+                onShutterStep = onShutterStep,
                 modifier = Modifier
                     .align(Alignment.Center)
                     .fillMaxWidth()
@@ -281,9 +347,11 @@ private fun CameraContent(
                 isFrozen = state.isFrozen,
                 canFreeze = state.isCameraReady && state.ev100Metered != null,
                 meteringMode = state.meteringMode,
+                meteringPreset = state.meteringPreset,
+                hasSpotMeteringPoint = state.spotMeteringPoint != null,
                 onFreezePreview = onFreezePreview,
                 onResumeLive = onResumeLive,
-                onAverageMetering = onAverageMetering,
+                onRestoreMeteringPreset = onRestoreMeteringPreset,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .padding(bottom = 12.dp),
@@ -294,6 +362,11 @@ private fun CameraContent(
             state = state,
             onIsoSelected = onIsoSelected,
             onFramePresetSelected = onFramePresetSelected,
+            onMeteringPresetSelected = onMeteringPresetSelected,
+            onCameraMeteringPresetSelected = onCameraMeteringPresetSelected,
+            onSpotAreaChanged = onSpotAreaChanged,
+            onCenterAreaChanged = onCenterAreaChanged,
+            onCenterWeightChanged = onCenterWeightChanged,
             onExposureCompensationChanged = onExposureCompensationChanged,
             modifier = Modifier
                 .fillMaxWidth()
@@ -367,18 +440,41 @@ private fun ViewfinderOverlay(
             style = Stroke(width = 1.dp.toPx()),
         )
 
-        state.spotMeteringPoint?.let { point ->
-            drawCircle(
-                color = Color.White,
-                radius = min(size.width, size.height) * 0.05f,
-                center = Offset(
-                    x = size.width * point.x.toFloat(),
-                    y = size.height * point.y.toFloat(),
-                ),
-                style = Stroke(width = 2.dp.toPx()),
-            )
+        when (state.meteringMode) {
+            MeteringMode.SPOT -> {
+                val point = state.spotMeteringPoint
+                val center = if (point == null) {
+                    frame.center
+                } else {
+                    Offset(
+                        x = size.width * point.x.toFloat(),
+                        y = size.height * point.y.toFloat(),
+                    )
+                }
+                drawCircle(
+                    color = Color.White,
+                    radius = meteringRadius(
+                        width = frame.width,
+                        height = frame.height,
+                        areaPercent = state.spotAreaPercent,
+                    ),
+                    center = center,
+                    style = Stroke(width = 2.dp.toPx()),
+                )
+            }
+
+            MeteringMode.CENTER_WEIGHTED,
+            MeteringMode.AVERAGE -> Unit
         }
     }
+}
+
+private fun meteringRadius(
+    width: Float,
+    height: Float,
+    areaPercent: Int,
+): Float {
+    return sqrt(width * height * areaPercent / 100f / PI.toFloat())
 }
 
 private fun calculateViewfinderRect(
@@ -433,9 +529,11 @@ private fun CaptureControls(
     isFrozen: Boolean,
     canFreeze: Boolean,
     meteringMode: MeteringMode,
+    meteringPreset: MeteringMode,
+    hasSpotMeteringPoint: Boolean,
     onFreezePreview: () -> Unit,
     onResumeLive: () -> Unit,
-    onAverageMetering: () -> Unit,
+    onRestoreMeteringPreset: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Row(
@@ -443,10 +541,13 @@ private fun CaptureControls(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (!isFrozen && meteringMode == MeteringMode.SPOT) {
+        if (
+            !isFrozen &&
+            (meteringMode != meteringPreset || hasSpotMeteringPoint)
+        ) {
             SymbolButton(
                 symbol = "◎",
-                onClick = onAverageMetering,
+                onClick = onRestoreMeteringPreset,
                 enabled = true,
             )
         }
@@ -486,15 +587,18 @@ private fun SymbolButton(
 
 @Composable
 private fun ExposureScaleOverlay(
-    exposures: List<ExposurePair>,
+    apertureCandidates: List<String>,
+    shutterCandidates: List<String>,
     primaryExposure: ExposurePair?,
-    onExposureStep: (Int) -> Unit,
+    onApertureStep: (Int) -> Unit,
+    onShutterStep: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val selectedIndex = primaryExposure
-        ?.let(exposures::indexOf)
-        ?.takeIf { it >= 0 }
-        ?: return
+    val selectedExposure = primaryExposure ?: return
+    val selectedApertureIndex = apertureCandidates.indexOf(selectedExposure.apertureLabel)
+        .takeIf { it >= 0 } ?: return
+    val selectedShutterIndex = shutterCandidates.indexOf(selectedExposure.shutterLabel)
+        .takeIf { it >= 0 } ?: return
 
     Row(
         modifier = modifier,
@@ -503,19 +607,17 @@ private fun ExposureScaleOverlay(
     ) {
         ExposureSideScale(
             title = "光圈",
-            exposures = exposures,
-            selectedIndex = selectedIndex,
-            value = ExposurePair::apertureLabel,
+            candidates = apertureCandidates,
+            selectedIndex = selectedApertureIndex,
             alignEnd = false,
-            onExposureStep = onExposureStep,
+            onStep = onApertureStep,
         )
         ExposureSideScale(
             title = "快门",
-            exposures = exposures,
-            selectedIndex = selectedIndex,
-            value = ExposurePair::shutterLabel,
+            candidates = shutterCandidates,
+            selectedIndex = selectedShutterIndex,
             alignEnd = true,
-            onExposureStep = onExposureStep,
+            onStep = onShutterStep,
         )
     }
 }
@@ -523,11 +625,10 @@ private fun ExposureScaleOverlay(
 @Composable
 private fun ExposureSideScale(
     title: String,
-    exposures: List<ExposurePair>,
+    candidates: List<String>,
     selectedIndex: Int,
-    value: (ExposurePair) -> String,
     alignEnd: Boolean,
-    onExposureStep: (Int) -> Unit,
+    onStep: (Int) -> Unit,
 ) {
     var dragOffset by remember { mutableStateOf(0f) }
 
@@ -536,7 +637,7 @@ private fun ExposureSideScale(
         shape = RoundedCornerShape(12.dp),
         modifier = Modifier
             .width(82.dp)
-            .pointerInput(exposures, selectedIndex) {
+            .pointerInput(candidates, selectedIndex) {
                 var accumulatedDrag = 0f
                 val stepThreshold = 28.dp.toPx()
                 detectVerticalDragGestures(
@@ -563,7 +664,7 @@ private fun ExposureSideScale(
                             val direction = if (accumulatedDrag < 0f) 1 else -1
                             accumulatedDrag = 0f
                             dragOffset = 0f
-                            onExposureStep(direction)
+                            onStep(direction)
                         }
                     },
                 )
@@ -587,7 +688,7 @@ private fun ExposureSideScale(
             ) {
                 (-4..4).forEach { offset ->
                     val index = selectedIndex + offset
-                    val label = exposures.getOrNull(index)?.let(value).orEmpty()
+                    val label = candidates.getOrNull(index).orEmpty()
                     val distance = abs(offset)
                     val scale = when (distance) {
                         0 -> 1.20f
@@ -630,6 +731,11 @@ private fun ExposurePanel(
     state: MeteringUiState,
     onIsoSelected: (Int) -> Unit,
     onFramePresetSelected: (FramePreset) -> Unit,
+    onMeteringPresetSelected: (MeteringMode) -> Unit,
+    onCameraMeteringPresetSelected: (CameraMeteringPreset?) -> Unit,
+    onSpotAreaChanged: (Int) -> Unit,
+    onCenterAreaChanged: (Int) -> Unit,
+    onCenterWeightChanged: (Int) -> Unit,
     onExposureCompensationChanged: (Double) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -726,36 +832,124 @@ private fun ExposurePanel(
     }
 
     if (showSettings) {
-        FramePresetSettingsDialog(
-            selectedPreset = state.framePreset,
-            onPresetSelected = {
-                onFramePresetSelected(it)
-                showSettings = false
-            },
+        AppSettingsDialog(
+            selectedFramePreset = state.framePreset,
+            selectedMeteringPreset = state.meteringPreset,
+            selectedCameraMeteringPreset = state.cameraMeteringPreset,
+            spotAreaPercent = state.spotAreaPercent,
+            centerAreaPercent = state.centerAreaPercent,
+            centerWeightPercent = state.centerWeightPercent,
+            onFramePresetSelected = onFramePresetSelected,
+            onMeteringPresetSelected = onMeteringPresetSelected,
+            onCameraMeteringPresetSelected = onCameraMeteringPresetSelected,
+            onSpotAreaChanged = onSpotAreaChanged,
+            onCenterAreaChanged = onCenterAreaChanged,
+            onCenterWeightChanged = onCenterWeightChanged,
             onDismiss = { showSettings = false },
         )
     }
 }
 
 @Composable
-private fun FramePresetSettingsDialog(
-    selectedPreset: FramePreset,
-    onPresetSelected: (FramePreset) -> Unit,
+private fun AppSettingsDialog(
+    selectedFramePreset: FramePreset,
+    selectedMeteringPreset: MeteringMode,
+    selectedCameraMeteringPreset: CameraMeteringPreset?,
+    spotAreaPercent: Int,
+    centerAreaPercent: Int,
+    centerWeightPercent: Int,
+    onFramePresetSelected: (FramePreset) -> Unit,
+    onMeteringPresetSelected: (MeteringMode) -> Unit,
+    onCameraMeteringPresetSelected: (CameraMeteringPreset?) -> Unit,
+    onSpotAreaChanged: (Int) -> Unit,
+    onCenterAreaChanged: (Int) -> Unit,
+    onCenterWeightChanged: (Int) -> Unit,
     onDismiss: () -> Unit,
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("画幅与焦距") },
+        title = { Text("设置") },
         text = {
             Column(
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier
+                    .heightIn(max = 520.dp)
+                    .verticalScroll(rememberScrollState()),
             ) {
-                FramePreset.entries.forEach { preset ->
+                ControlLabel(text = "画幅与焦距")
+                OptionRow {
+                    FramePreset.entries.forEach { preset ->
+                        ChoiceButton(
+                            text = preset.displayName,
+                            selected = selectedFramePreset == preset,
+                            onClick = { onFramePresetSelected(preset) },
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(18.dp))
+                ControlLabel(text = "测光预设")
+                OptionRow {
+                    MeteringMode.entries.forEach { mode ->
+                        ChoiceButton(
+                            text = mode.displayName(),
+                            selected = selectedMeteringPreset == mode,
+                            onClick = { onMeteringPresetSelected(mode) },
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(18.dp))
+                ControlLabel(text = "机型测光预设")
+                OptionRow {
                     ChoiceButton(
-                        text = preset.displayName,
-                        selected = selectedPreset == preset,
-                        onClick = { onPresetSelected(preset) },
+                        text = "自定义",
+                        selected = selectedCameraMeteringPreset == null,
+                        onClick = { onCameraMeteringPresetSelected(null) },
                     )
+                    CameraMeteringPreset.entries.forEach { preset ->
+                        ChoiceButton(
+                            text = preset.displayName,
+                            selected = selectedCameraMeteringPreset == preset,
+                            onClick = { onCameraMeteringPresetSelected(preset) },
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+                when (selectedMeteringPreset) {
+                    MeteringMode.SPOT -> {
+                        PercentageControl(
+                            label = "点测光面积",
+                            value = spotAreaPercent,
+                            onDecrease = { onSpotAreaChanged(-1) },
+                            onIncrease = { onSpotAreaChanged(1) },
+                        )
+                        SettingHint("读取画面中心区域；点击画面后，测光中心移动到点击位置。")
+                    }
+
+                    MeteringMode.CENTER_WEIGHTED -> {
+                        PercentageControl(
+                            label = "中央区域面积",
+                            value = centerAreaPercent,
+                            onDecrease = { onCenterAreaChanged(-5) },
+                            onIncrease = { onCenterAreaChanged(5) },
+                        )
+                        Spacer(modifier = Modifier.height(10.dp))
+                        PercentageControl(
+                            label = "中央测光权重",
+                            value = centerWeightPercent,
+                            onDecrease = { onCenterWeightChanged(-5) },
+                            onIncrease = { onCenterWeightChanged(5) },
+                        )
+                        SettingHint(
+                            "外围区域自动使用剩余 ${100 - centerAreaPercent}% 面积和 " +
+                                "${100 - centerWeightPercent}% 权重。",
+                        )
+                    }
+
+                    MeteringMode.AVERAGE -> {
+                        SettingHint("读取整个画面的平均亮度，不使用额外权重。")
+                    }
                 }
             }
         },
@@ -768,6 +962,66 @@ private fun FramePresetSettingsDialog(
         titleContentColor = Color.White,
         textContentColor = Color.White,
     )
+}
+
+@Composable
+private fun PercentageControl(
+    label: String,
+    value: Int,
+    onDecrease: () -> Unit,
+    onIncrease: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = label,
+            color = Color.White,
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            OutlinedButton(
+                onClick = onDecrease,
+                contentPadding = PaddingValues(horizontal = 12.dp),
+            ) {
+                Text("−")
+            }
+            Text(
+                text = "$value%",
+                color = Color(0xFFE5B567),
+                style = MaterialTheme.typography.titleMedium,
+            )
+            OutlinedButton(
+                onClick = onIncrease,
+                contentPadding = PaddingValues(horizontal = 12.dp),
+            ) {
+                Text("+")
+            }
+        }
+    }
+}
+
+@Composable
+private fun SettingHint(text: String) {
+    Spacer(modifier = Modifier.height(8.dp))
+    Text(
+        text = text,
+        color = Color.White.copy(alpha = 0.62f),
+        style = MaterialTheme.typography.bodySmall,
+    )
+}
+
+private fun MeteringMode.displayName(): String {
+    return when (this) {
+        MeteringMode.SPOT -> "点测光"
+        MeteringMode.CENTER_WEIGHTED -> "中央重点"
+        MeteringMode.AVERAGE -> "平均测光"
+    }
 }
 
 @Composable

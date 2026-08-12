@@ -108,7 +108,7 @@ V1 支持以下画幅和焦段组合：
 ```text
 135 + 35mm
 135 + 50mm
-135 + 75mm
+135 + 70mm
 APS-C + 50mm
 6x4.5 + 75mm
 ```
@@ -137,7 +137,7 @@ Overlay 绘制规则：
 3. 框外区域可以使用半透明遮罩，帮助用户理解实际取景范围。
 ```
 
-V1 不需要在算法层按取景框裁剪测光区域。默认测光仍基于完整预览或点击测光 ROI。后续如果需要“按取景框测光”，可以将取景框区域作为平均测光 ROI。
+取景框边界以归一化坐标写入 `MeteringConfig`。ImageAnalysis 将采样点映射到 `PreviewView.FILL_CENTER` 坐标后，先排除取景框外像素，再执行平均、点测光或中央重点计算。
 
 ## 5. 图像分析
 
@@ -281,8 +281,13 @@ data class MeteringUiState(
     val permissionState: CameraPermissionState,
     val selectedIso: Int,
     val exposureCompensation: Double,
+    val meteringPreset: MeteringMode,
     val meteringMode: MeteringMode,
     val spotMeteringPoint: NormalizedPoint?,
+    val spotAreaPercent: Int,
+    val centerAreaPercent: Int,
+    val centerWeightPercent: Int,
+    val cameraMeteringPreset: CameraMeteringPreset?,
     val framePreset: FramePreset,
     val ev100Metered: Double?,
     val evTarget: Double?,
@@ -321,14 +326,22 @@ Camera Analysis 需要读取当前测光配置。
 data class MeteringConfig(
     val mode: MeteringMode,
     val spotPoint: NormalizedPoint?,
+    val spotAreaPercent: Int,
+    val centerAreaPercent: Int,
+    val centerWeightPercent: Int,
+    val viewfinderRect: NormalizedMeteringRect,
+    val previewAspectRatio: Double,
     val calibrationOffset: Double
 )
 
 enum class MeteringMode {
+    SPOT,
+    CENTER_WEIGHTED,
     AVERAGE,
-    SPOT
 }
 ```
+
+默认预设为 `CENTER_WEIGHTED`。点击取景画面时，当前模式临时切换为 `SPOT`；恢复操作会回到用户设置的 `meteringPreset`。
 
 配置更新来自 ViewModel。分析线程读取最新配置时需要避免锁竞争。
 
@@ -556,7 +569,7 @@ PreviewCoordinateMapper
 
 ```text
 1. 给定曝光时间、ISO、光圈和亮度，EV100 计算正确。
-2. 平均测光 ROI 覆盖完整帧。
+2. 平均测光 ROI 覆盖模拟取景框。
 3. 点击测光 ROI 半径为短边 10% 的一半。
 4. 坐标归一化点能正确映射到 ImageProxy 坐标。
 5. EV_target 能正确应用 ISO 和曝光补偿。

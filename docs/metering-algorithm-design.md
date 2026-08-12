@@ -2,7 +2,7 @@
 
 ## 1. 目标
 
-本设计用于 Android 胶片测光 App V1，目标是在实时相机预览中估算当前场景的合理 `EV100`，并结合用户设定的胶片 `ISO`、曝光补偿、1/3 档快门和光圈表，生成一组主推荐曝光组合以及多组等效曝光组合。
+本设计用于 Android 胶片测光 App V1，目标是在实时相机预览中估算当前场景的合理 `EV100`，并结合用户设定的胶片 `ISO`、曝光补偿、1/3 档光圈表和经典整档快门表，生成一组主推荐曝光组合以及多组等效曝光组合。
 
 V1 支持两种测光模式：
 
@@ -80,22 +80,22 @@ Y_linear = pow(Y_norm, 2.2)
 
 ### 5.1 平均测光
 
-平均测光使用完整预览帧：
+平均测光使用模拟取景框内部：
 
 ```text
-ROI = full frame
+ROI = simulated viewfinder frame
 Y_measured = trimmedMean(Y_linear over ROI)
 ```
 
 ### 5.2 点击区域测光
 
-用户点击画面后，以点击点为圆心创建固定圆形区域。
+用户点击画面后，以点击点为圆心创建圆形区域，且只统计模拟取景框内部。
 
 V1 规则：
 
 ```text
-circle_diameter = min(frame_width, frame_height) * 10%
-circle_radius = circle_diameter / 2
+circle_area = viewfinder_area * spot_area_percent
+circle_radius = sqrt(circle_area / PI)
 ```
 
 测光区域：
@@ -189,7 +189,7 @@ EV_film ~= log2(N^2 / t)
 - `N`：胶片机光圈值。
 - `t`：胶片机快门时间，单位秒。
 
-V1 使用 1/3 档光圈表和快门表，遍历所有组合，计算每组组合的 EV：
+V1 使用 1/3 档光圈表和经典整档快门表，遍历所有组合，计算每组组合的 EV：
 
 ```text
 EV_pair = log2(aperture^2 / shutter_seconds)
@@ -202,7 +202,7 @@ error = abs(EV_pair - EV_film)
 error <= 1/6EV
 ```
 
-因为使用 1/3 档表，`1/6EV` 是合理的匹配容差。
+光圈使用 1/3 档，因此 `1/6EV` 是合理的最近档位匹配容差。
 
 ## 10. 主推荐组合选择
 
@@ -213,7 +213,7 @@ V1 推荐使用安全快门优先：
 ```text
 135 + 35mm：优先快门不慢于 1/30s
 135 + 50mm：优先快门不慢于 1/60s
-135 + 75mm：优先快门不慢于 1/125s
+135 + 70mm：优先快门不慢于 1/125s
 6x4.5 + 75mm：优先快门不慢于 1/125s
 ```
 
@@ -246,7 +246,7 @@ V1 推荐使用安全快门优先：
 8. 对 EV100 做时间平滑。
 9. 应用曝光补偿，得到 EV100_final。
 10. 根据胶片 ISO 换算 EV_film。
-11. 遍历 1/3 档快门和光圈表，生成等效曝光组合。
+11. 遍历经典整档快门和 1/3 档光圈表，生成等效曝光组合。
 12. 根据焦段和画幅选择主推荐组合。
 13. UI 展示：
     - EV100_metered

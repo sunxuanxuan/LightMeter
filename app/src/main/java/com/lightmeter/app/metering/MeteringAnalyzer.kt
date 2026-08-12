@@ -9,10 +9,13 @@ import androidx.camera.core.ImageProxy
 import com.lightmeter.app.camera.CameraExposureMetadata
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicReference
+import kotlin.math.PI
+import kotlin.math.abs
 import kotlin.math.log2
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.pow
+import kotlin.math.sqrt
 
 class MeteringAnalyzer(
     initialConfig: MeteringConfig = MeteringConfig(),
@@ -85,8 +88,7 @@ class MeteringAnalyzer(
             val currentConfig = config.get()
             val luminance = measureLuminance(image, currentConfig) ?: return
             val ev = calculateEv100(metadata, luminance, currentConfig.calibrationOffset)
-            val configChanged = currentConfig.mode != previousConfig.mode ||
-                currentConfig.spotPoint != previousConfig.spotPoint
+            val configChanged = currentConfig != previousConfig
             val newWeight = if (configChanged) FAST_SMOOTHING_WEIGHT else SMOOTHING_WEIGHT
             val filteredEv = smoothedEv?.let { previous ->
                 previous * (1.0 - newWeight) + ev * newWeight
@@ -117,41 +119,99 @@ class MeteringAnalyzer(
         val height = image.height
         val rowStride = plane.rowStride
         val pixelStride = plane.pixelStride
-        val histogram = IntArray(256)
-        var sampleCount = 0
+        val primaryHistogram = IntArray(256)
+        val secondaryHistogram = IntArray(256)
+        var primarySampleCount = 0
+        var secondarySampleCount = 0
 
-        val spotCenter = meteringConfig.spotPoint?.let {
-            mapPreviewPointToImage(
-                point = it,
-                rotationDegrees = image.imageInfo.rotationDegrees,
-                imageWidth = width,
-                imageHeight = height,
-            )
+        val viewfinder = meteringConfig.viewfinderRect
+        val previewAspectRatio = meteringConfig.previewAspectRatio
+        val spotCenter = meteringConfig.spotPoint?.let { Pair(it.x, it.y) }
+            ?: Pair(viewfinder.centerX, viewfinder.centerY)
+        val virtualViewfinderArea =
+            viewfinder.width * previewAspectRatio * viewfinder.height
+        val spotRadiusSquared = sqrt(
+            virtualViewfinderArea * meteringConfig.spotAreaPercent / 100.0 / PI,
+        ).let { it * it }
+        val centerScale = sqrt(meteringConfig.centerAreaPercent / 100.0)
+        val centerHalfWidth = viewfinder.width * centerScale / 2.0
+        val centerHalfHeight = viewfinder.height * centerScale / 2.0
+        val sampleStep = if (
+            meteringConfig.mode == MeteringMode.SPOT &&
+            meteringConfig.spotAreaPercent <= 2
+        ) {
+            FINE_SAMPLE_STEP
+        } else {
+            SAMPLE_STEP
         }
-        val spotRadius = min(width, height) * SPOT_DIAMETER_RATIO / 2.0
-        val spotRadiusSquared = spotRadius * spotRadius
 
         var y = 0
         while (y < height) {
             var x = 0
             while (x < width) {
-                val insideRoi = meteringConfig.mode == MeteringMode.AVERAGE ||
-                    spotCenter == null ||
-                    squaredDistance(x, y, spotCenter.first, spotCenter.second) <= spotRadiusSquared
-                if (insideRoi) {
-                    val index = y * rowStride + x * pixelStride
-                    if (index < buffer.limit()) {
-                        histogram[buffer.get(index).toInt() and 0xFF]++
-                        sampleCount++
+                val index = y * rowStride + x * pixelStride
+                if (index < buffer.limit()) {
+                    val previewPoint = mapImagePointToPreview(
+                        x = x,
+                        y = y,
+                        rotationDegrees = image.imageInfo.rotationDegrees,
+                        imageWidth = width,
+                        imageHeight = height,
+                        previewAspectRatio = previewAspectRatio,
+                    )
+                    if (!viewfinder.contains(previewPoint.first, previewPoint.second)) {
+                        x += sampleStep
+                        continue
+                    }
+                    val luminance = buffer.get(index).toInt() and 0xFF
+                    when (meteringConfig.mode) {
+                        MeteringMode.AVERAGE -> {
+                            primaryHistogram[luminance]++
+                            primarySampleCount++
+                        }
+
+                        MeteringMode.SPOT -> {
+                            val deltaX =
+                                (previewPoint.first - spotCenter.first) * previewAspectRatio
+                            val deltaY = previewPoint.second - spotCenter.second
+                            if (deltaX * deltaX + deltaY * deltaY <= spotRadiusSquared) {
+                                primaryHistogram[luminance]++
+                                primarySampleCount++
+                            }
+                        }
+
+                        MeteringMode.CENTER_WEIGHTED -> {
+                            if (
+                                abs(previewPoint.first - viewfinder.centerX) <= centerHalfWidth &&
+                                abs(previewPoint.second - viewfinder.centerY) <= centerHalfHeight
+                            ) {
+                                primaryHistogram[luminance]++
+                                primarySampleCount++
+                            } else {
+                                secondaryHistogram[luminance]++
+                                secondarySampleCount++
+                            }
+                        }
                     }
                 }
-                x += SAMPLE_STEP
+                x += sampleStep
             }
-            y += SAMPLE_STEP
+            y += sampleStep
         }
 
-        if (sampleCount < MIN_SAMPLE_COUNT) return null
-        return trimmedLinearMean(histogram, sampleCount)
+        if (primarySampleCount < MIN_SAMPLE_COUNT) return null
+        val primaryLuminance = trimmedLinearMean(primaryHistogram, primarySampleCount)
+        if (meteringConfig.mode != MeteringMode.CENTER_WEIGHTED) {
+            return primaryLuminance
+        }
+        if (secondarySampleCount < MIN_SAMPLE_COUNT) return null
+        val secondaryLuminance = trimmedLinearMean(
+            secondaryHistogram,
+            secondarySampleCount,
+        )
+        val centerWeight = meteringConfig.centerWeightPercent / 100.0
+        return primaryLuminance * centerWeight +
+            secondaryLuminance * (1.0 - centerWeight)
     }
 
     private fun trimmedLinearMean(
@@ -199,41 +259,43 @@ class MeteringAnalyzer(
         return settingEv100 + log2(luminance / TARGET_LUMINANCE) + calibrationOffset
     }
 
-    private fun mapPreviewPointToImage(
-        point: NormalizedPoint,
+    private fun mapImagePointToPreview(
+        x: Int,
+        y: Int,
         rotationDegrees: Int,
         imageWidth: Int,
         imageHeight: Int,
+        previewAspectRatio: Double,
     ): Pair<Double, Double> {
-        return when (rotationDegrees) {
-            90 -> Pair(
-                point.y * imageWidth,
-                (1.0 - point.x) * imageHeight,
-            )
-            180 -> Pair(
-                (1.0 - point.x) * imageWidth,
-                (1.0 - point.y) * imageHeight,
-            )
-            270 -> Pair(
-                (1.0 - point.y) * imageWidth,
-                point.x * imageHeight,
-            )
-            else -> Pair(
-                point.x * imageWidth,
-                point.y * imageHeight,
-            )
+        val rawX = x / imageWidth.toDouble()
+        val rawY = y / imageHeight.toDouble()
+        val (uprightX, uprightY) = when (rotationDegrees) {
+            90 -> Pair(1.0 - rawY, rawX)
+            180 -> Pair(1.0 - rawX, 1.0 - rawY)
+            270 -> Pair(rawY, 1.0 - rawX)
+            else -> Pair(rawX, rawY)
         }
-    }
+        val uprightWidth = if (rotationDegrees == 90 || rotationDegrees == 270) {
+            imageHeight
+        } else {
+            imageWidth
+        }
+        val uprightHeight = if (rotationDegrees == 90 || rotationDegrees == 270) {
+            imageWidth
+        } else {
+            imageHeight
+        }
+        val imageAspectRatio = uprightWidth / uprightHeight.toDouble()
 
-    private fun squaredDistance(
-        x: Int,
-        y: Int,
-        centerX: Double,
-        centerY: Double,
-    ): Double {
-        val deltaX = x - centerX
-        val deltaY = y - centerY
-        return deltaX * deltaX + deltaY * deltaY
+        return if (imageAspectRatio > previewAspectRatio) {
+            val visibleWidthFraction = previewAspectRatio / imageAspectRatio
+            val crop = (1.0 - visibleWidthFraction) / 2.0
+            Pair((uprightX - crop) / visibleWidthFraction, uprightY)
+        } else {
+            val visibleHeightFraction = imageAspectRatio / previewAspectRatio
+            val crop = (1.0 - visibleHeightFraction) / 2.0
+            Pair(uprightX, (uprightY - crop) / visibleHeightFraction)
+        }
     }
 
     companion object {
@@ -241,8 +303,8 @@ class MeteringAnalyzer(
         private const val METADATA_TOLERANCE_NS = 50_000_000L
         private const val MAX_METADATA_ENTRIES = 24
         private const val SAMPLE_STEP = 4
+        private const val FINE_SAMPLE_STEP = 2
         private const val MIN_SAMPLE_COUNT = 32
-        private const val SPOT_DIAMETER_RATIO = 0.10
         private const val TRIM_RATIO = 0.05
         private const val GAMMA = 2.2
         private const val TARGET_LUMINANCE = 0.18

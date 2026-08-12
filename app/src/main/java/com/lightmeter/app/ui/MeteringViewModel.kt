@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import com.lightmeter.app.camera.CameraOptics
 import com.lightmeter.app.exposure.ExposurePair
 import com.lightmeter.app.exposure.FramePreset
+import com.lightmeter.app.metering.CameraMeteringPreset
 import com.lightmeter.app.metering.MeteringMode
 import com.lightmeter.app.metering.NormalizedPoint
 import com.lightmeter.app.metering.MeteringResult
@@ -25,8 +26,13 @@ data class MeteringUiState(
     val permissionState: CameraPermissionState = CameraPermissionState.UNKNOWN,
     val selectedIso: Int = 100,
     val exposureCompensation: Double = 0.0,
-    val meteringMode: MeteringMode = MeteringMode.AVERAGE,
+    val meteringPreset: MeteringMode = MeteringMode.CENTER_WEIGHTED,
+    val meteringMode: MeteringMode = MeteringMode.CENTER_WEIGHTED,
     val spotMeteringPoint: NormalizedPoint? = null,
+    val spotAreaPercent: Int = 5,
+    val centerAreaPercent: Int = 25,
+    val centerWeightPercent: Int = 70,
+    val cameraMeteringPreset: CameraMeteringPreset? = null,
     val framePreset: FramePreset = FramePreset.FILM_135_50MM,
     val cameraOptics: CameraOptics? = null,
     val ev100Metered: Double? = null,
@@ -34,6 +40,8 @@ data class MeteringUiState(
     val evTarget: Double? = null,
     val primaryExposure: ExposurePair? = null,
     val equivalentExposures: List<ExposurePair> = emptyList(),
+    val apertureCandidates: List<String> = apertureStops.map(ApertureStop::label),
+    val shutterCandidates: List<String> = shutterStops.map(ShutterStop::label),
     val selectedAperture: Double? = null,
     val calibrationOffset: Double = 0.0,
     val isCameraReady: Boolean = false,
@@ -90,11 +98,65 @@ class MeteringViewModel : ViewModel() {
         }
     }
 
-    fun useAverageMetering() {
+    fun restoreMeteringPreset() {
         mutableState.update {
             it.copy(
-                meteringMode = MeteringMode.AVERAGE,
+                meteringMode = it.meteringPreset,
                 spotMeteringPoint = null,
+            )
+        }
+    }
+
+    fun selectMeteringPreset(mode: MeteringMode) {
+        mutableState.update {
+            it.copy(
+                meteringPreset = mode,
+                meteringMode = mode,
+                spotMeteringPoint = null,
+                cameraMeteringPreset = null,
+            )
+        }
+    }
+
+    fun selectCameraMeteringPreset(preset: CameraMeteringPreset?) {
+        mutableState.update {
+            if (preset == null) {
+                it.copy(cameraMeteringPreset = null)
+            } else {
+                it.copy(
+                    meteringPreset = MeteringMode.CENTER_WEIGHTED,
+                    meteringMode = MeteringMode.CENTER_WEIGHTED,
+                    spotMeteringPoint = null,
+                    centerAreaPercent = preset.centerAreaPercent,
+                    centerWeightPercent = preset.centerWeightPercent,
+                    cameraMeteringPreset = preset,
+                )
+            }
+        }
+    }
+
+    fun adjustSpotAreaPercent(delta: Int) {
+        mutableState.update {
+            it.copy(
+                spotAreaPercent = (it.spotAreaPercent + delta).coerceIn(1, 10),
+            )
+        }
+    }
+
+    fun adjustCenterAreaPercent(delta: Int) {
+        mutableState.update {
+            it.copy(
+                centerAreaPercent = (it.centerAreaPercent + delta).coerceIn(5, 80),
+                cameraMeteringPreset = null,
+            )
+        }
+    }
+
+    fun adjustCenterWeightPercent(delta: Int) {
+        mutableState.update {
+            it.copy(
+                centerWeightPercent = (it.centerWeightPercent + delta).coerceIn(50, 95),
+                cameraMeteringPreset = null,
             )
         }
     }
@@ -162,18 +224,41 @@ class MeteringViewModel : ViewModel() {
         }
     }
 
-    fun stepExposurePair(delta: Int) {
+    fun stepAperture(delta: Int) {
         mutableState.update { state ->
-            val currentIndex = state.primaryExposure
-                ?.let(state.equivalentExposures::indexOf)
+            val targetEv = state.evTarget ?: return@update state
+            val currentIndex = state.primaryExposure?.apertureLabel
+                ?.let { label -> apertureStops.indexOfFirst { it.label == label } }
                 ?.takeIf { it >= 0 }
                 ?: return@update state
-            val nextPair = state.equivalentExposures[
+            val aperture = apertureStops[
                 (currentIndex + delta).coerceIn(
                     0,
-                    state.equivalentExposures.lastIndex,
+                    apertureStops.lastIndex,
                 )
             ]
+            val nextPair = closestPairForAperture(aperture, targetEv)
+            state.copy(
+                primaryExposure = nextPair,
+                selectedAperture = nextPair.aperture,
+            )
+        }
+    }
+
+    fun stepShutter(delta: Int) {
+        mutableState.update { state ->
+            val targetEv = state.evTarget ?: return@update state
+            val currentIndex = state.primaryExposure?.shutterLabel
+                ?.let { label -> shutterStops.indexOfFirst { it.label == label } }
+                ?.takeIf { it >= 0 }
+                ?: return@update state
+            val shutter = shutterStops[
+                (currentIndex + delta).coerceIn(
+                    0,
+                    shutterStops.lastIndex,
+                )
+            ]
+            val nextPair = closestPairForShutter(shutter, targetEv)
             state.copy(
                 primaryExposure = nextPair,
                 selectedAperture = nextPair.aperture,
@@ -228,58 +313,21 @@ private val apertureStops = listOf(
 )
 
 private val shutterStops = listOf(
-    ShutterStop("30s", 30.0),
-    ShutterStop("25s", 25.0),
-    ShutterStop("20s", 20.0),
-    ShutterStop("15s", 15.0),
-    ShutterStop("13s", 13.0),
-    ShutterStop("10s", 10.0),
-    ShutterStop("8s", 8.0),
-    ShutterStop("6s", 6.0),
-    ShutterStop("5s", 5.0),
-    ShutterStop("4s", 4.0),
-    ShutterStop("3.2s", 3.2),
-    ShutterStop("2.5s", 2.5),
-    ShutterStop("2s", 2.0),
-    ShutterStop("1.6s", 1.6),
-    ShutterStop("1.3s", 1.3),
-    ShutterStop("1s", 1.0),
-    ShutterStop("1/1.3", 1.0 / 1.3),
-    ShutterStop("1/1.6", 1.0 / 1.6),
-    ShutterStop("1/2", 1.0 / 2.0),
-    ShutterStop("1/2.5", 1.0 / 2.5),
-    ShutterStop("1/3", 1.0 / 3.0),
-    ShutterStop("1/4", 1.0 / 4.0),
-    ShutterStop("1/5", 1.0 / 5.0),
-    ShutterStop("1/6", 1.0 / 6.0),
-    ShutterStop("1/8", 1.0 / 8.0),
-    ShutterStop("1/10", 1.0 / 10.0),
-    ShutterStop("1/13", 1.0 / 13.0),
-    ShutterStop("1/15", 1.0 / 15.0),
-    ShutterStop("1/20", 1.0 / 20.0),
-    ShutterStop("1/25", 1.0 / 25.0),
-    ShutterStop("1/30", 1.0 / 30.0),
-    ShutterStop("1/40", 1.0 / 40.0),
-    ShutterStop("1/50", 1.0 / 50.0),
-    ShutterStop("1/60", 1.0 / 60.0),
-    ShutterStop("1/80", 1.0 / 80.0),
-    ShutterStop("1/100", 1.0 / 100.0),
-    ShutterStop("1/125", 1.0 / 125.0),
-    ShutterStop("1/160", 1.0 / 160.0),
-    ShutterStop("1/200", 1.0 / 200.0),
-    ShutterStop("1/250", 1.0 / 250.0),
-    ShutterStop("1/320", 1.0 / 320.0),
-    ShutterStop("1/400", 1.0 / 400.0),
-    ShutterStop("1/500", 1.0 / 500.0),
-    ShutterStop("1/640", 1.0 / 640.0),
-    ShutterStop("1/800", 1.0 / 800.0),
-    ShutterStop("1/4000", 1.0 / 4000.0),
-    ShutterStop("1/3200", 1.0 / 3200.0),
-    ShutterStop("1/2500", 1.0 / 2500.0),
     ShutterStop("1/2000", 1.0 / 2000.0),
-    ShutterStop("1/1600", 1.0 / 1600.0),
-    ShutterStop("1/1250", 1.0 / 1250.0),
     ShutterStop("1/1000", 1.0 / 1000.0),
+    ShutterStop("1/500", 1.0 / 500.0),
+    ShutterStop("1/250", 1.0 / 250.0),
+    ShutterStop("1/125", 1.0 / 125.0),
+    ShutterStop("1/60", 1.0 / 60.0),
+    ShutterStop("1/30", 1.0 / 30.0),
+    ShutterStop("1/15", 1.0 / 15.0),
+    ShutterStop("1/8", 1.0 / 8.0),
+    ShutterStop("1/4", 1.0 / 4.0),
+    ShutterStop("1/2", 1.0 / 2.0),
+    ShutterStop("1s", 1.0),
+    ShutterStop("2s", 2.0),
+    ShutterStop("4s", 4.0),
+    ShutterStop("8s", 8.0),
 )
 
 private val commonAperturePriority = listOf(5.6, 8.0, 4.0, 11.0, 2.8, 16.0)
@@ -309,40 +357,43 @@ private fun targetEv(
 }
 
 private fun generateExposurePairs(targetEv: Double): List<ExposurePair> {
-    val closestByAperture = apertureStops.mapNotNull { aperture ->
-        shutterStops
-            .map { shutter ->
-                val pairEv = log2(aperture.value * aperture.value / shutter.seconds)
-                ExposurePair(
-                    apertureLabel = aperture.label,
-                    aperture = aperture.value,
-                    shutterLabel = shutter.label,
-                    shutterSeconds = shutter.seconds,
-                    ev = pairEv,
-                    error = abs(pairEv - targetEv),
-                )
-            }
-            .minByOrNull { it.error }
+    return apertureStops.map { aperture ->
+        closestPairForAperture(aperture, targetEv)
     }
-    val withinTolerance = closestByAperture.filter { it.error <= 1.0 / 6.0 }
-    val candidates = withinTolerance.ifEmpty { closestByAperture }
-    val seenApertures = mutableSetOf<String>()
-    val seenShutters = mutableSetOf<String>()
-    val uniquePairs = candidates
-        .sortedBy { it.error }
-        .filter { pair ->
-            if (pair.apertureLabel in seenApertures || pair.shutterLabel in seenShutters) {
-                false
-            } else {
-                seenApertures += pair.apertureLabel
-                seenShutters += pair.shutterLabel
-                true
-            }
-        }
+}
 
-    return uniquePairs
-        .let { if (withinTolerance.isEmpty()) it.take(8) else it }
-        .sortedBy { it.shutterSeconds }
+private fun closestPairForAperture(
+    aperture: ApertureStop,
+    targetEv: Double,
+): ExposurePair {
+    return shutterStops
+        .map { shutter -> exposurePair(aperture, shutter, targetEv) }
+        .minBy { it.error }
+}
+
+private fun closestPairForShutter(
+    shutter: ShutterStop,
+    targetEv: Double,
+): ExposurePair {
+    return apertureStops
+        .map { aperture -> exposurePair(aperture, shutter, targetEv) }
+        .minBy { it.error }
+}
+
+private fun exposurePair(
+    aperture: ApertureStop,
+    shutter: ShutterStop,
+    targetEv: Double,
+): ExposurePair {
+    val pairEv = log2(aperture.value * aperture.value / shutter.seconds)
+    return ExposurePair(
+        apertureLabel = aperture.label,
+        aperture = aperture.value,
+        shutterLabel = shutter.label,
+        shutterSeconds = shutter.seconds,
+        ev = pairEv,
+        error = abs(pairEv - targetEv),
+    )
 }
 
 private fun selectPrimaryPair(

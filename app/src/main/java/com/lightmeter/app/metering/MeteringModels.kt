@@ -1,8 +1,18 @@
 package com.lightmeter.app.metering
 
 enum class MeteringMode {
-    AVERAGE,
     SPOT,
+    CENTER_WEIGHTED,
+    AVERAGE,
+}
+
+enum class CameraMeteringPreset(
+    val displayName: String,
+    val centerAreaPercent: Int,
+    val centerWeightPercent: Int,
+) {
+    CANON_NEW_F1("Canon New F-1", 60, 70),
+    CANON_AL1("Canon AL-1", 40, 65),
 }
 
 data class NormalizedPoint(
@@ -15,11 +25,52 @@ data class NormalizedPoint(
     }
 }
 
+data class NormalizedMeteringRect(
+    val left: Double,
+    val top: Double,
+    val right: Double,
+    val bottom: Double,
+) {
+    init {
+        require(left in 0.0..1.0)
+        require(top in 0.0..1.0)
+        require(right in 0.0..1.0)
+        require(bottom in 0.0..1.0)
+        require(left < right)
+        require(top < bottom)
+    }
+
+    val width: Double get() = right - left
+    val height: Double get() = bottom - top
+    val centerX: Double get() = (left + right) / 2.0
+    val centerY: Double get() = (top + bottom) / 2.0
+
+    fun contains(x: Double, y: Double): Boolean {
+        return x in left..right && y in top..bottom
+    }
+
+    companion object {
+        val Full = NormalizedMeteringRect(0.0, 0.0, 1.0, 1.0)
+    }
+}
+
 data class MeteringConfig(
-    val mode: MeteringMode = MeteringMode.AVERAGE,
+    val mode: MeteringMode = MeteringMode.CENTER_WEIGHTED,
     val spotPoint: NormalizedPoint? = null,
+    val spotAreaPercent: Int = 5,
+    val centerAreaPercent: Int = 25,
+    val centerWeightPercent: Int = 70,
+    val viewfinderRect: NormalizedMeteringRect = NormalizedMeteringRect.Full,
+    val previewAspectRatio: Double = 1.0,
     val calibrationOffset: Double = 0.0,
-)
+) {
+    init {
+        require(spotAreaPercent in 1..10)
+        require(centerAreaPercent in 5..80)
+        require(centerWeightPercent in 50..95)
+        require(previewAspectRatio > 0.0)
+    }
+}
 
 data class MeteringResult(
     val ev100: Double,
