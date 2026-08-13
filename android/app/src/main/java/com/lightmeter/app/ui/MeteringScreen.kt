@@ -133,7 +133,6 @@ private val DEFAULT_CAMERA_OPTICS = CameraOptics(
 private val PreviewAccent = Color(0xFFD3AA5F)
 private const val ZOOM_SETTLE_TIMEOUT_MS = 800L
 private const val ZOOM_RATIO_TOLERANCE = 0.02f
-private const val PROGRESSIVE_WARNING_START_STOPS = 1.0
 
 @Composable
 fun MeteringRoute(
@@ -194,7 +193,6 @@ fun MeteringRoute(
         onCenterAreaChanged = viewModel::adjustCenterAreaPercent,
         onCenterWeightChanged = viewModel::adjustCenterWeightPercent,
         onExposureRiskEnabledChanged = viewModel::setExposureRiskEnabled,
-        onWarnOnlyOutsideLatitudeChanged = viewModel::setWarnOnlyOutsideLatitude,
         onFilmLatitudePresetSelected = viewModel::selectFilmLatitudePreset,
         onHighlightLatitudeChanged = viewModel::adjustHighlightLatitude,
         onShadowLatitudeChanged = viewModel::adjustShadowLatitude,
@@ -229,7 +227,6 @@ private fun MeteringScreen(
     onCenterAreaChanged: (Int) -> Unit,
     onCenterWeightChanged: (Int) -> Unit,
     onExposureRiskEnabledChanged: (Boolean) -> Unit,
-    onWarnOnlyOutsideLatitudeChanged: (Boolean) -> Unit,
     onFilmLatitudePresetSelected: (FilmLatitudePreset?) -> Unit,
     onHighlightLatitudeChanged: (Double) -> Unit,
     onShadowLatitudeChanged: (Double) -> Unit,
@@ -265,7 +262,6 @@ private fun MeteringScreen(
                 onCenterAreaChanged = onCenterAreaChanged,
                 onCenterWeightChanged = onCenterWeightChanged,
                 onExposureRiskEnabledChanged = onExposureRiskEnabledChanged,
-                onWarnOnlyOutsideLatitudeChanged = onWarnOnlyOutsideLatitudeChanged,
                 onFilmLatitudePresetSelected = onFilmLatitudePresetSelected,
                 onHighlightLatitudeChanged = onHighlightLatitudeChanged,
                 onShadowLatitudeChanged = onShadowLatitudeChanged,
@@ -312,7 +308,6 @@ private fun CameraContent(
     onCenterAreaChanged: (Int) -> Unit,
     onCenterWeightChanged: (Int) -> Unit,
     onExposureRiskEnabledChanged: (Boolean) -> Unit,
-    onWarnOnlyOutsideLatitudeChanged: (Boolean) -> Unit,
     onFilmLatitudePresetSelected: (FilmLatitudePreset?) -> Unit,
     onHighlightLatitudeChanged: (Double) -> Unit,
     onShadowLatitudeChanged: (Double) -> Unit,
@@ -332,9 +327,6 @@ private fun CameraContent(
     var simulatedFrame by remember { mutableStateOf<Bitmap?>(null) }
     var isExposureSimulationEnabled by rememberSaveable { mutableStateOf(false) }
     var frozenExposureSnapshot by remember { mutableStateOf<ExposureSnapshot?>(null) }
-    var frozenShadowProbeSnapshot by remember { mutableStateOf<ExposureSnapshot?>(null) }
-    var frozenHighlightProbeSnapshot by remember { mutableStateOf<ExposureSnapshot?>(null) }
-    var completedDetailProbeRequestId by remember { mutableStateOf<Int?>(null) }
     var exposureRiskMask by remember { mutableStateOf<ExposureRiskMask?>(null) }
     var previewSize by remember { mutableStateOf(IntSize.Zero) }
     var cameraZoomState by remember { mutableStateOf(CameraZoomState()) }
@@ -441,19 +433,13 @@ private fun CameraContent(
         normalizedViewfinder,
         state.exposureCompensation,
         state.exposureRiskEnabled,
-        state.warnOnlyOutsideLatitude,
         state.highlightLatitudeStops,
         state.shadowLatitudeStops,
-        frozenShadowProbeSnapshot,
-        frozenHighlightProbeSnapshot,
-        completedDetailProbeRequestId,
-        state.freezeRequestId,
     ) {
         val snapshot = frozenExposureSnapshot
         exposureRiskMask = if (
             !state.exposureRiskEnabled ||
-            snapshot == null ||
-            completedDetailProbeRequestId != state.freezeRequestId
+            snapshot == null
         ) {
             null
         } else {
@@ -468,13 +454,7 @@ private fun CameraContent(
                     referenceEv100 = referenceEv100,
                     highlightLatitudeStops = state.highlightLatitudeStops,
                     shadowLatitudeStops = state.shadowLatitudeStops,
-                    shadowProbeMap = frozenShadowProbeSnapshot?.exposureMap,
-                    highlightProbeMap = frozenHighlightProbeSnapshot?.exposureMap,
-                    warningStartStops = if (state.warnOnlyOutsideLatitude) {
-                        null
-                    } else {
-                        PROGRESSIVE_WARNING_START_STOPS
-                    },
+                    thresholdMarginStops = MeteringViewModel.EV_THIRD_STEP,
                 )
             }
         }
@@ -525,9 +505,6 @@ private fun CameraContent(
             frozenFrame = null
             simulatedFrame = null
             frozenExposureSnapshot = null
-            frozenShadowProbeSnapshot = null
-            frozenHighlightProbeSnapshot = null
-            completedDetailProbeRequestId = null
             exposureRiskMask = null
         }
     }
@@ -602,9 +579,6 @@ private fun CameraContent(
                         },
                         freezeRequestId = state.freezeRequestId,
                         shouldCaptureFrame = state.isFrozen,
-                        exposureCompensation = state.exposureCompensation,
-                        highlightLatitudeStops = state.highlightLatitudeStops,
-                        shadowLatitudeStops = state.shadowLatitudeStops,
                         onMeteringResult = onMeteringResult,
                         onFrameCaptured = { capturedFrame ->
                             val bitmap = capturedFrame?.bitmap
@@ -619,19 +593,7 @@ private fun CameraContent(
                                 frozenFrame = bitmap
                                 simulatedFrame = null
                                 frozenExposureSnapshot = snapshot
-                                frozenShadowProbeSnapshot = null
-                                frozenHighlightProbeSnapshot = null
-                                completedDetailProbeRequestId = null
                             }
-                        },
-                        onDetailProbesCaptured = { shadowSnapshot, highlightSnapshot ->
-                            frozenShadowProbeSnapshot = shadowSnapshot?.takeIf {
-                                it.revision == state.meteringRevision
-                            }
-                            frozenHighlightProbeSnapshot = highlightSnapshot?.takeIf {
-                                it.revision == state.meteringRevision
-                            }
-                            completedDetailProbeRequestId = state.freezeRequestId
                         },
                         onOpticsAvailable = onCameraOpticsAvailable,
                         onZoomStateChanged = { cameraZoomState = it },
@@ -763,7 +725,6 @@ private fun CameraContent(
             onCenterAreaChanged = onCenterAreaChanged,
             onCenterWeightChanged = onCenterWeightChanged,
             onExposureRiskEnabledChanged = onExposureRiskEnabledChanged,
-            onWarnOnlyOutsideLatitudeChanged = onWarnOnlyOutsideLatitudeChanged,
             onFilmLatitudePresetSelected = onFilmLatitudePresetSelected,
             onHighlightLatitudeChanged = onHighlightLatitudeChanged,
             onShadowLatitudeChanged = onShadowLatitudeChanged,
@@ -1547,7 +1508,6 @@ private fun ExposurePanel(
     onCenterAreaChanged: (Int) -> Unit,
     onCenterWeightChanged: (Int) -> Unit,
     onExposureRiskEnabledChanged: (Boolean) -> Unit,
-    onWarnOnlyOutsideLatitudeChanged: (Boolean) -> Unit,
     onFilmLatitudePresetSelected: (FilmLatitudePreset?) -> Unit,
     onHighlightLatitudeChanged: (Double) -> Unit,
     onShadowLatitudeChanged: (Double) -> Unit,
@@ -1685,7 +1645,6 @@ private fun ExposurePanel(
             centerAreaPercent = state.centerAreaPercent,
             centerWeightPercent = state.centerWeightPercent,
             exposureRiskEnabled = state.exposureRiskEnabled,
-            warnOnlyOutsideLatitude = state.warnOnlyOutsideLatitude,
             selectedFilmLatitudePreset = state.filmLatitudePreset,
             highlightLatitudeStops = state.highlightLatitudeStops,
             shadowLatitudeStops = state.shadowLatitudeStops,
@@ -1696,7 +1655,6 @@ private fun ExposurePanel(
             onCenterAreaChanged = onCenterAreaChanged,
             onCenterWeightChanged = onCenterWeightChanged,
             onExposureRiskEnabledChanged = onExposureRiskEnabledChanged,
-            onWarnOnlyOutsideLatitudeChanged = onWarnOnlyOutsideLatitudeChanged,
             onFilmLatitudePresetSelected = onFilmLatitudePresetSelected,
             onHighlightLatitudeChanged = onHighlightLatitudeChanged,
             onShadowLatitudeChanged = onShadowLatitudeChanged,
@@ -1732,7 +1690,6 @@ private fun AppSettingsDialog(
     centerAreaPercent: Int,
     centerWeightPercent: Int,
     exposureRiskEnabled: Boolean,
-    warnOnlyOutsideLatitude: Boolean,
     selectedFilmLatitudePreset: FilmLatitudePreset?,
     highlightLatitudeStops: Double,
     shadowLatitudeStops: Double,
@@ -1743,7 +1700,6 @@ private fun AppSettingsDialog(
     onCenterAreaChanged: (Int) -> Unit,
     onCenterWeightChanged: (Int) -> Unit,
     onExposureRiskEnabledChanged: (Boolean) -> Unit,
-    onWarnOnlyOutsideLatitudeChanged: (Boolean) -> Unit,
     onFilmLatitudePresetSelected: (FilmLatitudePreset?) -> Unit,
     onHighlightLatitudeChanged: (Double) -> Unit,
     onShadowLatitudeChanged: (Double) -> Unit,
@@ -1879,34 +1835,6 @@ private fun AppSettingsDialog(
                         )
                     }
                     Spacer(modifier = Modifier.height(12.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "仅预警宽容度外",
-                                color = MaterialTheme.colorScheme.onSurface,
-                                style = MaterialTheme.typography.bodyMedium,
-                            )
-                            Text(
-                                text = if (warnOnlyOutsideLatitude) {
-                                    "达到胶片宽容度边界后预警"
-                                } else {
-                                    "偏离中灰 ±1 EV 后渐进预警"
-                                },
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                style = MaterialTheme.typography.labelSmall,
-                            )
-                        }
-                        Switch(
-                            checked = warnOnlyOutsideLatitude,
-                            enabled = exposureRiskEnabled,
-                            onCheckedChange = onWarnOnlyOutsideLatitudeChanged,
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(12.dp))
                     ControlLabel(text = "胶片预设")
                     OptionRow {
                         ChoiceButton(
@@ -1956,11 +1884,8 @@ private fun AppSettingsDialog(
                         },
                     )
                     SettingHint(
-                        if (warnOnlyOutsideLatitude) {
-                            "冻结画面后，仅在超出胶片宽容度时显示风险。"
-                        } else {
-                            "冻结画面后，偏离中灰 ±1 EV 以外开始渐进显示风险。"
-                        } +
+                        "冻结画面后，仅在超出胶片宽容度并留出 1/3 EV 测量余量后" +
+                            "显示风险。" +
                             "高光风险显示红色、暗部风险显示绿色。" +
                             "经验近似预设不是厂商保证值。",
                     )

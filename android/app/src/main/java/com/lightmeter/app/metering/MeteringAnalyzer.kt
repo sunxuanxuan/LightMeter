@@ -37,7 +37,6 @@ class MeteringAnalyzer(
     private val config = AtomicReference(initialConfig)
     private val configLock = Any()
     private val fallbackAperture = AtomicReference<Double?>(null)
-    private val exposureSnapshot = AtomicReference<ExposureSnapshot?>(null)
     private val pendingFrameCaptureRequest = AtomicInteger(0)
     private val capturedExposureFrame = AtomicReference<CapturedExposureFrame?>(null)
     private val metadataByTimestamp = ConcurrentHashMap<Long, CameraExposureMetadata>()
@@ -48,18 +47,13 @@ class MeteringAnalyzer(
 
     fun updateConfig(newConfig: MeteringConfig) {
         synchronized(configLock) {
-            val oldConfig = config.getAndSet(newConfig)
-            if (oldConfig != newConfig) {
-                exposureSnapshot.set(null)
-            }
+            config.set(newConfig)
         }
     }
 
     fun updateFallbackAperture(aperture: Double?) {
         fallbackAperture.set(aperture?.takeIf { it > 0.0 })
     }
-
-    fun latestExposureSnapshot(): ExposureSnapshot? = exposureSnapshot.get()
 
     fun requestFrameCapture(requestId: Int) {
         require(requestId > 0)
@@ -128,32 +122,47 @@ class MeteringAnalyzer(
     override fun analyze(image: ImageProxy) {
         try {
             val timestampNs = image.imageInfo.timestamp
-            if (timestampNs - lastAnalyzedTimestampNs < ANALYSIS_INTERVAL_NS) return
+            val captureRequestId = pendingFrameCaptureRequest.get()
+            if (
+                captureRequestId == 0 &&
+                timestampNs - lastAnalyzedTimestampNs < ANALYSIS_INTERVAL_NS
+            ) {
+                return
+            }
 
             val metadata = metadataForTimestamp(timestampNs) ?: return
             val currentConfig = config.get()
             if (!currentConfig.isZoomReady) return
             val luminance = measureLuminance(image, currentConfig) ?: return
             val ev = calculateEv100(metadata, luminance, currentConfig.calibrationOffset)
-            val captureRequestId = pendingFrameCaptureRequest.get()
-            val mapStartedAtNs = SystemClock.elapsedRealtimeNanos()
-            val currentExposureMap = createExposureMap(image, metadata, currentConfig) ?: return
-            val mapDurationMs = (
-                SystemClock.elapsedRealtimeNanos() - mapStartedAtNs
-                ) / 1_000_000
-            val currentSnapshot = ExposureSnapshot(
-                exposureMap = currentExposureMap,
-                meteredEv100 = ev,
-                timestampNs = timestampNs,
-                revision = currentConfig.revision,
-            )
-            val bitmapStartedAtNs = SystemClock.elapsedRealtimeNanos()
-            val capturedBitmap = if (captureRequestId > 0) {
-                createCapturedBitmap(image)
+            var mapDurationMs = 0L
+            var bitmapDurationMs = 0L
+            val currentSnapshot: ExposureSnapshot?
+            val capturedBitmap: Bitmap?
+            if (captureRequestId > 0) {
+                val mapStartedAtNs = SystemClock.elapsedRealtimeNanos()
+                val currentExposureMap =
+                    createExposureMap(image, metadata, currentConfig) ?: return
+                mapDurationMs = (
+                    SystemClock.elapsedRealtimeNanos() - mapStartedAtNs
+                    ) / 1_000_000
+                currentSnapshot = ExposureSnapshot(
+                    exposureMap = currentExposureMap,
+                    meteredEv100 = ev,
+                    timestampNs = timestampNs,
+                    revision = currentConfig.revision,
+                )
+                val bitmapStartedAtNs = SystemClock.elapsedRealtimeNanos()
+                capturedBitmap = createCapturedBitmap(image)
+                bitmapDurationMs = (
+                    SystemClock.elapsedRealtimeNanos() - bitmapStartedAtNs
+                    ) / 1_000_000
             } else {
-                null
+                currentSnapshot = null
+                capturedBitmap = null
             }
             if (BuildConfig.DEBUG && captureRequestId > 0) {
+                val exposureMap = requireNotNull(currentSnapshot).exposureMap
                 Log.d(
                     TAG,
                     (
@@ -164,13 +173,11 @@ class MeteringAnalyzer(
                             image.height,
                             image.cropRect.toShortString(),
                             image.imageInfo.rotationDegrees,
-                            currentExposureMap.width,
-                            currentExposureMap.height,
+                            exposureMap.width,
+                            exposureMap.height,
                             mapDurationMs,
                             capturedBitmap?.let { "${it.width}x${it.height}" } ?: "null",
-                            (
-                                SystemClock.elapsedRealtimeNanos() - bitmapStartedAtNs
-                                ) / 1_000_000,
+                            bitmapDurationMs,
                         ),
                 )
             }
@@ -179,10 +186,10 @@ class MeteringAnalyzer(
                     capturedBitmap?.recycle()
                     return
                 }
-                exposureSnapshot.set(currentSnapshot)
                 if (
                     captureRequestId > 0 &&
                     capturedBitmap != null &&
+                    currentSnapshot != null &&
                     pendingFrameCaptureRequest.compareAndSet(captureRequestId, 0)
                 ) {
                     capturedExposureFrame.getAndSet(
@@ -441,7 +448,6 @@ class MeteringAnalyzer(
         val exposureSeconds = metadata.exposureTimeNs / 1_000_000_000.0
         val settingEv100 = cameraSettingEv100(metadata, exposureSeconds)
         val pixelEv100 = FloatArray(mapWidth * mapHeight)
-        val rawLuminanceMap = ByteArray(mapWidth * mapHeight)
         val clippedHighlights = BooleanArray(mapWidth * mapHeight)
         val buffer = plane.buffer
         val sampleOffsets = doubleArrayOf(0.25, 0.75)
@@ -456,7 +462,6 @@ class MeteringAnalyzer(
                     continue
                 }
 
-                var rawLuminanceSum = 0
                 var linearLuminanceSum = 0.0
                 var clippedSampleCount = 0
                 var sampleCount = 0
@@ -477,7 +482,6 @@ class MeteringAnalyzer(
                         )
                         if (index !in 0 until buffer.limit()) continue
                         val rawLuminance = buffer.get(index).toInt() and 0xFF
-                        rawLuminanceSum += rawLuminance
                         linearLuminanceSum += YuvLuminance.linear(rawLuminance)
                         if (YuvLuminance.isHighlightClipped(rawLuminance)) {
                             clippedSampleCount++
@@ -490,8 +494,6 @@ class MeteringAnalyzer(
                     continue
                 }
 
-                rawLuminanceMap[mapIndex] =
-                    (rawLuminanceSum / sampleCount.toDouble()).roundToInt().toByte()
                 clippedHighlights[mapIndex] =
                     clippedSampleCount / sampleCount.toDouble() >= CLIPPED_SAMPLE_RATIO
                 val linearLuminance = linearLuminanceSum / sampleCount
@@ -507,7 +509,6 @@ class MeteringAnalyzer(
             width = mapWidth,
             height = mapHeight,
             pixelEv100 = pixelEv100,
-            rawLuminance = rawLuminanceMap,
             clippedHighlights = clippedHighlights,
             cameraSettingEv100 = settingEv100,
             calibrationOffset = meteringConfig.calibrationOffset,
@@ -579,7 +580,7 @@ class MeteringAnalyzer(
 
     companion object {
         private const val TAG = "MeteringAnalyzer"
-        private const val ANALYSIS_INTERVAL_NS = 100_000_000L
+        private const val ANALYSIS_INTERVAL_NS = 200_000_000L
         private const val METADATA_TOLERANCE_NS = 50_000_000L
         private const val MAX_METADATA_ENTRIES = 24
         private const val EXPOSURE_MAP_LONG_EDGE = 480
@@ -589,6 +590,6 @@ class MeteringAnalyzer(
         private const val MIN_SAMPLE_COUNT = 32
         private const val TRIM_RATIO = 0.05
         private const val TARGET_LUMINANCE = 0.18
-        private const val SMOOTHING_WEIGHT = 0.25
+        private const val SMOOTHING_WEIGHT = 0.44
     }
 }

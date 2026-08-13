@@ -84,7 +84,6 @@ class MeteringViewModelTest {
         firstViewModel.selectFocalLength(80.0)
         firstViewModel.selectMeteringPreset(MeteringMode.SPOT)
         firstViewModel.selectFilmLatitudePreset(FilmLatitudePreset.KODAK_E100)
-        firstViewModel.setWarnOnlyOutsideLatitude(false)
 
         assertTrue(firstViewModel.saveSettings())
 
@@ -96,7 +95,6 @@ class MeteringViewModelTest {
         assertEquals(MeteringMode.SPOT, restoredState.meteringPreset)
         assertEquals(MeteringMode.SPOT, restoredState.meteringMode)
         assertEquals(FilmLatitudePreset.KODAK_E100, restoredState.filmLatitudePreset)
-        assertEquals(false, restoredState.warnOnlyOutsideLatitude)
         assertEquals(2.0 / 3.0, restoredState.highlightLatitudeStops, 0.0001)
         assertEquals(5.0 / 3.0, restoredState.shadowLatitudeStops, 0.0001)
     }
