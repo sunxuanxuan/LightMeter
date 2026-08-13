@@ -103,6 +103,8 @@ import com.lightmeter.app.metering.NormalizedMeteringRect
 import com.lightmeter.app.metering.NormalizedPoint
 import com.lightmeter.app.metering.MeteringResult
 import com.lightmeter.app.settings.SharedPreferencesAppSettingsStore
+import com.lightmeter.app.BuildConfig
+import com.lightmeter.app.activation.DebugToolsDialog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlin.math.PI
@@ -1368,6 +1370,7 @@ private fun ExposurePanel(
 ) {
     var showSettings by rememberSaveable { mutableStateOf(false) }
     var quickSetting by rememberSaveable { mutableStateOf<QuickSetting?>(null) }
+    var showDebugTools by rememberSaveable { mutableStateOf(false) }
 
     Surface(
         color = Color.Black.copy(alpha = 0.82f),
@@ -1434,6 +1437,17 @@ private fun ExposurePanel(
                 Text("设置")
             }
 
+            if (BuildConfig.DEBUG) {
+                Spacer(modifier = Modifier.height(6.dp))
+
+                OutlinedButton(
+                    onClick = { showDebugTools = true },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("激活码生成器")
+                }
+            }
+
             state.errorMessage?.let {
                 Text(
                     text = it,
@@ -1489,6 +1503,19 @@ private fun ExposurePanel(
                 }
             },
             onDismiss = { showSettings = false },
+        )
+    }
+
+    if (showDebugTools) {
+        AlertDialog(
+            onDismissRequest = { showDebugTools = false },
+            title = { },
+            text = {
+                DebugToolsDialog(
+                    onDismiss = { showDebugTools = false },
+                )
+            },
+            confirmButton = { },
         )
     }
 }
