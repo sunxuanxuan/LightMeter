@@ -91,10 +91,13 @@ $$
 判定规则：
 
 ```text
-deltaEV >= highlightLatitude -> 高光风险
-deltaEV <= -shadowLatitude   -> 暗部风险
-otherwise                    -> 正常
+round10(abs(deltaEV)) <= round10(latitude) -> 正常
+deltaEV > 0 且超出高光边界                 -> 高光风险
+deltaEV < 0 且超出暗部边界                 -> 暗部风险
 ```
+
+宽容度设置和预设仍量化到 `1/3 EV`，风险比较量化到 `0.1 EV`。边界值本身
+不报警，例如暗部边界 `-1.7 EV`、像素差值 `-1.8 EV` 时显示暗部风险。
 
 亮度阈值只说明区域相对中灰过亮或过暗，无法区分固有纯白/纯黑物体与曝光
 造成的细节丢失。冻结检测采用单帧保守判定，不修改手机相机曝光。
@@ -110,6 +113,7 @@ otherwise                    -> 正常
 highlightLatitude = 4.0 EV
 shadowLatitude = 3.0 EV
 adjustmentStep = 1/3 EV
+comparisonStep = 0.1 EV
 range = 1/3 EV ~ 8.0 EV
 ```
 
@@ -154,10 +158,9 @@ $$
 intensity=clamp\left(\frac{excess}{2.0},0,1\right)
 $$
 
-Alpha 从阈值处的 `0x33`（约 20%）线性增加到超出 2 EV 时的 `0xE6`
-（约 90%），之后保持封顶。这样轻微越界仍能看到原画面，严重越界则得到
-更扎实的警示色。高光/暗部风险百分比仍按是否越过阈值统计，不受 Alpha
-变化影响。
+Alpha 从首次越过边界的 `0.1 EV` 档位开始增加，到超出 2 EV 时达到 `0xE6`
+（约 90%），之后保持封顶。这样轻微越界仍能看到原画面，严重越界则得到更
+扎实的警示色。高光/暗部风险百分比仍按是否越过阈值统计，不受 Alpha 变化影响。
 
 ### 4.4 胶片预设
 

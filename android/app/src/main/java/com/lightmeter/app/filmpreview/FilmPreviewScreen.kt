@@ -313,7 +313,6 @@ private fun FilmPreviewWorkspace(
                     referenceEv100 = presetReferenceEv100,
                     highlightLatitudeStops = preset.film.highlightLatitudeStops,
                     shadowLatitudeStops = preset.film.shadowLatitudeStops,
-                    warningStartStops = PREVIEW_WARNING_START_STOPS,
                 )
             }
         }
@@ -964,7 +963,6 @@ private fun ratingColor(rating: PreviewSceneRating?): Color {
 
 private const val PREVIEW_ASPECT_RATIO = 2f / 3f
 private const val PREVIEW_ZOOM_TOLERANCE = 0.02f
-private const val PREVIEW_WARNING_START_STOPS = 1.0
 private const val PREVIEW_CENTER_AREA_PERCENT = 30
 private const val PREVIEW_CENTER_WEIGHT_PERCENT = 70
 

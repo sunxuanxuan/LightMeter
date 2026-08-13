@@ -6,6 +6,48 @@ import org.junit.Test
 
 class FilmExposureSimulatorTest {
     @Test
+    fun zeroExposureCompensationPreservesEveryPixel() {
+        val source = intArrayOf(
+            0xFF123456.toInt(),
+            0xC0804020.toInt(),
+            0x80010203.toInt(),
+            0x40000000,
+        )
+
+        val result = FilmExposureSimulator.renderExposureCompensationPixels(
+            sourcePixels = source,
+            exposureCompensation = 0.0,
+        )
+
+        assertTrue(source.contentEquals(result))
+        assertTrue(source !== result)
+    }
+
+    @Test
+    fun positiveExposureCompensationBrightensLinearRgb() {
+        val source = intArrayOf(0xFF406080.toInt())
+
+        val result = FilmExposureSimulator.renderExposureCompensationPixels(
+            sourcePixels = source,
+            exposureCompensation = 1.0,
+        ).single()
+
+        assertChannelsChangedInDirection(source.single(), result, shouldIncrease = true)
+    }
+
+    @Test
+    fun negativeExposureCompensationDarkensLinearRgb() {
+        val source = intArrayOf(0xC080A0C0.toInt())
+
+        val result = FilmExposureSimulator.renderExposureCompensationPixels(
+            sourcePixels = source,
+            exposureCompensation = -1.0,
+        ).single()
+
+        assertChannelsChangedInDirection(source.single(), result, shouldIncrease = false)
+    }
+
+    @Test
     fun fullResolutionCpuPathPreservesPixelCountAndAlpha() {
         val source = intArrayOf(
             argb(alpha = 255, value = 64),
@@ -62,5 +104,28 @@ class FilmExposureSimulatorTest {
 
     private fun argb(alpha: Int, value: Int): Int {
         return (alpha shl 24) or (value shl 16) or (value shl 8) or value
+    }
+
+    private fun assertChannelsChangedInDirection(
+        source: Int,
+        result: Int,
+        shouldIncrease: Boolean,
+    ) {
+        assertEquals(source ushr 24, result ushr 24)
+        listOf(16, 8, 0).forEach { shift ->
+            val sourceChannel = (source ushr shift) and 0xFF
+            val resultChannel = (result ushr shift) and 0xFF
+            if (shouldIncrease) {
+                assertTrue(
+                    "$sourceChannel should increase, got $resultChannel",
+                    resultChannel > sourceChannel,
+                )
+            } else {
+                assertTrue(
+                    "$sourceChannel should decrease, got $resultChannel",
+                    resultChannel < sourceChannel,
+                )
+            }
+        }
     }
 }

@@ -11,7 +11,7 @@ class ExposureRiskCalculatorTest {
         val exposureMap = ExposureMap(
             width = 2,
             height = 2,
-            pixelEv100 = floatArrayOf(4.0f, -3.0f, 0.0f, 5.0f),
+            pixelEv100 = floatArrayOf(4.1f, -3.1f, 0.0f, 5.0f),
             timestampNs = 1L,
         )
 
@@ -91,7 +91,7 @@ class ExposureRiskCalculatorTest {
             exposureMap = ExposureMap(
                 width = 6,
                 height = 1,
-                pixelEv100 = floatArrayOf(4.0f, 5.0f, 6.0f, -3.0f, -4.0f, -5.0f),
+                pixelEv100 = floatArrayOf(4.1f, 5.0f, 6.0f, -3.1f, -4.0f, -5.0f),
                 timestampNs = 1L,
             ),
             viewfinder = NormalizedMeteringRect.Full,
@@ -101,25 +101,28 @@ class ExposureRiskCalculatorTest {
         )
 
         val alpha = result.argb.map { it ushr 24 }
-        assertEquals(listOf(0x33, 0x8D, 0xE6), alpha.take(3))
-        assertEquals(listOf(0x33, 0x8D, 0xE6), alpha.takeLast(3))
+        assertTrue(alpha[0] < alpha[1])
+        assertTrue(alpha[1] < alpha[2])
+        assertEquals(0xE6, alpha[2])
+        assertTrue(alpha[3] < alpha[4])
+        assertTrue(alpha[4] < alpha[5])
+        assertEquals(0xE6, alpha[5])
         assertEquals(1.0, result.highlightRatio + result.shadowRatio, 0.0001)
     }
 
     @Test
-    fun thresholdMarginSuppressesWarningsNearLatitudeBoundary() {
+    fun comparesLatitudeAndPixelDifferenceAtOneTenthStopPrecision() {
         val result = ExposureRiskCalculator.calculate(
             exposureMap = ExposureMap(
                 width = 4,
                 height = 1,
-                pixelEv100 = floatArrayOf(4.2f, 4.34f, -3.2f, -3.34f),
+                pixelEv100 = floatArrayOf(1.7f, 1.8f, -1.7f, -1.8f),
                 timestampNs = 1L,
             ),
             viewfinder = NormalizedMeteringRect.Full,
             referenceEv100 = 0.0,
-            highlightLatitudeStops = 4.0,
-            shadowLatitudeStops = 3.0,
-            thresholdMarginStops = 1.0 / 3.0,
+            highlightLatitudeStops = 5.0 / 3.0,
+            shadowLatitudeStops = 5.0 / 3.0,
         )
 
         assertEquals(0, result.argb[0])
@@ -131,74 +134,23 @@ class ExposureRiskCalculatorTest {
     }
 
     @Test
-    fun previewWarningKeepsPlusMinusOneStopClear() {
+    fun keepsValuesThatRoundToLatitudeBoundaryClear() {
         val result = ExposureRiskCalculator.calculate(
             exposureMap = ExposureMap(
-                width = 5,
+                width = 4,
                 height = 1,
-                pixelEv100 = floatArrayOf(-1.01f, -1.0f, 0.0f, 1.0f, 1.01f),
+                pixelEv100 = floatArrayOf(1.66f, 1.74f, -1.66f, -1.74f),
                 timestampNs = 1L,
             ),
             viewfinder = NormalizedMeteringRect.Full,
             referenceEv100 = 0.0,
-            highlightLatitudeStops = 3.0,
-            shadowLatitudeStops = 2.0,
-            warningStartStops = 1.0,
+            highlightLatitudeStops = 5.0 / 3.0,
+            shadowLatitudeStops = 5.0 / 3.0,
         )
 
-        assertNotEquals(0, result.argb[0])
-        assertEquals(0, result.argb[1])
-        assertEquals(0, result.argb[2])
-        assertEquals(0, result.argb[3])
-        assertNotEquals(0, result.argb[4])
-        assertEquals(0.2, result.highlightRatio, 0.0001)
-        assertEquals(0.2, result.shadowRatio, 0.0001)
-    }
-
-    @Test
-    fun previewWarningOpacityReachesMaximumAtDetailLossBoundary() {
-        val result = ExposureRiskCalculator.calculate(
-            exposureMap = ExposureMap(
-                width = 6,
-                height = 1,
-                pixelEv100 = floatArrayOf(1.1f, 2.0f, 3.0f, -1.1f, -1.5f, -2.0f),
-                timestampNs = 1L,
-            ),
-            viewfinder = NormalizedMeteringRect.Full,
-            referenceEv100 = 0.0,
-            highlightLatitudeStops = 3.0,
-            shadowLatitudeStops = 2.0,
-            warningStartStops = 1.0,
-        )
-
-        val alpha = result.argb.map { it ushr 24 }
-        assertTrue(alpha[0] < alpha[1])
-        assertTrue(alpha[1] < alpha[2])
-        assertEquals(0xE6, alpha[2])
-        assertTrue(alpha[3] < alpha[4])
-        assertTrue(alpha[4] < alpha[5])
-        assertEquals(0xE6, alpha[5])
-    }
-
-    @Test
-    fun progressiveWarningSupportsLatitudeInsideOneStop() {
-        val result = ExposureRiskCalculator.calculate(
-            exposureMap = ExposureMap(
-                width = 3,
-                height = 1,
-                pixelEv100 = floatArrayOf(-1.01f, 0.8f, 1.01f),
-                timestampNs = 1L,
-            ),
-            viewfinder = NormalizedMeteringRect.Full,
-            referenceEv100 = 0.0,
-            highlightLatitudeStops = 2.0 / 3.0,
-            shadowLatitudeStops = 2.0 / 3.0,
-            warningStartStops = 1.0,
-        )
-
-        assertEquals(0xE6, result.argb[0] ushr 24)
-        assertEquals(0, result.argb[1])
-        assertEquals(0xE6, result.argb[2] ushr 24)
+        result.argb.forEach { assertEquals(0, it) }
+        assertEquals(0.0, result.highlightRatio, 0.0001)
+        assertEquals(0.0, result.shadowRatio, 0.0001)
     }
 
     @Test
@@ -206,7 +158,7 @@ class ExposureRiskCalculatorTest {
         val exposureMap = ExposureMap(
             width = 2,
             height = 1,
-            pixelEv100 = floatArrayOf(13.5f, 7.0f),
+            pixelEv100 = floatArrayOf(13.5f, 6.9f),
             timestampNs = 1L,
         )
 

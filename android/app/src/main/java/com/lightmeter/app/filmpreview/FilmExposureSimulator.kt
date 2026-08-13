@@ -11,6 +11,54 @@ import kotlin.math.pow
 import kotlin.math.roundToInt
 
 internal object FilmExposureSimulator {
+    fun renderExposureCompensation(
+        source: Bitmap,
+        exposureCompensation: Double,
+    ): Bitmap {
+        require(exposureCompensation.isFinite())
+        if (exposureCompensation == 0.0) {
+            return source.copy(Bitmap.Config.ARGB_8888, false)
+        }
+
+        val startedAtMs = SystemClock.elapsedRealtime()
+        val gpuResult = runCatching {
+            GpuFilmExposureRenderer.renderExposureCompensation(
+                source = source,
+                exposureCompensation = exposureCompensation,
+            )
+        }
+        gpuResult.getOrNull()?.let { result ->
+            logRender("gpu-ec", source, result, startedAtMs)
+            return result
+        }
+        if (BuildConfig.DEBUG) {
+            Log.w(
+                TAG,
+                "GPU exposure compensation failed; using CPU",
+                gpuResult.exceptionOrNull(),
+            )
+        }
+
+        val sourcePixels = IntArray(source.width * source.height)
+        source.getPixels(
+            sourcePixels,
+            0,
+            source.width,
+            0,
+            0,
+            source.width,
+            source.height,
+        )
+        val result = Bitmap.createBitmap(
+            renderExposureCompensationPixels(sourcePixels, exposureCompensation),
+            source.width,
+            source.height,
+            Bitmap.Config.ARGB_8888,
+        )
+        logRender("cpu-ec", source, result, startedAtMs)
+        return result
+    }
+
     fun render(
         source: Bitmap,
         exposureMap: ExposureMap,
@@ -93,6 +141,33 @@ internal object FilmExposureSimulator {
                 highlightLatitudeStops = highlightLatitudeStops,
                 shadowLatitudeStops = shadowLatitudeStops,
             )
+        }
+        if (sourcePixels.size >= PARALLEL_PIXEL_THRESHOLD) {
+            IntStream.range(0, sourcePixels.size).parallel().forEach(renderPixel)
+        } else {
+            sourcePixels.indices.forEach(renderPixel)
+        }
+        return outputPixels
+    }
+
+    internal fun renderExposureCompensationPixels(
+        sourcePixels: IntArray,
+        exposureCompensation: Double,
+    ): IntArray {
+        require(exposureCompensation.isFinite())
+        if (exposureCompensation == 0.0) return sourcePixels.copyOf()
+
+        val gain = 2.0.pow(exposureCompensation)
+        val outputPixels = IntArray(sourcePixels.size)
+        val renderPixel: (Int) -> Unit = { index ->
+            val argb = sourcePixels[index]
+            val red = SRGB_TO_LINEAR[(argb ushr 16) and 0xFF]
+            val green = SRGB_TO_LINEAR[(argb ushr 8) and 0xFF]
+            val blue = SRGB_TO_LINEAR[argb and 0xFF]
+            outputPixels[index] = (argb and -0x1000000) or
+                (linearToByte(red * gain) shl 16) or
+                (linearToByte(green * gain) shl 8) or
+                linearToByte(blue * gain)
         }
         if (sourcePixels.size >= PARALLEL_PIXEL_THRESHOLD) {
             IntStream.range(0, sourcePixels.size).parallel().forEach(renderPixel)

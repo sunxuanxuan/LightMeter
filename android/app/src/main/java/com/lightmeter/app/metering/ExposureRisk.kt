@@ -52,22 +52,16 @@ object ExposureRiskCalculator {
         referenceEv100: Double,
         highlightLatitudeStops: Double,
         shadowLatitudeStops: Double,
-        warningStartStops: Double? = null,
-        thresholdMarginStops: Double = 0.0,
     ): ExposureRiskMask {
         require(highlightLatitudeStops > 0.0)
         require(shadowLatitudeStops > 0.0)
-        require(thresholdMarginStops >= 0.0)
-        warningStartStops?.let {
-            require(it > 0.0)
-        }
 
         val pixels = IntArray(exposureMap.pixelEv100.size)
         var highlightCount = 0
         var shadowCount = 0
         var analyzedCount = 0
-        val effectiveHighlightThreshold = highlightLatitudeStops + thresholdMarginStops
-        val effectiveShadowThreshold = shadowLatitudeStops + thresholdMarginStops
+        val highlightThreshold = quantizeMagnitudeToTenth(highlightLatitudeStops)
+        val shadowThreshold = quantizeMagnitudeToTenth(shadowLatitudeStops)
 
         exposureMap.pixelEv100.forEachIndexed { index, pixelEv ->
             val x = (index % exposureMap.width + 0.5) / exposureMap.width
@@ -79,40 +73,9 @@ object ExposureRiskCalculator {
 
             analyzedCount++
             val deltaEv = pixelEv - referenceEv100
-            if (warningStartStops != null) {
-                pixels[index] = when {
-                    exposureMap.clippedHighlights[index] -> {
-                        highlightCount++
-                        riskColor(HIGHLIGHT_RGB, MAX_RISK_ALPHA)
-                    }
-
-                    deltaEv > warningStartStops -> {
-                        highlightCount++
-                        progressiveWarningColor(
-                            rgb = HIGHLIGHT_RGB,
-                            distanceStops = deltaEv,
-                            warningStartStops = warningStartStops,
-                            detailLossStops = highlightLatitudeStops,
-                        )
-                    }
-
-                    deltaEv < -warningStartStops -> {
-                        shadowCount++
-                        progressiveWarningColor(
-                            rgb = SHADOW_RGB,
-                            distanceStops = -deltaEv,
-                            warningStartStops = warningStartStops,
-                            detailLossStops = shadowLatitudeStops,
-                        )
-                    }
-
-                    else -> TRANSPARENT
-                }
-                return@forEachIndexed
-            }
-
+            val deltaMagnitude = quantizeMagnitudeToTenth(deltaEv)
             val isHighlightCandidate = exposureMap.clippedHighlights[index] ||
-                deltaEv >= effectiveHighlightThreshold
+                deltaEv > 0.0 && deltaMagnitude > highlightThreshold
             pixels[index] = when {
                 isHighlightCandidate -> {
                     highlightCount++
@@ -121,16 +84,16 @@ object ExposureRiskCalculator {
                         excessStops = if (exposureMap.clippedHighlights[index]) {
                             FULL_INTENSITY_EXCESS_STOPS
                         } else {
-                            deltaEv - effectiveHighlightThreshold
+                            deltaMagnitude - highlightThreshold
                         },
                     )
                 }
 
-                deltaEv <= -effectiveShadowThreshold -> {
+                deltaEv < 0.0 && deltaMagnitude > shadowThreshold -> {
                     shadowCount++
                     riskColor(
                         rgb = SHADOW_RGB,
-                        excessStops = -deltaEv - effectiveShadowThreshold,
+                        excessStops = deltaMagnitude - shadowThreshold,
                     )
                 }
 
@@ -156,29 +119,13 @@ object ExposureRiskCalculator {
         return (alpha shl 24) or rgb
     }
 
-    private fun progressiveWarningColor(
-        rgb: Int,
-        distanceStops: Double,
-        warningStartStops: Double,
-        detailLossStops: Double,
-    ): Int {
-        if (detailLossStops <= warningStartStops) {
-            return riskColor(rgb, MAX_RISK_ALPHA)
-        }
-        val intensity = (
-            (distanceStops - warningStartStops) /
-                (detailLossStops - warningStartStops)
-            ).coerceIn(0.0, 1.0)
-        val alpha = (
-            MIN_WARNING_ALPHA +
-                (MAX_RISK_ALPHA - MIN_WARNING_ALPHA) * intensity
-            ).roundToInt()
-        return (alpha shl 24) or rgb
-    }
+    private fun quantizeMagnitudeToTenth(stops: Double): Double =
+        (kotlin.math.abs(stops) * EV_COMPARISON_STEPS_PER_STOP).roundToInt() /
+            EV_COMPARISON_STEPS_PER_STOP
 
     private fun riskColor(rgb: Int, alpha: Int): Int {
         return (alpha shl 24) or rgb
     }
 
-    private const val MIN_WARNING_ALPHA = 0x20
+    private const val EV_COMPARISON_STEPS_PER_STOP = 10.0
 }

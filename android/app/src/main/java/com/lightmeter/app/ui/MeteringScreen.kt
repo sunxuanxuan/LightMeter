@@ -454,7 +454,6 @@ private fun CameraContent(
                     referenceEv100 = referenceEv100,
                     highlightLatitudeStops = state.highlightLatitudeStops,
                     shadowLatitudeStops = state.shadowLatitudeStops,
-                    thresholdMarginStops = MeteringViewModel.EV_THIRD_STEP,
                 )
             }
         }
@@ -471,28 +470,17 @@ private fun CameraContent(
     }
     LaunchedEffect(
         frozenFrame,
-        frozenExposureSnapshot,
         state.exposureCompensation,
-        state.highlightLatitudeStops,
-        state.shadowLatitudeStops,
     ) {
         val source = frozenFrame
-        val snapshot = frozenExposureSnapshot
-        simulatedFrame = if (source == null || snapshot == null) {
+        simulatedFrame = if (source == null) {
             null
         } else {
-            val referenceEv100 = ExposureRiskCalculator.referenceEv100(
-                frozenMeteredEv100 = snapshot.meteredEv100,
-                exposureCompensation = state.exposureCompensation,
-            )
             withContext(Dispatchers.Default) {
                 runCatching {
-                    FilmExposureSimulator.render(
+                    FilmExposureSimulator.renderExposureCompensation(
                         source = source,
-                        exposureMap = snapshot.exposureMap,
-                        referenceEv100 = referenceEv100,
-                        highlightLatitudeStops = state.highlightLatitudeStops,
-                        shadowLatitudeStops = state.shadowLatitudeStops,
+                        exposureCompensation = state.exposureCompensation,
                     )
                 }.getOrNull()
             }
@@ -1884,8 +1872,7 @@ private fun AppSettingsDialog(
                         },
                     )
                     SettingHint(
-                        "冻结画面后，仅在超出胶片宽容度并留出 1/3 EV 测量余量后" +
-                            "显示风险。" +
+                        "冻结画面后，按 0.1 EV 精度判断是否超出胶片宽容度。" +
                             "高光风险显示红色、暗部风险显示绿色。" +
                             "经验近似预设不是厂商保证值。",
                     )
