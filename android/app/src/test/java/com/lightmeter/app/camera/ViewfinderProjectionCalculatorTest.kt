@@ -44,6 +44,72 @@ class ViewfinderProjectionCalculatorTest {
     }
 
     @Test
+    fun limitedZoomReportsEquivalentSupportedFocalLength() {
+        val projection = ViewfinderProjection(
+            baseWidthFraction = 0.25,
+            baseHeightFraction = 0.4,
+        )
+
+        assertEquals(
+            80.0,
+            projection.equivalentFocalLengthAt(
+                targetFocalLengthMm = 100.0,
+                zoomRatio = 2.0,
+            ),
+            0.0001,
+        )
+    }
+
+    @Test
+    fun limitedZoomProducesCenteredMeteringViewfinder() {
+        val projection = ViewfinderProjection(
+            baseWidthFraction = 0.25,
+            baseHeightFraction = 0.4,
+        )
+
+        val viewfinder = projection.viewfinderAt(2.0)
+
+        assertEquals(0.25, viewfinder.left, 0.0001)
+        assertEquals(0.10, viewfinder.top, 0.0001)
+        assertEquals(0.75, viewfinder.right, 0.0001)
+        assertEquals(0.90, viewfinder.bottom, 0.0001)
+    }
+
+    @Test
+    fun supportedFocalRangeIntersectsHardwareZoomWithProductLimits() {
+        val focalRange = ViewfinderProjectionCalculator.supportedFocalLengthRange(
+            previewAspectRatio = 0.5,
+            frameFormat = FrameFormat.FILM_135,
+            cameraOptics = cameraOptics,
+            minimumZoomRatio = 1.0,
+            maximumZoomRatio = 3.0,
+            allowedMinimumFocalLengthMm = 20.0,
+            allowedMaximumFocalLengthMm = 150.0,
+        )
+
+        requireNotNull(focalRange)
+        assertEquals(34.0, focalRange.start, 0.0001)
+        assertEquals(100.0, focalRange.endInclusive, 0.0001)
+    }
+
+    @Test
+    fun supportedFocalRangeIsRecalculatedForFrameFormat() {
+        val focalRange = ViewfinderProjectionCalculator.supportedFocalLengthRange(
+            previewAspectRatio = 0.5,
+            frameFormat = FrameFormat.FILM_66,
+            cameraOptics = cameraOptics,
+            minimumZoomRatio = 1.0,
+            maximumZoomRatio = 3.0,
+            allowedMinimumFocalLengthMm = 20.0,
+            allowedMaximumFocalLengthMm = 150.0,
+        )
+
+        requireNotNull(focalRange)
+        assertEquals(78.0, focalRange.start, 0.0001)
+        assertEquals(150.0, focalRange.endInclusive, 0.0001)
+    }
+
+    @Test
     fun longerFocalLengthRequiresMoreZoom() {
         val wide = ViewfinderProjectionCalculator.calculate(
             previewAspectRatio = 0.5,

@@ -100,6 +100,7 @@ class MeteringViewModel(
 
     fun onCameraOpticsAvailable(optics: CameraOptics) {
         mutableState.update {
+            if (it.cameraOptics == optics) return@update it
             it.copy(cameraOptics = optics).withoutMeteringResult()
         }
     }
@@ -283,11 +284,12 @@ class MeteringViewModel(
 
     fun selectFrameFormat(frameFormat: FrameFormat) {
         mutableState.update {
+            if (it.frameFormat == frameFormat) return@update it
             it.copy(
                 frameFormat = frameFormat,
                 meteringMode = it.meteringPreset,
                 spotMeteringPoint = null,
-            ).withoutMeteringResult()
+            ).withInvalidatedMetering()
         }
     }
 
@@ -388,7 +390,7 @@ class MeteringViewModel(
             it * EV_THIRD_STEP
         }
         const val MIN_FOCAL_LENGTH_MM = 20.0
-        const val MAX_FOCAL_LENGTH_MM = 120.0
+        const val MAX_FOCAL_LENGTH_MM = 150.0
 
         private fun restoreSettings(settings: AppSettings): MeteringUiState {
             val defaults = MeteringUiState()

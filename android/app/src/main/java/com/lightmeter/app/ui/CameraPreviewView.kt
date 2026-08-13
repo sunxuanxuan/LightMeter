@@ -2,6 +2,7 @@ package com.lightmeter.app.ui
 
 import android.graphics.Bitmap
 import androidx.camera.view.PreviewView
+import androidx.compose.foundation.Canvas
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -9,18 +10,25 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.lightmeter.app.camera.CameraController
 import com.lightmeter.app.camera.CameraExposureBracket
 import com.lightmeter.app.camera.CameraOptics
 import com.lightmeter.app.camera.CameraZoomState
+import com.lightmeter.app.metering.CapturedExposureFrame
 import com.lightmeter.app.metering.ExposureRiskCalculator
 import com.lightmeter.app.metering.ExposureSnapshot
 import com.lightmeter.app.metering.MeteringAnalyzer
 import com.lightmeter.app.metering.MeteringConfig
 import com.lightmeter.app.metering.MeteringResult
+import com.lightmeter.app.metering.NormalizedMeteringRect
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -36,6 +44,7 @@ fun CameraPreviewView(
     exposureCompensation: Double,
     highlightLatitudeStops: Double,
     shadowLatitudeStops: Double,
+    riskReferenceEv100: Double? = null,
     onMeteringResult: (MeteringResult) -> Unit,
     onFrameCaptured: (Bitmap?, ExposureSnapshot?) -> Unit,
     onDetailProbesCaptured: (ExposureSnapshot?, ExposureSnapshot?) -> Unit,
@@ -70,17 +79,25 @@ fun CameraPreviewView(
 
     LaunchedEffect(freezeRequestId, shouldCaptureFrame) {
         if (shouldCaptureFrame && freezeRequestId > 0) {
-            val baselineSnapshot = analyzer.latestExposureSnapshot()
-            currentOnFrameCaptured.value(previewView.bitmap, baselineSnapshot)
-            if (baselineSnapshot == null) {
+            analyzer.requestFrameCapture(freezeRequestId)
+            val capturedFrame = try {
+                awaitCapturedFrame(analyzer, freezeRequestId)
+            } finally {
+                analyzer.cancelFrameCapture(freezeRequestId)
+            }
+            if (capturedFrame == null) {
+                currentOnFrameCaptured.value(null, null)
                 currentOnDetailProbesCaptured.value(null, null)
                 return@LaunchedEffect
             }
+            val baselineSnapshot = capturedFrame.snapshot
+            currentOnFrameCaptured.value(capturedFrame.bitmap, baselineSnapshot)
 
-            val referenceEv100 = ExposureRiskCalculator.referenceEv100(
-                frozenMeteredEv100 = baselineSnapshot.meteredEv100,
-                exposureCompensation = exposureCompensation,
-            )
+            val referenceEv100 = riskReferenceEv100
+                ?: ExposureRiskCalculator.referenceEv100(
+                    frozenMeteredEv100 = baselineSnapshot.meteredEv100,
+                    exposureCompensation = exposureCompensation,
+                )
             val requirements = ExposureRiskCalculator.probeRequirements(
                 exposureMap = baselineSnapshot.exposureMap,
                 viewfinder = meteringConfig.viewfinderRect,
@@ -159,6 +176,55 @@ fun CameraPreviewView(
     )
 }
 
+@Composable
+fun CameraViewfinderMask(
+    viewfinder: NormalizedMeteringRect,
+    modifier: Modifier = Modifier,
+) {
+    Canvas(modifier = modifier) {
+        val left = (viewfinder.left * size.width).toFloat()
+        val top = (viewfinder.top * size.height).toFloat()
+        val right = (viewfinder.right * size.width).toFloat()
+        val bottom = (viewfinder.bottom * size.height).toFloat()
+        val maskColor = Color.Black.copy(alpha = 0.52f)
+
+        drawRect(maskColor, size = Size(size.width, top))
+        drawRect(
+            maskColor,
+            topLeft = Offset(0f, bottom),
+            size = Size(size.width, size.height - bottom),
+        )
+        drawRect(
+            maskColor,
+            topLeft = Offset(0f, top),
+            size = Size(left, bottom - top),
+        )
+        drawRect(
+            maskColor,
+            topLeft = Offset(right, top),
+            size = Size(size.width - right, bottom - top),
+        )
+        drawRect(
+            color = Color.White.copy(alpha = 0.78f),
+            topLeft = Offset(left, top),
+            size = Size(right - left, bottom - top),
+            style = Stroke(width = 1.dp.toPx()),
+        )
+    }
+}
+
+private suspend fun awaitCapturedFrame(
+    analyzer: MeteringAnalyzer,
+    requestId: Int,
+): CapturedExposureFrame? {
+    val deadlineNs = System.nanoTime() + FRAME_CAPTURE_TIMEOUT_NS
+    while (System.nanoTime() < deadlineNs) {
+        analyzer.takeCapturedFrame(requestId)?.let { return it }
+        delay(FRAME_CAPTURE_POLL_INTERVAL_MS)
+    }
+    return null
+}
+
 private suspend fun captureProbeSnapshot(
     cameraController: CameraController,
     analyzer: MeteringAnalyzer,
@@ -217,6 +283,8 @@ private suspend fun awaitProbeSnapshot(
 
 private const val SHADOW_PROBE_STOPS = 2.0
 private const val HIGHLIGHT_PROBE_STOPS = -2.0
+private const val FRAME_CAPTURE_TIMEOUT_NS = 1_000_000_000L
+private const val FRAME_CAPTURE_POLL_INTERVAL_MS = 10L
 private const val EXPOSURE_PROBE_TIMEOUT_NS = 800_000_000L
 private const val SHADOW_PROBE_POLL_INTERVAL_MS = 50L
 private const val MIN_USABLE_PROBE_STOPS = 1.0

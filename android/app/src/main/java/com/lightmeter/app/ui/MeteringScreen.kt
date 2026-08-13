@@ -15,6 +15,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.border
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -22,12 +23,15 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -37,7 +41,6 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.GenericShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
@@ -55,6 +58,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -65,7 +69,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -106,9 +109,12 @@ import com.lightmeter.app.settings.SharedPreferencesAppSettingsStore
 import com.lightmeter.app.BuildConfig
 import com.lightmeter.app.activation.DebugToolsDialog
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
@@ -118,8 +124,14 @@ private val DEFAULT_CAMERA_OPTICS = CameraOptics(
     focalLengthMm = 24.0,
 )
 
+private val PreviewAccent = Color(0xFFD3AA5F)
+private const val ZOOM_SETTLE_TIMEOUT_MS = 800L
+private const val ZOOM_RATIO_TOLERANCE = 0.02f
+
 @Composable
-fun MeteringRoute() {
+fun MeteringRoute(
+    onPreviewChromeVisibilityChanged: (Boolean) -> Unit = {},
+) {
     val context = LocalContext.current
     val settingsStore = remember(context) {
         SharedPreferencesAppSettingsStore(context.applicationContext)
@@ -188,6 +200,7 @@ fun MeteringRoute() {
         onFreezePreview = viewModel::freezePreview,
         onResumeLive = viewModel::resumeLivePreview,
         onFreezeCaptureFailed = viewModel::onFreezeCaptureFailed,
+        onPreviewChromeVisibilityChanged = onPreviewChromeVisibilityChanged,
     )
 }
 
@@ -221,11 +234,12 @@ private fun MeteringScreen(
     onFreezePreview: () -> Unit,
     onResumeLive: () -> Unit,
     onFreezeCaptureFailed: () -> Unit,
+    onPreviewChromeVisibilityChanged: (Boolean) -> Unit,
 ) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black),
+            .background(MaterialTheme.colorScheme.background),
     ) {
         when (state.permissionState) {
             CameraPermissionState.GRANTED -> CameraContent(
@@ -255,6 +269,7 @@ private fun MeteringScreen(
                 onFreezePreview = onFreezePreview,
                 onResumeLive = onResumeLive,
                 onFreezeCaptureFailed = onFreezeCaptureFailed,
+                onPreviewChromeVisibilityChanged = onPreviewChromeVisibilityChanged,
             )
 
             CameraPermissionState.PERMANENTLY_DENIED -> PermissionContent(
@@ -300,6 +315,7 @@ private fun CameraContent(
     onFreezePreview: () -> Unit,
     onResumeLive: () -> Unit,
     onFreezeCaptureFailed: () -> Unit,
+    onPreviewChromeVisibilityChanged: (Boolean) -> Unit,
 ) {
     var frozenFrame by remember { mutableStateOf<Bitmap?>(null) }
     var frozenExposureSnapshot by remember { mutableStateOf<ExposureSnapshot?>(null) }
@@ -309,6 +325,64 @@ private fun CameraContent(
     var exposureRiskMask by remember { mutableStateOf<ExposureRiskMask?>(null) }
     var previewSize by remember { mutableStateOf(IntSize.Zero) }
     var cameraZoomState by remember { mutableStateOf(CameraZoomState()) }
+    var zoomSettleTimedOut by remember { mutableStateOf(false) }
+    var frozenChromeVisible by rememberSaveable { mutableStateOf(true) }
+    val selectedFrameAspectRatio = remember(state.frameFormat) {
+        min(state.frameFormat.frameWidthMm, state.frameFormat.frameHeightMm) /
+            max(state.frameFormat.frameWidthMm, state.frameFormat.frameHeightMm)
+    }
+    val hardwareFocalRangeKnown = state.cameraOptics != null &&
+        cameraZoomState.isInitialized
+    val supportedFocalRange = remember(
+        state.frameFormat,
+        state.cameraOptics,
+        cameraZoomState.isInitialized,
+        cameraZoomState.minZoomRatio,
+        cameraZoomState.maxZoomRatio,
+    ) {
+        val optics = state.cameraOptics
+        if (
+            optics == null ||
+            !cameraZoomState.isInitialized
+        ) {
+            null
+        } else {
+            ViewfinderProjectionCalculator.supportedFocalLengthRange(
+                previewAspectRatio = selectedFrameAspectRatio,
+                frameFormat = state.frameFormat,
+                cameraOptics = optics,
+                minimumZoomRatio = cameraZoomState.minZoomRatio.toDouble(),
+                maximumZoomRatio = cameraZoomState.maxZoomRatio.toDouble(),
+                allowedMinimumFocalLengthMm = MeteringViewModel.MIN_FOCAL_LENGTH_MM,
+                allowedMaximumFocalLengthMm = MeteringViewModel.MAX_FOCAL_LENGTH_MM,
+            )
+        }
+    }
+    val focalLengthRange = when {
+        !hardwareFocalRangeKnown ->
+            MeteringViewModel.MIN_FOCAL_LENGTH_MM..
+                MeteringViewModel.MAX_FOCAL_LENGTH_MM
+        supportedFocalRange != null -> supportedFocalRange
+        else ->
+            MeteringViewModel.MIN_FOCAL_LENGTH_MM..
+                MeteringViewModel.MIN_FOCAL_LENGTH_MM
+    }
+    LaunchedEffect(
+        state.frameFormat,
+        focalLengthRange.start,
+        focalLengthRange.endInclusive,
+        hardwareFocalRangeKnown,
+    ) {
+        if (hardwareFocalRangeKnown) {
+            val supportedFocalLength = state.focalLengthMm.coerceIn(
+                focalLengthRange.start,
+                focalLengthRange.endInclusive,
+            )
+            if (supportedFocalLength != state.focalLengthMm) {
+                onFocalLengthChanged(supportedFocalLength)
+            }
+        }
+    }
     val projection = remember(
         previewSize,
         state.frameFormat,
@@ -331,41 +405,23 @@ private fun CameraContent(
         cameraZoomState.minZoomRatio,
         cameraZoomState.maxZoomRatio,
     )
-    val isZoomReady = cameraZoomState.isInitialized &&
-        abs(cameraZoomState.zoomRatio - effectiveZoomRatio) <= 0.02f
-    val normalizedViewfinder = remember(
-        previewSize,
-        projection,
-        effectiveZoomRatio,
+    LaunchedEffect(
+        state.frameFormat,
+        targetZoomRatio,
+        cameraZoomState.minZoomRatio,
+        cameraZoomState.maxZoomRatio,
     ) {
-        if (previewSize.width == 0 || previewSize.height == 0) {
-            NormalizedMeteringRect.Full
-        } else {
-            val frame = calculateViewfinderRect(
-                viewWidth = previewSize.width.toFloat(),
-                viewHeight = previewSize.height.toFloat(),
-                projection = projection,
-                zoomRatio = effectiveZoomRatio.toDouble(),
-            )
-            NormalizedMeteringRect(
-                left = frame.left / previewSize.width.toDouble(),
-                top = frame.top / previewSize.height.toDouble(),
-                right = frame.right / previewSize.width.toDouble(),
-                bottom = frame.bottom / previewSize.height.toDouble(),
-            )
-        }
+        zoomSettleTimedOut = false
+        delay(ZOOM_SETTLE_TIMEOUT_MS)
+        zoomSettleTimedOut = true
     }
-    val viewfinderClipShape = remember(normalizedViewfinder) {
-        GenericShape { size, _ ->
-            addRect(
-                Rect(
-                    left = (normalizedViewfinder.left * size.width).toFloat(),
-                    top = (normalizedViewfinder.top * size.height).toFloat(),
-                    right = (normalizedViewfinder.right * size.width).toFloat(),
-                    bottom = (normalizedViewfinder.bottom * size.height).toFloat(),
-                ),
+    val isZoomReady = cameraZoomState.isInitialized &&
+        (
+            abs(cameraZoomState.zoomRatio - effectiveZoomRatio) <= ZOOM_RATIO_TOLERANCE ||
+                zoomSettleTimedOut
             )
-        }
+    val normalizedViewfinder = remember(projection, effectiveZoomRatio) {
+        projection.viewfinderAt(effectiveZoomRatio.toDouble())
     }
     LaunchedEffect(
         frozenExposureSnapshot,
@@ -425,6 +481,12 @@ private fun CameraContent(
             exposureRiskMask = null
         }
     }
+    LaunchedEffect(state.isFrozen, state.freezeRequestId) {
+        frozenChromeVisible = true
+    }
+    LaunchedEffect(state.isFrozen, frozenChromeVisible) {
+        onPreviewChromeVisibilityChanged(!state.isFrozen || frozenChromeVisible)
+    }
 
     Column(
         modifier = Modifier
@@ -432,147 +494,189 @@ private fun CameraContent(
             .statusBarsPadding()
             .navigationBarsPadding(),
     ) {
-        Box(
+        BoxWithConstraints(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)
-                .padding(horizontal = 10.dp, vertical = 8.dp)
-                .onSizeChanged { previewSize = it },
+                .padding(horizontal = 10.dp, vertical = 8.dp),
+            contentAlignment = Alignment.Center,
         ) {
-            CameraPreviewView(
-                meteringConfig = MeteringConfig(
-                    mode = state.meteringMode,
-                    spotPoint = state.spotMeteringPoint,
-                    spotAreaPercent = state.spotAreaPercent,
-                    centerAreaPercent = state.centerAreaPercent,
-                    centerWeightPercent = state.centerWeightPercent,
-                    viewfinderRect = normalizedViewfinder,
-                    previewAspectRatio = if (previewSize.height > 0) {
-                        previewSize.width / previewSize.height.toDouble()
-                    } else {
-                        1.0
-                    },
-                    targetZoomRatio = effectiveZoomRatio.toDouble(),
-                    isZoomReady = isZoomReady,
-                    revision = state.meteringRevision,
-                    calibrationOffset = state.calibrationOffset,
-                ),
-                targetZoomRatio = if (state.isFrozen) {
-                    cameraZoomState.zoomRatio
-                } else {
-                    targetZoomRatio
-                },
-                freezeRequestId = state.freezeRequestId,
-                shouldCaptureFrame = state.isFrozen,
-                exposureCompensation = state.exposureCompensation,
-                highlightLatitudeStops = state.highlightLatitudeStops,
-                shadowLatitudeStops = state.shadowLatitudeStops,
-                onMeteringResult = onMeteringResult,
-                onFrameCaptured = { bitmap, snapshot ->
-                    if (
-                        bitmap == null ||
-                        snapshot == null ||
-                        snapshot.revision != state.meteringRevision
-                    ) {
-                        onFreezeCaptureFailed()
-                    } else {
-                        frozenFrame = bitmap
-                        frozenExposureSnapshot = snapshot
-                        frozenShadowProbeSnapshot = null
-                        frozenHighlightProbeSnapshot = null
-                        completedDetailProbeRequestId = null
-                    }
-                },
-                onDetailProbesCaptured = { shadowSnapshot, highlightSnapshot ->
-                    frozenShadowProbeSnapshot = shadowSnapshot?.takeIf {
-                        it.revision == state.meteringRevision
-                    }
-                    frozenHighlightProbeSnapshot = highlightSnapshot?.takeIf {
-                        it.revision == state.meteringRevision
-                    }
-                    completedDetailProbeRequestId = state.freezeRequestId
-                },
-                onOpticsAvailable = onCameraOpticsAvailable,
-                onZoomStateChanged = { cameraZoomState = it },
-                onReady = onCameraReady,
-                onError = onCameraError,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .clip(viewfinderClipShape),
-            )
-
-            if (state.isFrozen) {
-                frozenFrame?.let { bitmap ->
-                    Image(
-                        bitmap = bitmap.asImageBitmap(),
-                        contentDescription = "定格测光画面",
-                        contentScale = ContentScale.FillBounds,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .clip(viewfinderClipShape),
-                    )
-                }
-                exposureRiskBitmap?.let { bitmap ->
-                    Image(
-                        bitmap = bitmap.asImageBitmap(),
-                        contentDescription = "曝光风险预览",
-                        contentScale = ContentScale.FillBounds,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .clip(viewfinderClipShape),
-                    )
-                }
+            val frameAspectRatio = selectedFrameAspectRatio.toFloat()
+            val availableAspectRatio = if (maxHeight.value > 0f) {
+                maxWidth.value / maxHeight.value
+            } else {
+                frameAspectRatio
             }
-
-            ViewfinderOverlay(
-                state = state,
-                viewfinder = normalizedViewfinder,
-                enabled = !state.isFrozen,
-                onSpotSelected = onSpotSelected,
-                modifier = Modifier.fillMaxSize(),
-            )
-
-            if (state.isFrozen) {
-                exposureRiskMask?.let { riskMask ->
-                    ExposureRiskLegend(
-                        riskMask = riskMask,
-                        exposureCompensation = state.exposureCompensation,
-                        modifier = Modifier
-                            .align(Alignment.TopCenter)
-                            .padding(top = 12.dp),
-                    )
-                }
-            }
-
-            ExposureScaleOverlay(
-                apertureCandidates = state.apertureCandidates,
-                shutterCandidates = state.shutterCandidates,
-                primaryExposure = state.primaryExposure,
-                onApertureStep = onApertureStep,
-                onShutterStep = onShutterStep,
-                modifier = Modifier
-                    .align(Alignment.Center)
+            val frameModifier = if (availableAspectRatio > frameAspectRatio) {
+                Modifier
+                    .fillMaxHeight()
+                    .aspectRatio(frameAspectRatio)
+            } else {
+                Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 10.dp, vertical = 56.dp),
-            )
+                    .aspectRatio(frameAspectRatio)
+            }
+            val frameShape = RoundedCornerShape(8.dp)
 
-            CaptureControls(
-                isFrozen = state.isFrozen,
-                freezeVisualAvailable = state.isCameraReady &&
-                    state.ev100Metered != null,
-                canFreeze = state.isCameraReady &&
-                    state.ev100Metered != null &&
-                    isZoomReady,
-                meteringMode = state.meteringMode,
-                meteringPreset = state.meteringPreset,
-                hasSpotMeteringPoint = state.spotMeteringPoint != null,
-                onFreezePreview = onFreezePreview,
-                onResumeLive = onResumeLive,
-                onRestoreMeteringPreset = onRestoreMeteringPreset,
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(bottom = 12.dp),
-            )
+            Box(
+                modifier = frameModifier
+                    .background(Color.Black, frameShape)
+                    .clip(frameShape)
+                    .border(1.dp, PreviewAccent.copy(alpha = 0.72f), frameShape)
+                    .onSizeChanged { previewSize = it },
+            ) {
+                key(state.frameFormat) {
+                    CameraPreviewView(
+                        meteringConfig = MeteringConfig(
+                            mode = state.meteringMode,
+                            spotPoint = state.spotMeteringPoint,
+                            spotAreaPercent = state.spotAreaPercent,
+                            centerAreaPercent = state.centerAreaPercent,
+                            centerWeightPercent = state.centerWeightPercent,
+                            viewfinderRect = normalizedViewfinder,
+                            previewAspectRatio = if (previewSize.height > 0) {
+                                previewSize.width / previewSize.height.toDouble()
+                            } else {
+                                1.0
+                            },
+                            targetZoomRatio = effectiveZoomRatio.toDouble(),
+                            isZoomReady = isZoomReady,
+                            revision = state.meteringRevision,
+                            calibrationOffset = state.calibrationOffset,
+                        ),
+                        targetZoomRatio = if (state.isFrozen) {
+                            cameraZoomState.zoomRatio
+                        } else {
+                            targetZoomRatio
+                        },
+                        freezeRequestId = state.freezeRequestId,
+                        shouldCaptureFrame = state.isFrozen,
+                        exposureCompensation = state.exposureCompensation,
+                        highlightLatitudeStops = state.highlightLatitudeStops,
+                        shadowLatitudeStops = state.shadowLatitudeStops,
+                        onMeteringResult = onMeteringResult,
+                        onFrameCaptured = { bitmap, snapshot ->
+                            if (
+                                bitmap == null ||
+                                snapshot == null ||
+                                snapshot.revision != state.meteringRevision
+                            ) {
+                                onFreezeCaptureFailed()
+                            } else {
+                                frozenFrame = bitmap
+                                frozenExposureSnapshot = snapshot
+                                frozenShadowProbeSnapshot = null
+                                frozenHighlightProbeSnapshot = null
+                                completedDetailProbeRequestId = null
+                            }
+                        },
+                        onDetailProbesCaptured = { shadowSnapshot, highlightSnapshot ->
+                            frozenShadowProbeSnapshot = shadowSnapshot?.takeIf {
+                                it.revision == state.meteringRevision
+                            }
+                            frozenHighlightProbeSnapshot = highlightSnapshot?.takeIf {
+                                it.revision == state.meteringRevision
+                            }
+                            completedDetailProbeRequestId = state.freezeRequestId
+                        },
+                        onOpticsAvailable = onCameraOpticsAvailable,
+                        onZoomStateChanged = { cameraZoomState = it },
+                        onReady = onCameraReady,
+                        onError = onCameraError,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
+
+                if (state.isFrozen) {
+                    frozenFrame?.let { bitmap ->
+                        Image(
+                            bitmap = bitmap.asImageBitmap(),
+                            contentDescription = "定格测光画面",
+                            contentScale = ContentScale.FillBounds,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
+                    exposureRiskBitmap?.let { bitmap ->
+                        Image(
+                            bitmap = bitmap.asImageBitmap(),
+                            contentDescription = "曝光风险预览",
+                            contentScale = ContentScale.FillBounds,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
+                }
+
+                CameraViewfinderMask(
+                    viewfinder = normalizedViewfinder,
+                    modifier = Modifier.fillMaxSize(),
+                )
+
+                if (!state.isFrozen || frozenChromeVisible) {
+                    ViewfinderOverlay(
+                        state = state,
+                        viewfinder = normalizedViewfinder,
+                        enabled = !state.isFrozen,
+                        onSpotSelected = onSpotSelected,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
+
+                if (state.isFrozen) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .pointerInput(state.freezeRequestId) {
+                                detectTapGestures {
+                                    frozenChromeVisible = !frozenChromeVisible
+                                }
+                            },
+                    )
+                }
+
+                if (state.isFrozen) {
+                    exposureRiskMask?.let { riskMask ->
+                        ExposureRiskLegend(
+                            riskMask = riskMask,
+                            exposureCompensation = state.exposureCompensation,
+                            modifier = Modifier
+                                .align(Alignment.TopCenter)
+                                .padding(top = 12.dp),
+                        )
+                    }
+                }
+
+                if (!state.isFrozen || frozenChromeVisible) {
+                    ExposureScaleOverlay(
+                        apertureCandidates = state.apertureCandidates,
+                        shutterCandidates = state.shutterCandidates,
+                        primaryExposure = state.primaryExposure,
+                        onApertureStep = onApertureStep,
+                        onShutterStep = onShutterStep,
+                        modifier = Modifier
+                            .align(Alignment.Center)
+                            .fillMaxWidth()
+                            .padding(horizontal = 10.dp, vertical = 56.dp),
+                    )
+
+                    CaptureControls(
+                        isFrozen = state.isFrozen,
+                        freezeVisualAvailable = state.isCameraReady &&
+                            state.ev100Metered != null,
+                        canFreeze = state.isCameraReady &&
+                            state.ev100Metered != null &&
+                            isZoomReady,
+                        meteringMode = state.meteringMode,
+                        meteringPreset = state.meteringPreset,
+                        hasSpotMeteringPoint = state.spotMeteringPoint != null,
+                        onFreezePreview = onFreezePreview,
+                        onResumeLive = onResumeLive,
+                        onRestoreMeteringPreset = onRestoreMeteringPreset,
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .padding(bottom = 12.dp),
+                    )
+                }
+            }
         }
 
         ExposurePanel(
@@ -593,6 +697,10 @@ private fun CameraContent(
             zoomRatio = cameraZoomState.zoomRatio,
             zoomLimited = targetZoomRatio < cameraZoomState.minZoomRatio - 0.01f ||
                 targetZoomRatio > cameraZoomState.maxZoomRatio + 0.01f,
+            minimumFocalLengthMm = focalLengthRange.start,
+            maximumFocalLengthMm = focalLengthRange.endInclusive,
+            hasSupportedFocalRange = !hardwareFocalRangeKnown ||
+                supportedFocalRange != null,
             onFocalLengthChanged = onFocalLengthChanged,
             modifier = Modifier
                 .fillMaxWidth(),
@@ -632,33 +740,6 @@ private fun ViewfinderOverlay(
         modifier = modifier.then(interactionModifier),
     ) {
         val frame = viewfinder.toComposeRect(size.width, size.height)
-        val maskColor = Color.Black
-        drawRect(
-            color = maskColor,
-            size = Size(size.width, frame.top),
-        )
-        drawRect(
-            color = maskColor,
-            topLeft = Offset(0f, frame.bottom),
-            size = Size(size.width, size.height - frame.bottom),
-        )
-        drawRect(
-            color = maskColor,
-            topLeft = Offset(0f, frame.top),
-            size = Size(frame.left, frame.height),
-        )
-        drawRect(
-            color = maskColor,
-            topLeft = Offset(frame.right, frame.top),
-            size = Size(size.width - frame.right, frame.height),
-        )
-        drawRect(
-            color = Color.White.copy(alpha = 0.86f),
-            topLeft = frame.topLeft,
-            size = frame.size,
-            style = Stroke(width = 1.dp.toPx()),
-        )
-
         when (state.meteringMode) {
             MeteringMode.SPOT -> {
                 val point = state.spotMeteringPoint
@@ -696,25 +777,6 @@ private fun meteringRadius(
     return sqrt(width * height * areaPercent / 100f / PI.toFloat())
 }
 
-private fun calculateViewfinderRect(
-    viewWidth: Float,
-    viewHeight: Float,
-    projection: ViewfinderProjection,
-    zoomRatio: Double,
-): Rect {
-    val frameWidth = (viewWidth * projection.widthFractionAt(zoomRatio)).toFloat()
-    val frameHeight = (viewHeight * projection.heightFractionAt(zoomRatio)).toFloat()
-    val left = (viewWidth - frameWidth) / 2f
-    val top = (viewHeight - frameHeight) / 2f
-
-    return Rect(
-        left = left,
-        top = top,
-        right = left + frameWidth,
-        bottom = top + frameHeight,
-    )
-}
-
 private fun NormalizedMeteringRect.toComposeRect(
     viewWidth: Float,
     viewHeight: Float,
@@ -734,6 +796,9 @@ private fun FocalLengthSlider(
     focalLengthMm: Double,
     zoomRatio: Float,
     zoomLimited: Boolean,
+    minimumFocalLengthMm: Double,
+    maximumFocalLengthMm: Double,
+    hasSupportedFocalRange: Boolean,
     enabled: Boolean,
     onFocalLengthChanged: (Double) -> Unit,
     modifier: Modifier = Modifier,
@@ -750,73 +815,82 @@ private fun FocalLengthSlider(
                 append("mm · ")
                 append("%.1f×".format(zoomRatio))
                 if (zoomLimited) append(" 上限")
+                if (!hasSupportedFocalRange) append(" · 无可模拟焦段")
             },
             color = if (zoomLimited) {
-                Color(0xFFE5B567)
+                MaterialTheme.colorScheme.primary
             } else {
-                Color.White.copy(alpha = 0.72f)
+                MaterialTheme.colorScheme.onSurfaceVariant
             },
             style = MaterialTheme.typography.labelSmall,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
-        Slider(
-            value = focalLengthMm.toFloat(),
-            onValueChange = {
-                onFocalLengthChanged(it.roundToInt().toDouble())
-            },
-            valueRange = MeteringViewModel.MIN_FOCAL_LENGTH_MM.toFloat()..
-                MeteringViewModel.MAX_FOCAL_LENGTH_MM.toFloat(),
-            steps = (
-                MeteringViewModel.MAX_FOCAL_LENGTH_MM -
-                    MeteringViewModel.MIN_FOCAL_LENGTH_MM
-                ).roundToInt() - 1,
-            enabled = enabled,
-            modifier = Modifier.height(28.dp),
-            thumb = {
-                Surface(
-                    color = if (enabled) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        Color.White.copy(alpha = 0.38f)
-                    },
-                    shape = RoundedCornerShape(3.dp),
-                    modifier = Modifier.size(width = 12.dp, height = 20.dp),
-                ) {}
-            },
-            track = {
-                val fraction = (
-                    (focalLengthMm - MeteringViewModel.MIN_FOCAL_LENGTH_MM) /
-                        (
-                            MeteringViewModel.MAX_FOCAL_LENGTH_MM -
-                                MeteringViewModel.MIN_FOCAL_LENGTH_MM
-                            )
-                    ).toFloat().coerceIn(0f, 1f)
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(4.dp)
-                        .background(
-                            Color.White.copy(alpha = if (enabled) 0.24f else 0.12f),
-                            RoundedCornerShape(1.dp),
-                        ),
-                ) {
+        if (maximumFocalLengthMm > minimumFocalLengthMm) {
+            Slider(
+                value = focalLengthMm.coerceIn(
+                    minimumFocalLengthMm,
+                    maximumFocalLengthMm,
+                ).toFloat(),
+                onValueChange = {
+                    onFocalLengthChanged(it.roundToInt().toDouble())
+                },
+                valueRange = minimumFocalLengthMm.toFloat()..
+                    maximumFocalLengthMm.toFloat(),
+                steps = (maximumFocalLengthMm - minimumFocalLengthMm)
+                    .roundToInt()
+                    .minus(1)
+                    .coerceAtLeast(0),
+                enabled = enabled && hasSupportedFocalRange,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(28.dp),
+                thumb = {
+                    Surface(
+                        color = if (enabled && hasSupportedFocalRange) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.30f)
+                        },
+                        shape = RoundedCornerShape(3.dp),
+                        modifier = Modifier.size(width = 12.dp, height = 20.dp),
+                    ) {}
+                },
+                track = {
+                    val fraction = (
+                        (focalLengthMm - minimumFocalLengthMm) /
+                            (maximumFocalLengthMm - minimumFocalLengthMm)
+                        ).toFloat().coerceIn(0f, 1f)
                     Box(
                         modifier = Modifier
-                            .fillMaxWidth(fraction)
+                            .fillMaxWidth()
                             .height(4.dp)
                             .background(
-                                if (enabled) {
-                                    MaterialTheme.colorScheme.primary
-                                } else {
-                                    Color.White.copy(alpha = 0.28f)
-                                },
+                                MaterialTheme.colorScheme.outlineVariant.copy(
+                                    alpha = if (enabled) 1f else 0.55f,
+                                ),
                                 RoundedCornerShape(1.dp),
                             ),
-                    )
-                }
-            },
-        )
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth(fraction)
+                                .height(4.dp)
+                                .background(
+                                    if (enabled) {
+                                        MaterialTheme.colorScheme.primary
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.24f)
+                                    },
+                                    RoundedCornerShape(1.dp),
+                                ),
+                        )
+                    }
+                },
+            )
+        } else {
+            Spacer(modifier = Modifier.height(28.dp))
+        }
     }
 }
 
@@ -1067,7 +1141,7 @@ private fun ExposureSideScale(
                     }
                     Text(
                         text = label.ifEmpty { " " },
-                        color = if (offset == 0) Color(0xFFE5B567) else Color.White,
+                        color = if (offset == 0) PreviewAccent else Color.White,
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(22.dp)
@@ -1103,9 +1177,9 @@ private fun QuickSettingButton(
     modifier: Modifier = Modifier,
 ) {
     Surface(
-        color = Color.White.copy(alpha = 0.08f),
-        shape = RoundedCornerShape(10.dp),
-        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.22f)),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.58f),
+        shape = RoundedCornerShape(8.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         modifier = modifier.combinedClickable(
             onClick = onOpen,
             onLongClick = onOpen,
@@ -1118,12 +1192,12 @@ private fun QuickSettingButton(
         ) {
             Text(
                 text = label,
-                color = Color.White.copy(alpha = 0.62f),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.labelSmall,
             )
             Text(
                 text = value,
-                color = Color.White,
+                color = MaterialTheme.colorScheme.onSurface,
                 style = MaterialTheme.typography.titleMedium,
             )
         }
@@ -1157,9 +1231,9 @@ private fun QuickSettingDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         modifier = Modifier.width(260.dp),
-        containerColor = Color(0xFF1B1B1B),
-        titleContentColor = Color.White,
-        textContentColor = Color.White,
+        containerColor = MaterialTheme.colorScheme.surface,
+        titleContentColor = MaterialTheme.colorScheme.onSurface,
+        textContentColor = MaterialTheme.colorScheme.onSurface,
         title = {
             Text(
                 if (setting == QuickSetting.ISO) {
@@ -1214,7 +1288,7 @@ private fun QuickSettingDialog(
             ) {
                 Text(
                     text = "确定",
-                    color = Color(0xFFE5B567),
+                    color = MaterialTheme.colorScheme.primary,
                 )
             }
         },
@@ -1222,7 +1296,7 @@ private fun QuickSettingDialog(
             TextButton(onClick = onDismiss) {
                 Text(
                     text = "取消",
-                    color = Color.White.copy(alpha = 0.78f),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         },
@@ -1242,9 +1316,9 @@ private fun VerticalValueWheel(
     var dragOffset by remember { mutableStateOf(0f) }
 
     Surface(
-        color = Color(0xFF0D0D0D),
-        shape = RoundedCornerShape(14.dp),
-        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.18f)),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.48f),
+        shape = RoundedCornerShape(10.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         modifier = Modifier
             .fillMaxWidth()
             .pointerInput(values) {
@@ -1310,7 +1384,7 @@ private fun VerticalValueWheel(
                         .height(46.dp)
                         .background(
                             if (selected) {
-                                Color(0xFFE5B567).copy(alpha = 0.18f)
+                                MaterialTheme.colorScheme.primaryContainer
                             } else {
                                 Color.Transparent
                             },
@@ -1319,9 +1393,9 @@ private fun VerticalValueWheel(
                     Text(
                         text = value.ifEmpty { " " },
                         color = if (selected) {
-                            Color(0xFFFFD58A)
+                            MaterialTheme.colorScheme.onPrimaryContainer
                         } else {
-                            Color.White.copy(
+                            MaterialTheme.colorScheme.onSurfaceVariant.copy(
                                 alpha = if (abs(offset) == 1) 0.68f else 0.38f,
                             )
                         },
@@ -1365,6 +1439,9 @@ private fun ExposurePanel(
     onExposureCompensationSelected: (Double) -> Unit,
     zoomRatio: Float,
     zoomLimited: Boolean,
+    minimumFocalLengthMm: Double,
+    maximumFocalLengthMm: Double,
+    hasSupportedFocalRange: Boolean,
     onFocalLengthChanged: (Double) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -1373,7 +1450,9 @@ private fun ExposurePanel(
     var showDebugTools by rememberSaveable { mutableStateOf(false) }
 
     Surface(
-        color = Color.Black.copy(alpha = 0.82f),
+        color = MaterialTheme.colorScheme.surface,
+        shape = RoundedCornerShape(topStart = 10.dp, topEnd = 10.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         modifier = modifier,
     ) {
         Column(
@@ -1382,22 +1461,26 @@ private fun ExposurePanel(
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 ParameterValue(
                     label = "EV",
                     value = state.ev100Metered?.let { "%.1f".format(it) } ?: "--",
+                    horizontalAlignment = Alignment.Start,
+                    modifier = Modifier.weight(1f),
                 )
                 FocalLengthSlider(
                     frameFormat = state.frameFormat,
                     focalLengthMm = state.focalLengthMm,
                     zoomRatio = zoomRatio,
                     zoomLimited = zoomLimited,
+                    minimumFocalLengthMm = minimumFocalLengthMm,
+                    maximumFocalLengthMm = maximumFocalLengthMm,
+                    hasSupportedFocalRange = hasSupportedFocalRange,
                     enabled = !state.isFrozen,
                     onFocalLengthChanged = onFocalLengthChanged,
                     modifier = Modifier
-                        .width(168.dp)
+                        .weight(1.45f)
                         .padding(horizontal = 10.dp),
                 )
                 ParameterValue(
@@ -1405,6 +1488,8 @@ private fun ExposurePanel(
                     value = state.primaryExposure?.let {
                         "${it.apertureLabel}  ${it.shutterLabel}"
                     } ?: "--",
+                    horizontalAlignment = Alignment.End,
+                    modifier = Modifier.weight(1f),
                 )
             }
 
@@ -1659,12 +1744,12 @@ private fun AppSettingsDialog(
                         Column {
                             Text(
                                 text = "开启曝光风险预览",
-                                color = Color.White,
+                                color = MaterialTheme.colorScheme.onSurface,
                                 style = MaterialTheme.typography.bodyMedium,
                             )
                             Text(
                                 text = if (exposureRiskEnabled) "已开启" else "已关闭",
-                                color = Color.White.copy(alpha = 0.56f),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 style = MaterialTheme.typography.labelSmall,
                             )
                         }
@@ -1735,9 +1820,9 @@ private fun AppSettingsDialog(
                 Text("保存")
             }
         },
-        containerColor = Color(0xFF171717),
-        titleContentColor = Color.White,
-        textContentColor = Color.White,
+        containerColor = MaterialTheme.colorScheme.surface,
+        titleContentColor = MaterialTheme.colorScheme.onSurface,
+        textContentColor = MaterialTheme.colorScheme.onSurface,
     )
 }
 
@@ -1749,9 +1834,9 @@ private fun CollapsibleSettingsSection(
     content: @Composable () -> Unit,
 ) {
     Surface(
-        color = Color.White.copy(alpha = 0.05f),
-        shape = RoundedCornerShape(10.dp),
-        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.14f)),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f),
+        shape = RoundedCornerShape(8.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {
         Column {
             Row(
@@ -1764,12 +1849,12 @@ private fun CollapsibleSettingsSection(
             ) {
                 Text(
                     text = title,
-                    color = Color.White,
+                    color = MaterialTheme.colorScheme.onSurface,
                     style = MaterialTheme.typography.titleSmall,
                 )
                 Text(
                     text = if (expanded) "▲" else "▼",
-                    color = Color.White.copy(alpha = 0.62f),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.labelSmall,
                 )
             }
@@ -1802,7 +1887,7 @@ private fun PercentageControl(
     ) {
         Text(
             text = label,
-            color = Color.White,
+            color = MaterialTheme.colorScheme.onSurface,
             style = MaterialTheme.typography.bodyMedium,
         )
         Row(
@@ -1817,7 +1902,7 @@ private fun PercentageControl(
             }
             Text(
                 text = "$value%",
-                color = Color(0xFFE5B567),
+                color = MaterialTheme.colorScheme.primary,
                 style = MaterialTheme.typography.titleMedium,
             )
             OutlinedButton(
@@ -1845,7 +1930,9 @@ private fun StopControl(
     ) {
         Text(
             text = label,
-            color = Color.White.copy(alpha = if (enabled) 1f else 0.42f),
+            color = MaterialTheme.colorScheme.onSurface.copy(
+                alpha = if (enabled) 1f else 0.42f,
+            ),
             style = MaterialTheme.typography.bodyMedium,
         )
         Row(
@@ -1861,7 +1948,9 @@ private fun StopControl(
             }
             Text(
                 text = "%+.1f EV".format(value),
-                color = Color(0xFFE5B567).copy(alpha = if (enabled) 1f else 0.42f),
+                color = MaterialTheme.colorScheme.primary.copy(
+                    alpha = if (enabled) 1f else 0.42f,
+                ),
                 style = MaterialTheme.typography.titleMedium,
             )
             OutlinedButton(
@@ -1880,7 +1969,7 @@ private fun SettingHint(text: String) {
     Spacer(modifier = Modifier.height(8.dp))
     Text(
         text = text,
-        color = Color.White.copy(alpha = 0.62f),
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
         style = MaterialTheme.typography.bodySmall,
     )
 }
@@ -1897,7 +1986,7 @@ private fun MeteringMode.displayName(): String {
 private fun ControlLabel(text: String) {
     Text(
         text = text,
-        color = Color.White.copy(alpha = 0.62f),
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
         style = MaterialTheme.typography.labelSmall,
     )
     Spacer(modifier = Modifier.height(6.dp))
@@ -1923,10 +2012,18 @@ private fun ChoiceButton(
 ) {
     Button(
         onClick = onClick,
-        shape = RoundedCornerShape(50),
+        shape = RoundedCornerShape(6.dp),
         colors = ButtonDefaults.buttonColors(
-            containerColor = if (selected) Color.White else Color.White.copy(alpha = 0.14f),
-            contentColor = if (selected) Color.Black else Color.White,
+            containerColor = if (selected) {
+                MaterialTheme.colorScheme.primary
+            } else {
+                MaterialTheme.colorScheme.surfaceVariant
+            },
+            contentColor = if (selected) {
+                MaterialTheme.colorScheme.onPrimary
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            },
         ),
         contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
     ) {
@@ -1939,17 +2036,25 @@ private fun ChoiceButton(
 private fun ParameterValue(
     label: String,
     value: String,
+    horizontalAlignment: Alignment.Horizontal = Alignment.CenterHorizontally,
+    modifier: Modifier = Modifier,
 ) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+    Column(
+        modifier = modifier,
+        horizontalAlignment = horizontalAlignment,
+    ) {
         Text(
             text = label,
-            color = Color.White.copy(alpha = 0.65f),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
             style = MaterialTheme.typography.labelSmall,
+            maxLines = 1,
         )
         Text(
             text = value,
-            color = Color.White,
+            color = MaterialTheme.colorScheme.onSurface,
             style = MaterialTheme.typography.titleMedium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }
@@ -1975,13 +2080,13 @@ private fun PermissionContent(
         Spacer(modifier = Modifier.height(24.dp))
         Text(
             text = stringResource(R.string.camera_permission_title),
-            color = Color.White,
+            color = MaterialTheme.colorScheme.onBackground,
             style = MaterialTheme.typography.headlineSmall,
         )
         Spacer(modifier = Modifier.height(12.dp))
         Text(
             text = stringResource(R.string.camera_permission_message),
-            color = Color.White.copy(alpha = 0.72f),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
             style = MaterialTheme.typography.bodyMedium,
         )
         Spacer(modifier = Modifier.height(24.dp))

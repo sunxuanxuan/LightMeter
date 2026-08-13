@@ -1,0 +1,220 @@
+package com.lightmeter.app.ui
+
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import com.lightmeter.app.filmpreview.FilmPreviewRoute
+
+private enum class AppDestination {
+    MODE_SELECTION,
+    PROFESSIONAL,
+    FILM_PREVIEW,
+}
+
+@Composable
+fun AppRoute() {
+    var destination by rememberSaveable {
+        mutableStateOf(AppDestination.MODE_SELECTION)
+    }
+    var professionalChromeVisible by rememberSaveable { mutableStateOf(true) }
+
+    when (destination) {
+        AppDestination.MODE_SELECTION -> ModeSelectionScreen(
+            onProfessionalSelected = {
+                professionalChromeVisible = true
+                destination = AppDestination.PROFESSIONAL
+            },
+            onFilmPreviewSelected = { destination = AppDestination.FILM_PREVIEW },
+        )
+
+        AppDestination.PROFESSIONAL -> {
+            BackHandler {
+                destination = AppDestination.MODE_SELECTION
+            }
+            Box(modifier = Modifier.fillMaxSize()) {
+                MeteringRoute(
+                    onPreviewChromeVisibilityChanged = {
+                        professionalChromeVisible = it
+                    },
+                )
+                if (professionalChromeVisible) {
+                    ModeButton(
+                        onClick = { destination = AppDestination.MODE_SELECTION },
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .statusBarsPadding()
+                            .padding(12.dp),
+                    )
+                }
+            }
+        }
+
+        AppDestination.FILM_PREVIEW -> FilmPreviewRoute(
+            onExit = { destination = AppDestination.MODE_SELECTION },
+        )
+    }
+}
+
+@Composable
+private fun ModeSelectionScreen(
+    onProfessionalSelected: () -> Unit,
+    onFilmPreviewSelected: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxSize(),
+        color = MaterialTheme.colorScheme.background,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .navigationBarsPadding()
+                .padding(horizontal = 24.dp, vertical = 28.dp),
+            verticalArrangement = Arrangement.Center,
+        ) {
+            Text(
+                text = "FilmLightMeter",
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            Text(
+                text = "今天想怎么测光？",
+                style = MaterialTheme.typography.headlineLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onBackground,
+                modifier = Modifier.padding(top = 8.dp),
+            )
+            Text(
+                text = "两个模式使用同一套测光基础，选择更适合当前任务的方式。",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 8.dp, bottom = 28.dp),
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                ModeCard(
+                    symbol = "▣",
+                    title = "胶片预览",
+                    description = "固定参数下的曝光效果与宽容度风险",
+                    onClick = onFilmPreviewSelected,
+                    modifier = Modifier.weight(1f),
+                )
+                ModeCard(
+                    symbol = "◎",
+                    title = "专业测光",
+                    description = "完整测光、曝光组合与画幅控制",
+                    onClick = onProfessionalSelected,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ModeCard(
+    symbol: String,
+    title: String,
+    description: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier
+            .heightIn(min = 190.dp)
+            .clickable(onClick = onClick),
+        color = MaterialTheme.colorScheme.surface,
+        shape = RoundedCornerShape(12.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        shadowElevation = 1.dp,
+    ) {
+        Column(
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top,
+            ) {
+                Surface(
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    shape = RoundedCornerShape(8.dp),
+                ) {
+                    Text(
+                        text = symbol,
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.padding(horizontal = 11.dp, vertical = 7.dp),
+                    )
+                }
+                Text(
+                    text = "进入  →",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+            Column(modifier = Modifier.padding(top = 16.dp)) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Text(
+                    text = description,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 5.dp),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ModeButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier.clickable(onClick = onClick),
+        color = Color.Black.copy(alpha = 0.68f),
+        shape = RoundedCornerShape(8.dp),
+        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.18f)),
+    ) {
+        Text(
+            text = "切换模式",
+            color = Color.White,
+            style = MaterialTheme.typography.labelMedium,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
+        )
+    }
+}

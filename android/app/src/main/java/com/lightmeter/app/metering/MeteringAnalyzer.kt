@@ -1,5 +1,7 @@
 package com.lightmeter.app.metering
 
+import android.graphics.Bitmap
+import android.graphics.Matrix
 import android.graphics.Rect
 import android.hardware.camera2.CameraCaptureSession
 import android.hardware.camera2.CaptureRequest
@@ -9,14 +11,20 @@ import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
 import com.lightmeter.app.camera.CameraExposureMetadata
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.log2
 import kotlin.math.max
 import kotlin.math.min
-import kotlin.math.pow
 import kotlin.math.sqrt
+
+data class CapturedExposureFrame(
+    val requestId: Int,
+    val bitmap: Bitmap,
+    val snapshot: ExposureSnapshot,
+)
 
 class MeteringAnalyzer(
     initialConfig: MeteringConfig = MeteringConfig(),
@@ -26,6 +34,8 @@ class MeteringAnalyzer(
     private val configLock = Any()
     private val fallbackAperture = AtomicReference<Double?>(null)
     private val exposureSnapshot = AtomicReference<ExposureSnapshot?>(null)
+    private val pendingFrameCaptureRequest = AtomicInteger(0)
+    private val capturedExposureFrame = AtomicReference<CapturedExposureFrame?>(null)
     private val metadataByTimestamp = ConcurrentHashMap<Long, CameraExposureMetadata>()
 
     private var lastAnalyzedTimestampNs = 0L
@@ -46,6 +56,30 @@ class MeteringAnalyzer(
     }
 
     fun latestExposureSnapshot(): ExposureSnapshot? = exposureSnapshot.get()
+
+    fun requestFrameCapture(requestId: Int) {
+        require(requestId > 0)
+        capturedExposureFrame.getAndSet(null)?.bitmap?.recycle()
+        pendingFrameCaptureRequest.set(requestId)
+    }
+
+    fun takeCapturedFrame(requestId: Int): CapturedExposureFrame? {
+        val captured = capturedExposureFrame.get() ?: return null
+        if (captured.requestId != requestId) return null
+        return if (capturedExposureFrame.compareAndSet(captured, null)) captured else null
+    }
+
+    fun cancelFrameCapture(requestId: Int) {
+        pendingFrameCaptureRequest.compareAndSet(requestId, 0)
+        while (true) {
+            val captured = capturedExposureFrame.get() ?: return
+            if (captured.requestId != requestId) return
+            if (capturedExposureFrame.compareAndSet(captured, null)) {
+                captured.bitmap.recycle()
+                return
+            }
+        }
+    }
 
     override fun onCaptureCompleted(
         session: CameraCaptureSession,
@@ -97,18 +131,39 @@ class MeteringAnalyzer(
             if (!currentConfig.isZoomReady) return
             val luminance = measureLuminance(image, currentConfig) ?: return
             val ev = calculateEv100(metadata, luminance, currentConfig.calibrationOffset)
-            val currentExposureMap = createExposureMap(image, metadata, currentConfig)
+            val currentExposureMap = createExposureMap(image, metadata, currentConfig) ?: return
+            val currentSnapshot = ExposureSnapshot(
+                exposureMap = currentExposureMap,
+                meteredEv100 = ev,
+                timestampNs = timestampNs,
+                revision = currentConfig.revision,
+            )
+            val captureRequestId = pendingFrameCaptureRequest.get()
+            val capturedBitmap = if (captureRequestId > 0) {
+                createCapturedBitmap(image)
+            } else {
+                null
+            }
             synchronized(configLock) {
-                if (config.get() != currentConfig) return
-                currentExposureMap?.let { map ->
-                    exposureSnapshot.set(
-                        ExposureSnapshot(
-                            exposureMap = map,
-                            meteredEv100 = ev,
-                            timestampNs = timestampNs,
-                            revision = currentConfig.revision,
+                if (config.get() != currentConfig) {
+                    capturedBitmap?.recycle()
+                    return
+                }
+                exposureSnapshot.set(currentSnapshot)
+                if (
+                    captureRequestId > 0 &&
+                    capturedBitmap != null &&
+                    pendingFrameCaptureRequest.compareAndSet(captureRequestId, 0)
+                ) {
+                    capturedExposureFrame.getAndSet(
+                        CapturedExposureFrame(
+                            requestId = captureRequestId,
+                            bitmap = capturedBitmap,
+                            snapshot = currentSnapshot,
                         ),
-                    )
+                    )?.bitmap?.recycle()
+                } else {
+                    capturedBitmap?.recycle()
                 }
                 val configChanged = currentConfig != previousConfig
                 val filteredEv = if (configChanged) {
@@ -134,6 +189,49 @@ class MeteringAnalyzer(
         } finally {
             image.close()
         }
+    }
+
+    private fun createCapturedBitmap(image: ImageProxy): Bitmap? {
+        return runCatching {
+            val source = image.toBitmap()
+            val cropRect = image.cropRect
+            val safeLeft = cropRect.left.coerceIn(0, source.width - 1)
+            val safeTop = cropRect.top.coerceIn(0, source.height - 1)
+            val safeRight = cropRect.right.coerceIn(safeLeft + 1, source.width)
+            val safeBottom = cropRect.bottom.coerceIn(safeTop + 1, source.height)
+            val cropped = if (
+                safeLeft == 0 &&
+                safeTop == 0 &&
+                safeRight == source.width &&
+                safeBottom == source.height
+            ) {
+                source
+            } else {
+                Bitmap.createBitmap(
+                    source,
+                    safeLeft,
+                    safeTop,
+                    safeRight - safeLeft,
+                    safeBottom - safeTop,
+                ).also { source.recycle() }
+            }
+            val rotationDegrees = image.imageInfo.rotationDegrees
+            if (rotationDegrees == 0) {
+                cropped
+            } else {
+                Bitmap.createBitmap(
+                    cropped,
+                    0,
+                    0,
+                    cropped.width,
+                    cropped.height,
+                    Matrix().apply { postRotate(rotationDegrees.toFloat()) },
+                    true,
+                ).also { rotated ->
+                    if (rotated !== cropped) cropped.recycle()
+                }
+            }
+        }.getOrNull()
     }
 
     private fun metadataForTimestamp(timestampNs: Long): CameraExposureMetadata? {
@@ -274,11 +372,10 @@ class MeteringAnalyzer(
         var retained = 0
         var sum = 0.0
         retainedHistogram.forEachIndexed { value, count ->
-            val normalized = value / 255.0
-            sum += normalized.pow(GAMMA) * count
+            sum += YuvLuminance.linear(value) * count
             retained += count
         }
-        return max(sum / retained.coerceAtLeast(1), MIN_LUMINANCE)
+        return sum / retained.coerceAtLeast(1)
     }
 
     private fun calculateEv100(
@@ -340,9 +437,9 @@ class MeteringAnalyzer(
                     0
                 }
                 rawLuminanceMap[mapY * mapWidth + mapX] = rawLuminance.toByte()
-                val linearLuminance = linearLuminance(rawLuminance)
+                val linearLuminance = YuvLuminance.linear(rawLuminance)
                 clippedHighlights[mapY * mapWidth + mapX] =
-                    rawLuminance >= HIGHLIGHT_CLIP_LEVEL
+                    YuvLuminance.isHighlightClipped(rawLuminance)
                 pixelEv100[mapY * mapWidth + mapX] = (
                     settingEv100 +
                         log2(linearLuminance / TARGET_LUMINANCE) +
@@ -408,10 +505,6 @@ class MeteringAnalyzer(
         return Pair(x, y)
     }
 
-    private fun linearLuminance(rawLuminance: Int): Double {
-        return max((rawLuminance / 255.0).pow(GAMMA), MIN_LUMINANCE)
-    }
-
     companion object {
         private const val ANALYSIS_INTERVAL_NS = 100_000_000L
         private const val METADATA_TOLERANCE_NS = 50_000_000L
@@ -421,10 +514,7 @@ class MeteringAnalyzer(
         private const val FINE_SAMPLE_STEP = 2
         private const val MIN_SAMPLE_COUNT = 32
         private const val TRIM_RATIO = 0.05
-        private const val GAMMA = 2.2
         private const val TARGET_LUMINANCE = 0.18
-        private const val HIGHLIGHT_CLIP_LEVEL = 235
-        private const val MIN_LUMINANCE = 1e-6
         private const val SMOOTHING_WEIGHT = 0.25
     }
 }

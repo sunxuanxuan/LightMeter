@@ -51,6 +51,8 @@ iOS 版本采用 SwiftUI、AVFoundation 和原生 Swift 实现。开始编码前
 
 ## 公共资料
 
+- [双模式产品方案](docs/shared/dual-mode-product-design.md)
+- [胶片预览模式技术方案](docs/shared/film-preview-technical-design.md)
 - [胶片曝光宽容度参考](docs/shared/film-exposure-latitude-reference.md)
 
 ## License
