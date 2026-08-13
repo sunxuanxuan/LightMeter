@@ -13,11 +13,11 @@
 核心实现位置：
 
 ```text
-app/src/main/java/com/lightmeter/app/metering/MeteringAnalyzer.kt
-app/src/main/java/com/lightmeter/app/ui/MeteringViewModel.kt
-app/src/main/java/com/lightmeter/app/ui/MeteringScreen.kt
-app/src/main/java/com/lightmeter/app/camera/CameraController.kt
-app/src/main/java/com/lightmeter/app/exposure/ExposureModels.kt
+android/app/src/main/java/com/lightmeter/app/metering/MeteringAnalyzer.kt
+android/app/src/main/java/com/lightmeter/app/ui/MeteringViewModel.kt
+android/app/src/main/java/com/lightmeter/app/ui/MeteringScreen.kt
+android/app/src/main/java/com/lightmeter/app/camera/CameraController.kt
+android/app/src/main/java/com/lightmeter/app/exposure/ExposureModels.kt
 ```
 
 ***

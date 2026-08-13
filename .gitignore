@@ -8,8 +8,20 @@
 local.properties
 build/
 captures/
+.chrome-pdf-profile/
+.chrome-shot-profile/
+.vscode/
+dist/
 .externalNativeBuild/
 .cxx/
-app/build/
+android/app/build/
+android/signing/
 *.jks
 *.keystore
+
+# Xcode / Swift
+ios/DerivedData/
+ios/.build/
+ios/.secrets/
+*.xcuserstate
+xcuserdata/

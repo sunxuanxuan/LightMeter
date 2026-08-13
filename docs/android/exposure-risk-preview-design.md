@@ -201,7 +201,7 @@ Alpha 从阈值处的 `0x33`（约 20%）线性增加到超出 2 EV 时的 `0xE6
 | 柯达 E100 | +0.7 EV | -1.7 EV | 反转片保守实用范围 |
 | 柯达 5294 / 7294 100D | +0.7 EV | -1.7 EV | 反转片保守实用范围 |
 
-预设以 [主流胶片曝光宽容度参考表](film_exposure_latitude_reference.md) 的
+预设以[主流胶片曝光宽容度参考表](../shared/film-exposure-latitude-reference.md)的
 “建议实用范围”外侧边界为依据，并量化到最近的 `1/3 EV`，不使用更激进的
 “极限可用参考”。
 
