@@ -1,6 +1,5 @@
 package com.lightmeter.app.ui
 
-import android.graphics.Bitmap
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.Canvas
 import androidx.compose.runtime.Composable
@@ -32,6 +31,7 @@ import com.lightmeter.app.metering.NormalizedMeteringRect
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.abs
 import kotlin.math.max
 
@@ -46,7 +46,7 @@ fun CameraPreviewView(
     shadowLatitudeStops: Double,
     riskReferenceEv100: Double? = null,
     onMeteringResult: (MeteringResult) -> Unit,
-    onFrameCaptured: (Bitmap?, ExposureSnapshot?) -> Unit,
+    onFrameCaptured: (CapturedExposureFrame?) -> Unit,
     onDetailProbesCaptured: (ExposureSnapshot?, ExposureSnapshot?) -> Unit,
     onOpticsAvailable: (CameraOptics) -> Unit,
     onZoomStateChanged: (CameraZoomState) -> Unit,
@@ -79,19 +79,24 @@ fun CameraPreviewView(
 
     LaunchedEffect(freezeRequestId, shouldCaptureFrame) {
         if (shouldCaptureFrame && freezeRequestId > 0) {
+            val processingDeadlineNs = System.nanoTime() + FREEZE_PROCESSING_TIMEOUT_NS
             analyzer.requestFrameCapture(freezeRequestId)
             val capturedFrame = try {
-                awaitCapturedFrame(analyzer, freezeRequestId)
+                awaitCapturedFrame(
+                    analyzer = analyzer,
+                    requestId = freezeRequestId,
+                    processingDeadlineNs = processingDeadlineNs,
+                )
             } finally {
                 analyzer.cancelFrameCapture(freezeRequestId)
             }
             if (capturedFrame == null) {
-                currentOnFrameCaptured.value(null, null)
+                currentOnFrameCaptured.value(null)
                 currentOnDetailProbesCaptured.value(null, null)
                 return@LaunchedEffect
             }
             val baselineSnapshot = capturedFrame.snapshot
-            currentOnFrameCaptured.value(capturedFrame.bitmap, baselineSnapshot)
+            currentOnFrameCaptured.value(capturedFrame)
 
             val referenceEv100 = riskReferenceEv100
                 ?: ExposureRiskCalculator.referenceEv100(
@@ -128,6 +133,7 @@ fun CameraPreviewView(
                         baseline = baselineSnapshot,
                         afterTimestampNs = lastProbeTimestampNs,
                         requestedOffsetStops = SHADOW_PROBE_STOPS,
+                        processingDeadlineNs = processingDeadlineNs,
                     )
                     shadowProbeSnapshot?.let {
                         lastProbeTimestampNs = it.timestampNs
@@ -141,6 +147,7 @@ fun CameraPreviewView(
                         baseline = baselineSnapshot,
                         afterTimestampNs = lastProbeTimestampNs,
                         requestedOffsetStops = HIGHLIGHT_PROBE_STOPS,
+                        processingDeadlineNs = processingDeadlineNs,
                     )
                 }
             } finally {
@@ -216,8 +223,12 @@ fun CameraViewfinderMask(
 private suspend fun awaitCapturedFrame(
     analyzer: MeteringAnalyzer,
     requestId: Int,
+    processingDeadlineNs: Long,
 ): CapturedExposureFrame? {
-    val deadlineNs = System.nanoTime() + FRAME_CAPTURE_TIMEOUT_NS
+    val deadlineNs = minOf(
+        processingDeadlineNs,
+        System.nanoTime() + FRAME_CAPTURE_TIMEOUT_NS,
+    )
     while (System.nanoTime() < deadlineNs) {
         analyzer.takeCapturedFrame(requestId)?.let { return it }
         delay(FRAME_CAPTURE_POLL_INTERVAL_MS)
@@ -232,17 +243,25 @@ private suspend fun captureProbeSnapshot(
     baseline: ExposureSnapshot,
     afterTimestampNs: Long,
     requestedOffsetStops: Double,
+    processingDeadlineNs: Long,
 ): ExposureSnapshot? {
-    val actualOffsetStops = cameraController.applyExposureProbe(
-        bracket = bracket,
-        requestedOffsetStops = requestedOffsetStops,
-    ) ?: return null
+    val remainingMs = (
+        (processingDeadlineNs - System.nanoTime()) / 1_000_000
+        ).coerceAtLeast(0)
+    if (remainingMs == 0L) return null
+    val actualOffsetStops = withTimeoutOrNull(remainingMs) {
+        cameraController.applyExposureProbe(
+            bracket = bracket,
+            requestedOffsetStops = requestedOffsetStops,
+        )
+    } ?: return null
     if (abs(actualOffsetStops) < MIN_USABLE_PROBE_STOPS) return null
     return awaitProbeSnapshot(
         analyzer = analyzer,
         baseline = baseline,
         afterTimestampNs = afterTimestampNs,
         exposureOffsetStops = actualOffsetStops,
+        processingDeadlineNs = processingDeadlineNs,
     )
 }
 
@@ -251,8 +270,12 @@ private suspend fun awaitProbeSnapshot(
     baseline: ExposureSnapshot,
     afterTimestampNs: Long,
     exposureOffsetStops: Double,
+    processingDeadlineNs: Long,
 ): ExposureSnapshot? {
-    val deadlineNs = System.nanoTime() + EXPOSURE_PROBE_TIMEOUT_NS
+    val deadlineNs = minOf(
+        processingDeadlineNs,
+        System.nanoTime() + EXPOSURE_PROBE_TIMEOUT_NS,
+    )
     val minimumSettingChange = max(
         MIN_PROBE_SETTING_CHANGE_STOPS,
         abs(exposureOffsetStops) * MIN_PROBE_SETTING_CHANGE_RATIO,
@@ -283,7 +306,8 @@ private suspend fun awaitProbeSnapshot(
 
 private const val SHADOW_PROBE_STOPS = 2.0
 private const val HIGHLIGHT_PROBE_STOPS = -2.0
-private const val FRAME_CAPTURE_TIMEOUT_NS = 1_000_000_000L
+private const val FREEZE_PROCESSING_TIMEOUT_NS = 1_350_000_000L
+private const val FRAME_CAPTURE_TIMEOUT_NS = 600_000_000L
 private const val FRAME_CAPTURE_POLL_INTERVAL_MS = 10L
 private const val EXPOSURE_PROBE_TIMEOUT_NS = 800_000_000L
 private const val SHADOW_PROBE_POLL_INTERVAL_MS = 50L

@@ -1,5 +1,7 @@
 package com.lightmeter.app.filmpreview
 
+import com.lightmeter.app.metering.ExposureMap
+import com.lightmeter.app.metering.ExposureSnapshot
 import com.lightmeter.app.metering.MeteringResult
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -115,7 +117,7 @@ class FilmPreviewEngineTest {
     }
 
     @Test
-    fun freezeRequiresReadyMeteringAndIgnoresProbeResults() {
+    fun freezeUsesCapturedSnapshotAndIgnoresLiveResults() {
         val viewModel = FilmPreviewViewModel()
         val initialEv = FilmPreviewEngine.presetEv100(funSaver)
         viewModel.onCameraReady()
@@ -140,6 +142,29 @@ class FilmPreviewEngineTest {
         assertTrue(frozenState.isFrozen)
         assertEquals(1, frozenState.freezeRequestId)
         assertEquals(initialEv, frozenState.meteredEv100 ?: Double.NaN, 0.0001)
+
+        val capturedEv = initialEv + 1.0
+        val capturedSnapshot = ExposureSnapshot(
+            exposureMap = ExposureMap(
+                width = 1,
+                height = 1,
+                pixelEv100 = floatArrayOf(capturedEv.toFloat()),
+                timestampNs = 3L,
+            ),
+            meteredEv100 = capturedEv,
+            timestampNs = 3L,
+            revision = 0L,
+        )
+        viewModel.onFrozenSnapshot(requestId = 2, snapshot = capturedSnapshot)
+        assertEquals(initialEv, viewModel.state.value.meteredEv100 ?: Double.NaN, 0.0001)
+
+        viewModel.onFrozenSnapshot(requestId = 1, snapshot = capturedSnapshot)
+        assertEquals(capturedEv, viewModel.state.value.meteredEv100 ?: Double.NaN, 0.0001)
+        assertEquals(
+            1.0,
+            viewModel.state.value.evaluation?.sceneDeltaEv ?: Double.NaN,
+            0.0001,
+        )
 
         viewModel.resumeLivePreview()
         assertTrue(!viewModel.state.value.isFrozen)

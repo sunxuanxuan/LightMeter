@@ -3,6 +3,7 @@ package com.lightmeter.app.camera
 import android.annotation.SuppressLint
 import android.content.Context
 import android.hardware.camera2.CameraCharacteristics
+import android.util.Size
 import androidx.camera.camera2.interop.Camera2CameraInfo
 import androidx.camera.camera2.interop.Camera2Interop
 import androidx.camera.core.Camera
@@ -11,6 +12,8 @@ import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.Preview
 import androidx.camera.core.UseCaseGroup
 import androidx.camera.core.ZoomState
+import androidx.camera.core.resolutionselector.ResolutionSelector
+import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
@@ -78,6 +81,17 @@ class CameraController(
                         val analysisBuilder = ImageAnalysis.Builder()
                             .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                             .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888)
+                            .setResolutionSelector(
+                                ResolutionSelector.Builder()
+                                    .setResolutionStrategy(
+                                        ResolutionStrategy(
+                                            ANALYSIS_PREFERRED_SIZE,
+                                            ResolutionStrategy
+                                                .FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER,
+                                        ),
+                                    )
+                                    .build(),
+                            )
                         Camera2Interop.Extender(analysisBuilder)
                             .setSessionCaptureCallback(analyzer)
                         val analysis = analysisBuilder
@@ -244,5 +258,9 @@ class CameraController(
         released = true
         unbind()
         analysisExecutor.shutdown()
+    }
+
+    private companion object {
+        val ANALYSIS_PREFERRED_SIZE = Size(1920, 1440)
     }
 }

@@ -2,6 +2,7 @@ package com.lightmeter.app.metering
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ExposureRiskCalculatorTest {
@@ -103,6 +104,77 @@ class ExposureRiskCalculatorTest {
         assertEquals(listOf(0x33, 0x8D, 0xE6), alpha.take(3))
         assertEquals(listOf(0x33, 0x8D, 0xE6), alpha.takeLast(3))
         assertEquals(1.0, result.highlightRatio + result.shadowRatio, 0.0001)
+    }
+
+    @Test
+    fun previewWarningKeepsPlusMinusOneStopClear() {
+        val result = ExposureRiskCalculator.calculate(
+            exposureMap = ExposureMap(
+                width = 5,
+                height = 1,
+                pixelEv100 = floatArrayOf(-1.01f, -1.0f, 0.0f, 1.0f, 1.01f),
+                timestampNs = 1L,
+            ),
+            viewfinder = NormalizedMeteringRect.Full,
+            referenceEv100 = 0.0,
+            highlightLatitudeStops = 3.0,
+            shadowLatitudeStops = 2.0,
+            warningStartStops = 1.0,
+        )
+
+        assertNotEquals(0, result.argb[0])
+        assertEquals(0, result.argb[1])
+        assertEquals(0, result.argb[2])
+        assertEquals(0, result.argb[3])
+        assertNotEquals(0, result.argb[4])
+        assertEquals(0.2, result.highlightRatio, 0.0001)
+        assertEquals(0.2, result.shadowRatio, 0.0001)
+    }
+
+    @Test
+    fun previewWarningOpacityReachesMaximumAtDetailLossBoundary() {
+        val result = ExposureRiskCalculator.calculate(
+            exposureMap = ExposureMap(
+                width = 6,
+                height = 1,
+                pixelEv100 = floatArrayOf(1.1f, 2.0f, 3.0f, -1.1f, -1.5f, -2.0f),
+                timestampNs = 1L,
+            ),
+            viewfinder = NormalizedMeteringRect.Full,
+            referenceEv100 = 0.0,
+            highlightLatitudeStops = 3.0,
+            shadowLatitudeStops = 2.0,
+            warningStartStops = 1.0,
+        )
+
+        val alpha = result.argb.map { it ushr 24 }
+        assertTrue(alpha[0] < alpha[1])
+        assertTrue(alpha[1] < alpha[2])
+        assertEquals(0xE6, alpha[2])
+        assertTrue(alpha[3] < alpha[4])
+        assertTrue(alpha[4] < alpha[5])
+        assertEquals(0xE6, alpha[5])
+    }
+
+    @Test
+    fun progressiveWarningSupportsLatitudeInsideOneStop() {
+        val result = ExposureRiskCalculator.calculate(
+            exposureMap = ExposureMap(
+                width = 3,
+                height = 1,
+                pixelEv100 = floatArrayOf(-1.01f, 0.8f, 1.01f),
+                timestampNs = 1L,
+            ),
+            viewfinder = NormalizedMeteringRect.Full,
+            referenceEv100 = 0.0,
+            highlightLatitudeStops = 2.0 / 3.0,
+            shadowLatitudeStops = 2.0 / 3.0,
+            warningStartStops = 1.0,
+        )
+
+        assertEquals(0xE6, result.argb[0] ushr 24)
+        assertEquals(0, result.argb[1])
+        assertEquals(0xE6, result.argb[2] ushr 24)
     }
 
     @Test
@@ -321,6 +393,60 @@ class ExposureRiskCalculatorTest {
 
         assertEquals(ExposureProbeRequirements(highlight = true, shadow = false), highlightOnly)
         assertEquals(ExposureProbeRequirements(highlight = false, shadow = true), shadowOnly)
+    }
+
+    @Test
+    fun previewWarningUsesProbeToSuppressFlatRegionBeyondLatitude() {
+        val baseline = shadowExposureMap(
+            rawLuminance = ByteArray(25) { 10 },
+            timestampNs = 1L,
+        )
+        val flatProbe = shadowExposureMap(
+            rawLuminance = ByteArray(25) { 40 },
+            timestampNs = 2L,
+        )
+
+        val result = ExposureRiskCalculator.calculate(
+            exposureMap = baseline,
+            viewfinder = NormalizedMeteringRect.Full,
+            referenceEv100 = 0.0,
+            highlightLatitudeStops = 3.0,
+            shadowLatitudeStops = 2.0,
+            shadowProbeMap = flatProbe,
+            warningStartStops = 1.0,
+        )
+
+        assertEquals(0.0, result.shadowRatio, 0.0001)
+    }
+
+    @Test
+    fun previewWarningKeepsEarlyRiskBeforeDetailLossBoundary() {
+        val baseline = ExposureMap(
+            width = 5,
+            height = 5,
+            pixelEv100 = FloatArray(25) { -1.5f },
+            rawLuminance = ByteArray(25) { 20 },
+            timestampNs = 1L,
+        )
+        val flatProbe = ExposureMap(
+            width = 5,
+            height = 5,
+            pixelEv100 = FloatArray(25) { -1.5f },
+            rawLuminance = ByteArray(25) { 45 },
+            timestampNs = 2L,
+        )
+
+        val result = ExposureRiskCalculator.calculate(
+            exposureMap = baseline,
+            viewfinder = NormalizedMeteringRect.Full,
+            referenceEv100 = 0.0,
+            highlightLatitudeStops = 3.0,
+            shadowLatitudeStops = 2.0,
+            shadowProbeMap = flatProbe,
+            warningStartStops = 1.0,
+        )
+
+        assertEquals(1.0, result.shadowRatio, 0.0001)
     }
 
     @Test(expected = IllegalArgumentException::class)

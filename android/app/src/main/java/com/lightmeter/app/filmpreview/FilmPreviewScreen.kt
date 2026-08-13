@@ -38,9 +38,13 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Visibility
+import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -57,6 +61,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
@@ -149,6 +154,7 @@ fun FilmPreviewRoute(
         onCameraReady = viewModel::onCameraReady,
         onCameraError = viewModel::onCameraError,
         onMeteringResult = viewModel::onMeteringResult,
+        onFrozenSnapshot = viewModel::onFrozenSnapshot,
         onFreezePreview = viewModel::freezePreview,
         onResumeLive = viewModel::resumeLivePreview,
         onFreezeCaptureFailed = viewModel::onFreezeCaptureFailed,
@@ -244,13 +250,16 @@ private fun FilmPreviewWorkspace(
     onCameraReady: () -> Unit,
     onCameraError: (Throwable) -> Unit,
     onMeteringResult: (com.lightmeter.app.metering.MeteringResult) -> Unit,
+    onFrozenSnapshot: (Int, ExposureSnapshot) -> Unit,
     onFreezePreview: () -> Unit,
     onResumeLive: () -> Unit,
     onFreezeCaptureFailed: () -> Unit,
 ) {
     val preset = state.selectedPreset ?: return
     var showsSettings by rememberSaveable { mutableStateOf(false) }
+    var isExposureSimulationEnabled by rememberSaveable { mutableStateOf(false) }
     var frozenFrame by remember { mutableStateOf<Bitmap?>(null) }
+    var simulatedFrame by remember { mutableStateOf<Bitmap?>(null) }
     var frozenSnapshot by remember { mutableStateOf<ExposureSnapshot?>(null) }
     var shadowProbeSnapshot by remember { mutableStateOf<ExposureSnapshot?>(null) }
     var highlightProbeSnapshot by remember { mutableStateOf<ExposureSnapshot?>(null) }
@@ -316,6 +325,7 @@ private fun FilmPreviewWorkspace(
                     shadowLatitudeStops = preset.film.shadowLatitudeStops,
                     shadowProbeMap = shadowProbeSnapshot?.exposureMap,
                     highlightProbeMap = highlightProbeSnapshot?.exposureMap,
+                    warningStartStops = PREVIEW_WARNING_START_STOPS,
                 )
             }
         }
@@ -330,10 +340,37 @@ private fun FilmPreviewWorkspace(
             )
         }
     }
+    LaunchedEffect(
+        frozenFrame,
+        frozenSnapshot,
+        presetReferenceEv100,
+        preset.film.highlightLatitudeStops,
+        preset.film.shadowLatitudeStops,
+    ) {
+        val source = frozenFrame
+        val snapshot = frozenSnapshot
+        simulatedFrame = if (source == null || snapshot == null) {
+            null
+        } else {
+            withContext(Dispatchers.Default) {
+                runCatching {
+                    FilmExposureSimulator.render(
+                        source = source,
+                        exposureMap = snapshot.exposureMap,
+                        referenceEv100 = presetReferenceEv100,
+                        highlightLatitudeStops = preset.film.highlightLatitudeStops,
+                        shadowLatitudeStops = preset.film.shadowLatitudeStops,
+                    )
+                }.getOrNull()
+            }
+        }
+    }
 
     LaunchedEffect(state.isFrozen) {
         if (!state.isFrozen) {
+            isExposureSimulationEnabled = false
             frozenFrame = null
+            simulatedFrame = null
             frozenSnapshot = null
             shadowProbeSnapshot = null
             highlightProbeSnapshot = null
@@ -386,9 +423,7 @@ private fun FilmPreviewWorkspace(
                 when (permissionState) {
                     CameraPermissionState.GRANTED -> CameraPreviewView(
                         meteringConfig = MeteringConfig(
-                            mode = MeteringMode.CENTER_WEIGHTED,
-                            centerAreaPercent = 40,
-                            centerWeightPercent = 70,
+                            mode = MeteringMode.AVERAGE,
                             viewfinderRect = normalizedViewfinder,
                             previewAspectRatio = PREVIEW_ASPECT_RATIO.toDouble(),
                             targetZoomRatio = effectiveZoomRatio.toDouble(),
@@ -411,15 +446,21 @@ private fun FilmPreviewWorkspace(
                                 onMeteringResult(it)
                             }
                         },
-                        onFrameCaptured = { bitmap, snapshot ->
+                        onFrameCaptured = { capturedFrame ->
+                            val requestId = capturedFrame?.requestId
+                            val bitmap = capturedFrame?.bitmap
+                            val snapshot = capturedFrame?.snapshot
                             if (
+                                requestId == null ||
                                 bitmap == null ||
                                 snapshot == null ||
                                 snapshot.revision != presetRevision
                             ) {
                                 onFreezeCaptureFailed()
                             } else {
+                                onFrozenSnapshot(requestId, snapshot)
                                 frozenFrame = bitmap
+                                simulatedFrame = null
                                 frozenSnapshot = snapshot
                                 shadowProbeSnapshot = null
                                 highlightProbeSnapshot = null
@@ -456,29 +497,42 @@ private fun FilmPreviewWorkspace(
                 }
 
                 if (state.isFrozen) {
-                    frozenFrame?.let { bitmap ->
+                    val displayedFrame = if (isExposureSimulationEnabled) {
+                        simulatedFrame ?: frozenFrame
+                    } else {
+                        frozenFrame
+                    }
+                    displayedFrame?.let { bitmap ->
                         Image(
                             bitmap = bitmap.asImageBitmap(),
-                            contentDescription = "一次性相机冻结预览",
+                            contentDescription = if (isExposureSimulationEnabled) {
+                                "一次性相机曝光结果模拟"
+                            } else {
+                                "一次性相机冻结预览"
+                            },
                             contentScale = ContentScale.FillBounds,
+                            filterQuality = FilterQuality.High,
                             modifier = Modifier.fillMaxSize(),
                         )
                     }
-                    exposureRiskBitmap?.let { bitmap ->
-                        Image(
-                            bitmap = bitmap.asImageBitmap(),
-                            contentDescription = "胶片宽容度风险预警",
-                            contentScale = ContentScale.FillBounds,
-                            modifier = Modifier.fillMaxSize(),
-                        )
-                    }
-                    exposureRiskMask?.let { riskMask ->
-                        FilmRiskLegend(
-                            riskMask = riskMask,
-                            modifier = Modifier
-                                .align(Alignment.TopStart)
-                                .padding(10.dp),
-                        )
+                    if (!isExposureSimulationEnabled) {
+                        exposureRiskBitmap?.let { bitmap ->
+                            Image(
+                                bitmap = bitmap.asImageBitmap(),
+                                contentDescription = "胶片宽容度风险预警",
+                                contentScale = ContentScale.FillBounds,
+                                filterQuality = FilterQuality.High,
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                        }
+                        exposureRiskMask?.let { riskMask ->
+                            FilmRiskLegend(
+                                riskMask = riskMask,
+                                modifier = Modifier
+                                    .align(Alignment.TopStart)
+                                    .padding(10.dp),
+                            )
+                        }
                     }
                 }
 
@@ -505,19 +559,37 @@ private fun FilmPreviewWorkspace(
                     )
                 }
 
-                PreviewFreezeButton(
-                    isFrozen = state.isFrozen,
-                    enabled = state.isFrozen ||
-                        (
-                            state.isCameraReady &&
-                                state.meteredEv100 != null &&
-                                isZoomReady
-                            ),
-                    onClick = if (state.isFrozen) onResumeLive else onFreezePreview,
+                Row(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .padding(bottom = 12.dp),
-                )
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    PreviewFreezeButton(
+                        isFrozen = state.isFrozen,
+                        enabled = state.isFrozen ||
+                            (
+                                state.isCameraReady &&
+                                    state.meteredEv100 != null &&
+                                    isZoomReady
+                                ),
+                        onClick = if (state.isFrozen) onResumeLive else onFreezePreview,
+                    )
+                    if (
+                        state.isFrozen &&
+                        exposureRiskMask != null &&
+                        simulatedFrame != null
+                    ) {
+                        ExposureSimulationToggle(
+                            isSimulationEnabled = isExposureSimulationEnabled,
+                            onClick = {
+                                isExposureSimulationEnabled =
+                                    !isExposureSimulationEnabled
+                            },
+                        )
+                    }
+                }
             }
         }
 
@@ -719,6 +791,42 @@ private fun PreviewFreezeButton(
 }
 
 @Composable
+private fun ExposureSimulationToggle(
+    isSimulationEnabled: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Button(
+        onClick = onClick,
+        shape = CircleShape,
+        colors = ButtonDefaults.buttonColors(
+            containerColor = if (isSimulationEnabled) {
+                Color(0xFFD3AA5F)
+            } else {
+                Color.White
+            },
+            contentColor = Color.Black,
+        ),
+        contentPadding = PaddingValues(0.dp),
+        modifier = modifier.size(52.dp),
+    ) {
+        Icon(
+            imageVector = if (isSimulationEnabled) {
+                Icons.Outlined.VisibilityOff
+            } else {
+                Icons.Outlined.Visibility
+            },
+            contentDescription = if (isSimulationEnabled) {
+                "关闭曝光模拟"
+            } else {
+                "开启曝光模拟"
+            },
+            modifier = Modifier.size(25.dp),
+        )
+    }
+}
+
+@Composable
 private fun ReadOnlyParameter(
     label: String,
     value: String,
@@ -885,6 +993,7 @@ private fun ratingColor(rating: PreviewSceneRating?): Color {
 
 private const val PREVIEW_ASPECT_RATIO = 2f / 3f
 private const val PREVIEW_ZOOM_TOLERANCE = 0.02f
+private const val PREVIEW_WARNING_START_STOPS = 1.0
 
 private fun Context.hasCameraPermission(): Boolean {
     return ContextCompat.checkSelfPermission(

@@ -10,6 +10,7 @@ data class ExposureMap(
     val rawLuminance: ByteArray? = null,
     val clippedHighlights: BooleanArray = BooleanArray(pixelEv100.size),
     val cameraSettingEv100: Double = Double.NaN,
+    val calibrationOffset: Double = 0.0,
     val timestampNs: Long,
     val revision: Long = 0L,
 ) {
@@ -19,6 +20,7 @@ data class ExposureMap(
         require(pixelEv100.size == width * height)
         require(rawLuminance == null || rawLuminance.size == pixelEv100.size)
         require(clippedHighlights.size == pixelEv100.size)
+        require(calibrationOffset.isFinite())
     }
 }
 
@@ -62,9 +64,13 @@ object ExposureRiskCalculator {
         shadowLatitudeStops: Double,
         shadowProbeMap: ExposureMap? = null,
         highlightProbeMap: ExposureMap? = null,
+        warningStartStops: Double? = null,
     ): ExposureRiskMask {
         require(highlightLatitudeStops > 0.0)
         require(shadowLatitudeStops > 0.0)
+        warningStartStops?.let {
+            require(it > 0.0)
+        }
         val compatibleShadowProbe = compatibleProbe(exposureMap, shadowProbeMap)
         val compatibleHighlightProbe = compatibleProbe(exposureMap, highlightProbeMap)
         val baselineDetails = if (
@@ -92,6 +98,58 @@ object ExposureRiskCalculator {
 
             analyzedCount++
             val deltaEv = pixelEv - referenceEv100
+            if (warningStartStops != null) {
+                val isHighlightDetailLoss =
+                    exposureMap.clippedHighlights[index] ||
+                        deltaEv >= highlightLatitudeStops
+                val isShadowDetailLoss = deltaEv <= -shadowLatitudeStops
+                val highlightConfirmed =
+                    !isHighlightDetailLoss ||
+                        highlightProbeDetails == null ||
+                        DetailRevealDetector.isHighlightDetailRevealed(
+                            baseline = requireNotNull(baselineDetails),
+                            probe = highlightProbeDetails,
+                            index = index,
+                        )
+                val shadowConfirmed =
+                    !isShadowDetailLoss ||
+                        shadowProbeDetails == null ||
+                        DetailRevealDetector.isShadowDetailRevealed(
+                            baseline = requireNotNull(baselineDetails),
+                            probe = shadowProbeDetails,
+                            index = index,
+                        )
+                pixels[index] = when {
+                    exposureMap.clippedHighlights[index] && highlightConfirmed -> {
+                        highlightCount++
+                        riskColor(HIGHLIGHT_RGB, MAX_RISK_ALPHA)
+                    }
+
+                    deltaEv > warningStartStops && highlightConfirmed -> {
+                        highlightCount++
+                        progressiveWarningColor(
+                            rgb = HIGHLIGHT_RGB,
+                            distanceStops = deltaEv,
+                            warningStartStops = warningStartStops,
+                            detailLossStops = highlightLatitudeStops,
+                        )
+                    }
+
+                    deltaEv < -warningStartStops && shadowConfirmed -> {
+                        shadowCount++
+                        progressiveWarningColor(
+                            rgb = SHADOW_RGB,
+                            distanceStops = -deltaEv,
+                            warningStartStops = warningStartStops,
+                            detailLossStops = shadowLatitudeStops,
+                        )
+                    }
+
+                    else -> TRANSPARENT
+                }
+                return@forEachIndexed
+            }
+
             val isHighlightCandidate = exposureMap.clippedHighlights[index] ||
                 deltaEv >= highlightLatitudeStops
             pixels[index] = when {
@@ -197,6 +255,32 @@ object ExposureRiskCalculator {
             ).roundToInt()
         return (alpha shl 24) or rgb
     }
+
+    private fun progressiveWarningColor(
+        rgb: Int,
+        distanceStops: Double,
+        warningStartStops: Double,
+        detailLossStops: Double,
+    ): Int {
+        if (detailLossStops <= warningStartStops) {
+            return riskColor(rgb, MAX_RISK_ALPHA)
+        }
+        val intensity = (
+            (distanceStops - warningStartStops) /
+                (detailLossStops - warningStartStops)
+            ).coerceIn(0.0, 1.0)
+        val alpha = (
+            MIN_WARNING_ALPHA +
+                (MAX_RISK_ALPHA - MIN_WARNING_ALPHA) * intensity
+            ).roundToInt()
+        return (alpha shl 24) or rgb
+    }
+
+    private fun riskColor(rgb: Int, alpha: Int): Int {
+        return (alpha shl 24) or rgb
+    }
+
+    private const val MIN_WARNING_ALPHA = 0x20
 }
 
 private object DetailRevealDetector {
@@ -344,6 +428,6 @@ private class LocalDetailStats(map: ExposureMap) {
     )
 
     private companion object {
-        const val WINDOW_RADIUS = 2
+        const val WINDOW_RADIUS = 4
     }
 }

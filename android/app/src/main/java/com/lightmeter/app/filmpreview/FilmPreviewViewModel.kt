@@ -1,6 +1,7 @@
 package com.lightmeter.app.filmpreview
 
 import androidx.lifecycle.ViewModel
+import com.lightmeter.app.metering.ExposureSnapshot
 import com.lightmeter.app.metering.MeteringResult
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -98,6 +99,19 @@ class FilmPreviewViewModel(
             current.copy(
                 meteredEv100 = result.ev100,
                 evaluation = FilmPreviewEngine.evaluate(result.ev100, preset),
+            )
+        }
+    }
+
+    fun onFrozenSnapshot(requestId: Int, snapshot: ExposureSnapshot) {
+        mutableState.update { current ->
+            val preset = current.selectedPreset ?: return@update current
+            if (!current.isFrozen || current.freezeRequestId != requestId) {
+                return@update current
+            }
+            current.copy(
+                meteredEv100 = snapshot.meteredEv100,
+                evaluation = FilmPreviewEngine.evaluate(snapshot.meteredEv100, preset),
             )
         }
     }
