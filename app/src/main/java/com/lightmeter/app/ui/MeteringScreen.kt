@@ -103,6 +103,8 @@ import com.lightmeter.app.metering.NormalizedMeteringRect
 import com.lightmeter.app.metering.NormalizedPoint
 import com.lightmeter.app.metering.MeteringResult
 import com.lightmeter.app.settings.SharedPreferencesAppSettingsStore
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -299,6 +301,10 @@ private fun CameraContent(
 ) {
     var frozenFrame by remember { mutableStateOf<Bitmap?>(null) }
     var frozenExposureSnapshot by remember { mutableStateOf<ExposureSnapshot?>(null) }
+    var frozenShadowProbeSnapshot by remember { mutableStateOf<ExposureSnapshot?>(null) }
+    var frozenHighlightProbeSnapshot by remember { mutableStateOf<ExposureSnapshot?>(null) }
+    var completedDetailProbeRequestId by remember { mutableStateOf<Int?>(null) }
+    var exposureRiskMask by remember { mutableStateOf<ExposureRiskMask?>(null) }
     var previewSize by remember { mutableStateOf(IntSize.Zero) }
     var cameraZoomState by remember { mutableStateOf(CameraZoomState()) }
     val projection = remember(
@@ -359,29 +365,41 @@ private fun CameraContent(
             )
         }
     }
-    val exposureRiskMask = remember(
+    LaunchedEffect(
         frozenExposureSnapshot,
         normalizedViewfinder,
         state.exposureCompensation,
         state.exposureRiskEnabled,
         state.highlightLatitudeStops,
         state.shadowLatitudeStops,
+        frozenShadowProbeSnapshot,
+        frozenHighlightProbeSnapshot,
+        completedDetailProbeRequestId,
+        state.freezeRequestId,
     ) {
         val snapshot = frozenExposureSnapshot
-        if (!state.exposureRiskEnabled || snapshot == null) {
+        exposureRiskMask = if (
+            !state.exposureRiskEnabled ||
+            snapshot == null ||
+            completedDetailProbeRequestId != state.freezeRequestId
+        ) {
             null
         } else {
             val referenceEv100 = ExposureRiskCalculator.referenceEv100(
                 frozenMeteredEv100 = snapshot.meteredEv100,
                 exposureCompensation = state.exposureCompensation,
             )
-            ExposureRiskCalculator.calculate(
-                exposureMap = snapshot.exposureMap,
-                viewfinder = normalizedViewfinder,
-                referenceEv100 = referenceEv100,
-                highlightLatitudeStops = state.highlightLatitudeStops,
-                shadowLatitudeStops = state.shadowLatitudeStops,
-            )
+            withContext(Dispatchers.Default) {
+                ExposureRiskCalculator.calculate(
+                    exposureMap = snapshot.exposureMap,
+                    viewfinder = normalizedViewfinder,
+                    referenceEv100 = referenceEv100,
+                    highlightLatitudeStops = state.highlightLatitudeStops,
+                    shadowLatitudeStops = state.shadowLatitudeStops,
+                    shadowProbeMap = frozenShadowProbeSnapshot?.exposureMap,
+                    highlightProbeMap = frozenHighlightProbeSnapshot?.exposureMap,
+                )
+            }
         }
     }
     val exposureRiskBitmap = remember(exposureRiskMask) {
@@ -399,6 +417,10 @@ private fun CameraContent(
         if (!state.isFrozen) {
             frozenFrame = null
             frozenExposureSnapshot = null
+            frozenShadowProbeSnapshot = null
+            frozenHighlightProbeSnapshot = null
+            completedDetailProbeRequestId = null
+            exposureRiskMask = null
         }
     }
 
@@ -440,6 +462,9 @@ private fun CameraContent(
                 },
                 freezeRequestId = state.freezeRequestId,
                 shouldCaptureFrame = state.isFrozen,
+                exposureCompensation = state.exposureCompensation,
+                highlightLatitudeStops = state.highlightLatitudeStops,
+                shadowLatitudeStops = state.shadowLatitudeStops,
                 onMeteringResult = onMeteringResult,
                 onFrameCaptured = { bitmap, snapshot ->
                     if (
@@ -451,7 +476,19 @@ private fun CameraContent(
                     } else {
                         frozenFrame = bitmap
                         frozenExposureSnapshot = snapshot
+                        frozenShadowProbeSnapshot = null
+                        frozenHighlightProbeSnapshot = null
+                        completedDetailProbeRequestId = null
                     }
+                },
+                onDetailProbesCaptured = { shadowSnapshot, highlightSnapshot ->
+                    frozenShadowProbeSnapshot = shadowSnapshot?.takeIf {
+                        it.revision == state.meteringRevision
+                    }
+                    frozenHighlightProbeSnapshot = highlightSnapshot?.takeIf {
+                        it.revision == state.meteringRevision
+                    }
+                    completedDetailProbeRequestId = state.freezeRequestId
                 },
                 onOpticsAvailable = onCameraOpticsAvailable,
                 onZoomStateChanged = { cameraZoomState = it },
@@ -493,14 +530,16 @@ private fun CameraContent(
                 modifier = Modifier.fillMaxSize(),
             )
 
-            if (state.isFrozen && exposureRiskMask != null) {
-                ExposureRiskLegend(
-                    riskMask = exposureRiskMask,
-                    exposureCompensation = state.exposureCompensation,
-                    modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        .padding(top = 12.dp),
-                )
+            if (state.isFrozen) {
+                exposureRiskMask?.let { riskMask ->
+                    ExposureRiskLegend(
+                        riskMask = riskMask,
+                        exposureCompensation = state.exposureCompensation,
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .padding(top = 12.dp),
+                    )
+                }
             }
 
             ExposureScaleOverlay(

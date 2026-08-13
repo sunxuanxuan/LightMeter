@@ -18,7 +18,17 @@ import androidx.lifecycle.LifecycleOwner
 import com.lightmeter.app.metering.MeteringAnalyzer
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import kotlin.coroutines.resume
+import kotlin.coroutines.suspendCoroutine
 import kotlin.math.abs
+import kotlin.math.roundToInt
+
+data class CameraExposureBracket(
+    val originalCompensationIndex: Int,
+    val minimumCompensationIndex: Int,
+    val maximumCompensationIndex: Int,
+    val compensationStepStops: Double,
+)
 
 @SuppressLint("UnsafeOptInUsageError")
 class CameraController(
@@ -131,6 +141,62 @@ class CameraController(
     fun setZoomRatio(zoomRatio: Float) {
         requestedZoomRatio = zoomRatio.coerceAtLeast(0.1f)
         applyRequestedZoom()
+    }
+
+    fun createExposureBracket(): CameraExposureBracket? {
+        val currentCamera = camera ?: return null
+        val exposureState = currentCamera.cameraInfo.exposureState
+        if (!exposureState.isExposureCompensationSupported) return null
+
+        val stepStops = exposureState.exposureCompensationStep.toDouble()
+        if (!stepStops.isFinite() || stepStops <= 0.0) return null
+        return CameraExposureBracket(
+            originalCompensationIndex = exposureState.exposureCompensationIndex,
+            minimumCompensationIndex = exposureState.exposureCompensationRange.lower,
+            maximumCompensationIndex = exposureState.exposureCompensationRange.upper,
+            compensationStepStops = stepStops,
+        )
+    }
+
+    suspend fun applyExposureProbe(
+        bracket: CameraExposureBracket,
+        requestedOffsetStops: Double,
+    ): Double? {
+        require(requestedOffsetStops.isFinite() && requestedOffsetStops != 0.0)
+        val currentCamera = camera ?: return null
+        val requestedStepCount = (
+            requestedOffsetStops / bracket.compensationStepStops
+        ).roundToInt()
+        val targetIndex = (
+            bracket.originalCompensationIndex + requestedStepCount
+        ).coerceIn(
+            bracket.minimumCompensationIndex,
+            bracket.maximumCompensationIndex,
+        )
+        if (targetIndex == bracket.originalCompensationIndex) return null
+        if (!applyExposureCompensationIndex(currentCamera, targetIndex)) return null
+        return (targetIndex - bracket.originalCompensationIndex) *
+            bracket.compensationStepStops
+    }
+
+    suspend fun restoreExposureBracket(bracket: CameraExposureBracket) {
+        val currentCamera = camera ?: return
+        applyExposureCompensationIndex(currentCamera, bracket.originalCompensationIndex)
+    }
+
+    private suspend fun applyExposureCompensationIndex(
+        currentCamera: Camera,
+        index: Int,
+    ): Boolean {
+        val future = currentCamera.cameraControl.setExposureCompensationIndex(index)
+        return suspendCoroutine { continuation ->
+            future.addListener(
+                {
+                    continuation.resume(runCatching(future::get).isSuccess)
+                },
+                ContextCompat.getMainExecutor(appContext),
+            )
+        }
     }
 
     private fun applyRequestedZoom() {

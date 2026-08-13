@@ -314,6 +314,7 @@ class MeteringAnalyzer(
         val exposureSeconds = metadata.exposureTimeNs / 1_000_000_000.0
         val settingEv100 = cameraSettingEv100(metadata, exposureSeconds)
         val pixelEv100 = FloatArray(mapWidth * mapHeight)
+        val rawLuminanceMap = ByteArray(mapWidth * mapHeight)
         val clippedHighlights = BooleanArray(mapWidth * mapHeight)
         val buffer = plane.buffer
 
@@ -338,6 +339,7 @@ class MeteringAnalyzer(
                 } else {
                     0
                 }
+                rawLuminanceMap[mapY * mapWidth + mapX] = rawLuminance.toByte()
                 val linearLuminance = linearLuminance(rawLuminance)
                 clippedHighlights[mapY * mapWidth + mapX] =
                     rawLuminance >= HIGHLIGHT_CLIP_LEVEL
@@ -353,7 +355,9 @@ class MeteringAnalyzer(
             width = mapWidth,
             height = mapHeight,
             pixelEv100 = pixelEv100,
+            rawLuminance = rawLuminanceMap,
             clippedHighlights = clippedHighlights,
+            cameraSettingEv100 = settingEv100,
             timestampNs = image.imageInfo.timestamp,
             revision = meteringConfig.revision,
         )

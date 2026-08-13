@@ -161,6 +161,168 @@ class ExposureRiskCalculatorTest {
         assertEquals(1.0, result.highlightRatio, 0.0001)
     }
 
+    @Test
+    fun suppressesIntrinsicBlackRegionThatRemainsFlatInProbeFrame() {
+        val baseline = shadowExposureMap(
+            rawLuminance = ByteArray(25) { 10 },
+            timestampNs = 1L,
+        )
+        val probe = shadowExposureMap(
+            rawLuminance = ByteArray(25) { 40 },
+            timestampNs = 2L,
+        )
+
+        val result = ExposureRiskCalculator.calculate(
+            exposureMap = baseline,
+            viewfinder = NormalizedMeteringRect.Full,
+            referenceEv100 = 0.0,
+            highlightLatitudeStops = 4.0,
+            shadowLatitudeStops = 3.0,
+            shadowProbeMap = probe,
+        )
+
+        assertEquals(0.0, result.shadowRatio, 0.0001)
+    }
+
+    @Test
+    fun marksShadowRegionWhenProbeFrameRevealsTexture() {
+        val baseline = shadowExposureMap(
+            rawLuminance = ByteArray(25) { 10 },
+            timestampNs = 1L,
+        )
+        val probe = shadowExposureMap(
+            rawLuminance = ByteArray(25) { index ->
+                val x = index % 5
+                val y = index / 5
+                if ((x + y) % 2 == 0) 30 else 45
+            },
+            timestampNs = 2L,
+        )
+
+        val result = ExposureRiskCalculator.calculate(
+            exposureMap = baseline,
+            viewfinder = NormalizedMeteringRect.Full,
+            referenceEv100 = 0.0,
+            highlightLatitudeStops = 4.0,
+            shadowLatitudeStops = 3.0,
+            shadowProbeMap = probe,
+        )
+
+        assertEquals(1.0, result.shadowRatio, 0.0001)
+    }
+
+    @Test
+    fun suppressesShadowWarningWhenTextureWasAlreadyVisible() {
+        val baseline = shadowExposureMap(
+            rawLuminance = ByteArray(25) { index ->
+                val x = index % 5
+                val y = index / 5
+                if ((x + y) % 2 == 0) 8 else 16
+            },
+            timestampNs = 1L,
+        )
+        val probe = shadowExposureMap(
+            rawLuminance = ByteArray(25) { index ->
+                val x = index % 5
+                val y = index / 5
+                if ((x + y) % 2 == 0) 30 else 50
+            },
+            timestampNs = 2L,
+        )
+
+        val result = ExposureRiskCalculator.calculate(
+            exposureMap = baseline,
+            viewfinder = NormalizedMeteringRect.Full,
+            referenceEv100 = 0.0,
+            highlightLatitudeStops = 4.0,
+            shadowLatitudeStops = 3.0,
+            shadowProbeMap = probe,
+        )
+
+        assertEquals(0.0, result.shadowRatio, 0.0001)
+    }
+
+    @Test
+    fun suppressesPureWhiteRegionThatRemainsFlatInHighlightProbe() {
+        val baseline = highlightExposureMap(
+            rawLuminance = ByteArray(25) { 235.toByte() },
+            timestampNs = 1L,
+        )
+        val probe = highlightExposureMap(
+            rawLuminance = ByteArray(25) { 100 },
+            timestampNs = 2L,
+        )
+
+        val result = ExposureRiskCalculator.calculate(
+            exposureMap = baseline,
+            viewfinder = NormalizedMeteringRect.Full,
+            referenceEv100 = 0.0,
+            highlightLatitudeStops = 4.0,
+            shadowLatitudeStops = 3.0,
+            highlightProbeMap = probe,
+        )
+
+        assertEquals(0.0, result.highlightRatio, 0.0001)
+    }
+
+    @Test
+    fun marksHighlightRegionWhenDarkerProbeRevealsTexture() {
+        val baseline = highlightExposureMap(
+            rawLuminance = ByteArray(25) { 235.toByte() },
+            timestampNs = 1L,
+        )
+        val probe = highlightExposureMap(
+            rawLuminance = ByteArray(25) { index ->
+                val x = index % 5
+                val y = index / 5
+                if ((x + y) % 2 == 0) 80 else 100
+            },
+            timestampNs = 2L,
+        )
+
+        val result = ExposureRiskCalculator.calculate(
+            exposureMap = baseline,
+            viewfinder = NormalizedMeteringRect.Full,
+            referenceEv100 = 0.0,
+            highlightLatitudeStops = 4.0,
+            shadowLatitudeStops = 3.0,
+            highlightProbeMap = probe,
+        )
+
+        assertEquals(1.0, result.highlightRatio, 0.0001)
+    }
+
+    @Test
+    fun requestsOnlyProbeDirectionsWithRiskCandidates() {
+        val highlightOnly = ExposureRiskCalculator.probeRequirements(
+            exposureMap = ExposureMap(
+                width = 2,
+                height = 1,
+                pixelEv100 = floatArrayOf(5.0f, 0.0f),
+                timestampNs = 1L,
+            ),
+            viewfinder = NormalizedMeteringRect.Full,
+            referenceEv100 = 0.0,
+            highlightLatitudeStops = 4.0,
+            shadowLatitudeStops = 3.0,
+        )
+        val shadowOnly = ExposureRiskCalculator.probeRequirements(
+            exposureMap = ExposureMap(
+                width = 2,
+                height = 1,
+                pixelEv100 = floatArrayOf(-4.0f, 0.0f),
+                timestampNs = 1L,
+            ),
+            viewfinder = NormalizedMeteringRect.Full,
+            referenceEv100 = 0.0,
+            highlightLatitudeStops = 4.0,
+            shadowLatitudeStops = 3.0,
+        )
+
+        assertEquals(ExposureProbeRequirements(highlight = true, shadow = false), highlightOnly)
+        assertEquals(ExposureProbeRequirements(highlight = false, shadow = true), shadowOnly)
+    }
+
     @Test(expected = IllegalArgumentException::class)
     fun rejectsSnapshotWithMismatchedFrameTimestamp() {
         ExposureSnapshot(
@@ -175,4 +337,31 @@ class ExposureRiskCalculatorTest {
             revision = 0L,
         )
     }
+}
+
+private fun shadowExposureMap(
+    rawLuminance: ByteArray,
+    timestampNs: Long,
+): ExposureMap {
+    return ExposureMap(
+        width = 5,
+        height = 5,
+        pixelEv100 = FloatArray(25) { -4.0f },
+        rawLuminance = rawLuminance,
+        timestampNs = timestampNs,
+    )
+}
+
+private fun highlightExposureMap(
+    rawLuminance: ByteArray,
+    timestampNs: Long,
+): ExposureMap {
+    return ExposureMap(
+        width = 5,
+        height = 5,
+        pixelEv100 = FloatArray(25) { 5.0f },
+        rawLuminance = rawLuminance,
+        clippedHighlights = BooleanArray(25) { true },
+        timestampNs = timestampNs,
+    )
 }
