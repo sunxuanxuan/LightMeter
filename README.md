@@ -1,67 +1,57 @@
 # FilmLightMeter
 
-面向胶片摄影的 Android 测光 App。
+面向胶片摄影的跨平台测光 App。Android 版本已经可运行，iOS 版本处于设计和
+迁移阶段。
 
-[快速使用指南（PDF）](docs/FilmLightMeter-quick-guide.pdf) ·
-[详细使用说明书](docs/FilmLightMeter-user-guide.md)
+## 仓库结构
 
-当前阶段已完成 MVP 版本，包含：
+```text
+android/       Android 工程、构建脚本和平台工具
+ios/           iOS 工程目录，当前包含实施入口说明
+docs/android/  Android 专属架构、算法实现和用户文档
+docs/ios/      iOS 产品设计、技术架构和迁移计划
+docs/shared/   不依赖 Android/iOS API 的公共资料
+```
 
-- Kotlin + Jetpack Compose 应用入口。
-- CameraX `Preview` 与 `ImageAnalysis` 管线。
-- 相机运行时权限处理。
-- 点测光、中央重点测光与平均测光，支持点击画面临时点测光。
-- 定格画面后锁定 EV，并以红色/绿色提示高光与暗部曝光风险。
-- 135、APS-C、6×4.5 与 6×6 画幅选择，以及 20–120mm 焦距自动变焦取景。
-- 1/3 档光圈、经典整档快门与等效曝光组合。
-- ISO、曝光补偿和主推荐曝光组合。
-- 相机、测光、曝光和 UI 分层包结构。
+详细边界见[仓库目录规范](docs/repository-structure.md)。
 
-## 环境要求
+## Android
+
+环境要求：
 
 - Android Studio 或命令行 Android SDK
 - JDK 17
 - Android SDK Platform 35
 
-macOS 本地环境初始化：
+macOS 初始化与构建：
 
 ```bash
-./scripts/setup-macos-android.sh
+./android/scripts/setup-macos-android.sh
+cd android
+./gradlew test assembleDebug
 ```
 
-脚本会安装或检查：
+文档：
 
-- Homebrew 包：`openjdk@17`
-- Homebrew 包：`android-commandlinetools`
-- Android SDK：`platform-tools`
-- Android SDK：`platforms;android-35`
-- Android SDK：`build-tools;35.0.0`
-- Shell 环境变量：`JAVA_HOME`、`ANDROID_HOME`、`ANDROID_SDK_ROOT`
+- [Android 使用说明书](docs/android/user-guide/FilmLightMeter-user-guide.md)
+- [Android 快速指南（PDF）](docs/android/user-guide/FilmLightMeter-quick-guide.pdf)
+- [Android 技术架构](docs/android/technical-architecture.md)
+- [Android 核心算法实现](docs/android/mvp-core-algorithms.md)
 
-首次构建：
+## iOS
 
-```bash
-./gradlew assembleDebug
-```
+iOS 版本采用 SwiftUI、AVFoundation 和原生 Swift 实现。开始编码前以以下
+文档作为实现和验收基线：
 
-## 代码结构
+- [iOS 产品设计](docs/ios/product-design.md)
+- [iOS 技术架构](docs/ios/technical-architecture.md)
+- [iOS 迁移实施计划](docs/ios/migration-plan.md)
+- [iOS 实施状态](docs/ios/implementation-status.md)
+- [iOS 本地构建环境](docs/ios/local-build-environment.md)
 
-```text
-app/src/main/java/com/lightmeter/app/
-├── camera/     CameraX 控制和曝光元数据接口
-├── exposure/   曝光组合与画幅模型
-├── metering/   测光配置、结果和图像分析入口
-└── ui/         Compose 页面、权限和 ViewModel
-```
+## 公共资料
 
-## 设计文档
-
-- [测光算法设计](docs/metering-algorithm-design.md)
-- [曝光计算设计](docs/exposure-calculation-design.md)
-- [Android 技术架构设计](docs/android-technical-architecture.md)
-- [MVP 核心算法技术文档](docs/mvp-core-algorithms.md)
-- [冻结画面曝光风险预览设计](docs/exposure-risk-preview-design.md)
-- [画幅与焦距自动变焦设计](docs/auto-zoom-viewfinder-design.md)
+- [胶片曝光宽容度参考](docs/shared/film-exposure-latitude-reference.md)
 
 ## License
 
