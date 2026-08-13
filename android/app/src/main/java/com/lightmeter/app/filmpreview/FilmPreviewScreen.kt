@@ -261,9 +261,6 @@ private fun FilmPreviewWorkspace(
     var frozenFrame by remember { mutableStateOf<Bitmap?>(null) }
     var simulatedFrame by remember { mutableStateOf<Bitmap?>(null) }
     var frozenSnapshot by remember { mutableStateOf<ExposureSnapshot?>(null) }
-    var shadowProbeSnapshot by remember { mutableStateOf<ExposureSnapshot?>(null) }
-    var highlightProbeSnapshot by remember { mutableStateOf<ExposureSnapshot?>(null) }
-    var completedProbeRequestId by remember { mutableStateOf<Int?>(null) }
     var exposureRiskMask by remember { mutableStateOf<ExposureRiskMask?>(null) }
     var previewSize by remember { mutableStateOf(IntSize.Zero) }
     var cameraOptics by remember { mutableStateOf<CameraOptics?>(null) }
@@ -300,20 +297,13 @@ private fun FilmPreviewWorkspace(
 
     LaunchedEffect(
         frozenSnapshot,
-        shadowProbeSnapshot,
-        highlightProbeSnapshot,
-        completedProbeRequestId,
-        state.freezeRequestId,
         normalizedViewfinder,
         presetReferenceEv100,
         preset.film.highlightLatitudeStops,
         preset.film.shadowLatitudeStops,
     ) {
         val snapshot = frozenSnapshot
-        exposureRiskMask = if (
-            snapshot == null ||
-            completedProbeRequestId != state.freezeRequestId
-        ) {
+        exposureRiskMask = if (snapshot == null) {
             null
         } else {
             withContext(Dispatchers.Default) {
@@ -323,8 +313,6 @@ private fun FilmPreviewWorkspace(
                     referenceEv100 = presetReferenceEv100,
                     highlightLatitudeStops = preset.film.highlightLatitudeStops,
                     shadowLatitudeStops = preset.film.shadowLatitudeStops,
-                    shadowProbeMap = shadowProbeSnapshot?.exposureMap,
-                    highlightProbeMap = highlightProbeSnapshot?.exposureMap,
                     warningStartStops = PREVIEW_WARNING_START_STOPS,
                 )
             }
@@ -372,9 +360,6 @@ private fun FilmPreviewWorkspace(
             frozenFrame = null
             simulatedFrame = null
             frozenSnapshot = null
-            shadowProbeSnapshot = null
-            highlightProbeSnapshot = null
-            completedProbeRequestId = null
             exposureRiskMask = null
         }
     }
@@ -423,7 +408,9 @@ private fun FilmPreviewWorkspace(
                 when (permissionState) {
                     CameraPermissionState.GRANTED -> CameraPreviewView(
                         meteringConfig = MeteringConfig(
-                            mode = MeteringMode.AVERAGE,
+                            mode = MeteringMode.CENTER_WEIGHTED,
+                            centerAreaPercent = PREVIEW_CENTER_AREA_PERCENT,
+                            centerWeightPercent = PREVIEW_CENTER_WEIGHT_PERCENT,
                             viewfinderRect = normalizedViewfinder,
                             previewAspectRatio = PREVIEW_ASPECT_RATIO.toDouble(),
                             targetZoomRatio = effectiveZoomRatio.toDouble(),
@@ -437,10 +424,6 @@ private fun FilmPreviewWorkspace(
                         },
                         freezeRequestId = state.freezeRequestId,
                         shouldCaptureFrame = state.isFrozen,
-                        exposureCompensation = 0.0,
-                        highlightLatitudeStops = preset.film.highlightLatitudeStops,
-                        shadowLatitudeStops = preset.film.shadowLatitudeStops,
-                        riskReferenceEv100 = presetReferenceEv100,
                         onMeteringResult = {
                             if (it.revision == presetRevision) {
                                 onMeteringResult(it)
@@ -462,19 +445,7 @@ private fun FilmPreviewWorkspace(
                                 frozenFrame = bitmap
                                 simulatedFrame = null
                                 frozenSnapshot = snapshot
-                                shadowProbeSnapshot = null
-                                highlightProbeSnapshot = null
-                                completedProbeRequestId = null
                             }
-                        },
-                        onDetailProbesCaptured = { shadowSnapshot, highlightSnapshot ->
-                            shadowProbeSnapshot = shadowSnapshot?.takeIf {
-                                it.revision == presetRevision
-                            }
-                            highlightProbeSnapshot = highlightSnapshot?.takeIf {
-                                it.revision == presetRevision
-                            }
-                            completedProbeRequestId = state.freezeRequestId
                         },
                         onOpticsAvailable = { cameraOptics = it },
                         onZoomStateChanged = { cameraZoomState = it },
@@ -994,6 +965,8 @@ private fun ratingColor(rating: PreviewSceneRating?): Color {
 private const val PREVIEW_ASPECT_RATIO = 2f / 3f
 private const val PREVIEW_ZOOM_TOLERANCE = 0.02f
 private const val PREVIEW_WARNING_START_STOPS = 1.0
+private const val PREVIEW_CENTER_AREA_PERCENT = 30
+private const val PREVIEW_CENTER_WEIGHT_PERCENT = 70
 
 private fun Context.hasCameraPermission(): Boolean {
     return ContextCompat.checkSelfPermission(

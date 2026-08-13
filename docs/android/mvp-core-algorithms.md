@@ -92,7 +92,7 @@ EV 不需要跟随相机帧率逐帧更新。
 当前节流配置：
 
 ```text
-ANALYSIS_INTERVAL_NS = 100ms
+ANALYSIS_INTERVAL_NS = 200ms
 ```
 
 因此目标更新频率约为：

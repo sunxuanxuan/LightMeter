@@ -17,7 +17,6 @@ data class AppSettings(
     val frameFormat: FrameFormat = FrameFormat.FILM_135,
     val focalLengthMm: Double = 50.0,
     val exposureRiskEnabled: Boolean = true,
-    val warnOnlyOutsideLatitude: Boolean = true,
     val highlightLatitudeStops: Double = 4.0,
     val shadowLatitudeStops: Double = 3.0,
     val filmLatitudePreset: FilmLatitudePreset? = null,
@@ -76,10 +75,6 @@ class SharedPreferencesAppSettingsStore(context: Context) : AppSettingsStore {
                 KEY_EXPOSURE_RISK_ENABLED,
                 defaults.exposureRiskEnabled,
             ),
-            warnOnlyOutsideLatitude = preferences.getBoolean(
-                KEY_WARN_ONLY_OUTSIDE_LATITUDE,
-                defaults.warnOnlyOutsideLatitude,
-            ),
             highlightLatitudeStops = preferences.getDouble(
                 KEY_HIGHLIGHT_LATITUDE_STOPS,
                 defaults.highlightLatitudeStops,
@@ -108,10 +103,6 @@ class SharedPreferencesAppSettingsStore(context: Context) : AppSettingsStore {
             .putString(KEY_FRAME_FORMAT, settings.frameFormat.name)
             .putLong(KEY_FOCAL_LENGTH_MM, settings.focalLengthMm.toRawBits())
             .putBoolean(KEY_EXPOSURE_RISK_ENABLED, settings.exposureRiskEnabled)
-            .putBoolean(
-                KEY_WARN_ONLY_OUTSIDE_LATITUDE,
-                settings.warnOnlyOutsideLatitude,
-            )
             .putLong(
                 KEY_HIGHLIGHT_LATITUDE_STOPS,
                 settings.highlightLatitudeStops.toRawBits(),
@@ -136,7 +127,6 @@ class SharedPreferencesAppSettingsStore(context: Context) : AppSettingsStore {
         const val KEY_FRAME_FORMAT = "frame_format"
         const val KEY_FOCAL_LENGTH_MM = "focal_length_mm"
         const val KEY_EXPOSURE_RISK_ENABLED = "exposure_risk_enabled"
-        const val KEY_WARN_ONLY_OUTSIDE_LATITUDE = "warn_only_outside_latitude"
         const val KEY_HIGHLIGHT_LATITUDE_STOPS = "highlight_latitude_stops"
         const val KEY_SHADOW_LATITUDE_STOPS = "shadow_latitude_stops"
         const val KEY_FILM_LATITUDE_PRESET = "film_latitude_preset"
