@@ -29,11 +29,36 @@ internal object GpuFilmExposureRenderer {
         return try {
             session.render(
                 source = source,
+                simulationMode = FILM_RESPONSE_MODE,
+                exposureCompensation = 0f,
                 cameraSettingEv100 = cameraSettingEv100.toFloat(),
                 calibrationOffset = calibrationOffset.toFloat(),
                 referenceEv100 = referenceEv100.toFloat(),
                 highlightLatitudeStops = highlightLatitudeStops.toFloat(),
                 shadowLatitudeStops = shadowLatitudeStops.toFloat(),
+            )
+        } finally {
+            session.close()
+        }
+    }
+
+    fun renderExposureCompensation(
+        source: Bitmap,
+        exposureCompensation: Double,
+    ): Bitmap {
+        require(exposureCompensation.isFinite())
+
+        val session = EglSession(source.width, source.height)
+        return try {
+            session.render(
+                source = source,
+                simulationMode = EXPOSURE_COMPENSATION_MODE,
+                exposureCompensation = exposureCompensation.toFloat(),
+                cameraSettingEv100 = 0f,
+                calibrationOffset = 0f,
+                referenceEv100 = 0f,
+                highlightLatitudeStops = 1f,
+                shadowLatitudeStops = 1f,
             )
         } finally {
             session.close()
@@ -65,6 +90,8 @@ internal object GpuFilmExposureRenderer {
 
         fun render(
             source: Bitmap,
+            simulationMode: Int,
+            exposureCompensation: Float,
             cameraSettingEv100: Float,
             calibrationOffset: Float,
             referenceEv100: Float,
@@ -79,6 +106,8 @@ internal object GpuFilmExposureRenderer {
             GLUtils.texImage2D(GLES20.GL_TEXTURE_2D, 0, source, 0)
 
             GLES20.glUniform1i(uniform("uSource"), 0)
+            GLES20.glUniform1i(uniform("uSimulationMode"), simulationMode)
+            GLES20.glUniform1f(uniform("uExposureCompensation"), exposureCompensation)
             GLES20.glUniform1f(uniform("uCameraSettingEv100"), cameraSettingEv100)
             GLES20.glUniform1f(uniform("uCalibrationOffset"), calibrationOffset)
             GLES20.glUniform1f(uniform("uReferenceEv100"), referenceEv100)
@@ -403,6 +432,8 @@ internal object GpuFilmExposureRenderer {
         precision highp float;
 
         uniform sampler2D uSource;
+        uniform int uSimulationMode;
+        uniform float uExposureCompensation;
         uniform float uCameraSettingEv100;
         uniform float uCalibrationOffset;
         uniform float uReferenceEv100;
@@ -472,6 +503,14 @@ internal object GpuFilmExposureRenderer {
         void main() {
             vec4 source = texture2D(uSource, vTextureCoordinate);
             vec3 linearRgb = srgbToLinear(source.rgb);
+            if (uSimulationMode == 1) {
+                float exposureGain = exp2(uExposureCompensation);
+                gl_FragColor = vec4(
+                    linearToSrgb(linearRgb * exposureGain),
+                    source.a
+                );
+                return;
+            }
             float sourceLuminance = dot(
                 linearRgb,
                 vec3(0.2126, 0.7152, 0.0722)
@@ -485,4 +524,7 @@ internal object GpuFilmExposureRenderer {
             gl_FragColor = vec4(linearToSrgb(linearRgb * gain), source.a);
         }
     """
+
+    private const val FILM_RESPONSE_MODE = 0
+    private const val EXPOSURE_COMPENSATION_MODE = 1
 }
