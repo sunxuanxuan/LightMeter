@@ -1,6 +1,9 @@
-# LightMeter
+# FilmLightMeter
 
 面向胶片摄影的 Android 测光 App。
+
+[快速使用指南（PDF）](docs/FilmLightMeter-quick-guide.pdf) ·
+[详细使用说明书](docs/FilmLightMeter-user-guide.md)
 
 当前阶段已完成 MVP 版本，包含：
 

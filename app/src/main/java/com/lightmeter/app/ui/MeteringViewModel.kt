@@ -293,14 +293,16 @@ class MeteringViewModel(
 
     fun selectFocalLength(focalLengthMm: Double) {
         mutableState.update {
+            val normalizedFocalLength = focalLengthMm.coerceIn(
+                MIN_FOCAL_LENGTH_MM,
+                MAX_FOCAL_LENGTH_MM,
+            )
+            if (normalizedFocalLength == it.focalLengthMm) return@update it
             it.copy(
-                focalLengthMm = focalLengthMm.coerceIn(
-                    MIN_FOCAL_LENGTH_MM,
-                    MAX_FOCAL_LENGTH_MM,
-                ),
+                focalLengthMm = normalizedFocalLength,
                 meteringMode = it.meteringPreset,
                 spotMeteringPoint = null,
-            ).withoutMeteringResult()
+            ).withInvalidatedMetering()
         }
     }
 
@@ -517,14 +519,17 @@ private val shutterStops = listOf(
 private val commonAperturePriority = listOf(5.6, 8.0, 4.0, 11.0, 2.8, 16.0)
 
 private fun MeteringUiState.withoutMeteringResult(): MeteringUiState {
-    return copy(
-        meteringRevision = meteringRevision + 1L,
+    return withInvalidatedMetering().copy(
         ev100Metered = null,
         measuredLuminance = null,
         evTarget = null,
         primaryExposure = null,
         equivalentExposures = emptyList(),
     )
+}
+
+private fun MeteringUiState.withInvalidatedMetering(): MeteringUiState {
+    return copy(meteringRevision = meteringRevision + 1L)
 }
 
 private fun MeteringUiState.withRecommendation(): MeteringUiState {

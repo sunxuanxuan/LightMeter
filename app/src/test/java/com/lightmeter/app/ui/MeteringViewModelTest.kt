@@ -97,6 +97,59 @@ class MeteringViewModelTest {
         assertEquals(2.0 / 3.0, restoredState.highlightLatitudeStops, 0.0001)
         assertEquals(5.0 / 3.0, restoredState.shadowLatitudeStops, 0.0001)
     }
+
+    @Test
+    fun focalLengthChangeKeepsLastResultUntilCurrentRevisionArrives() {
+        val viewModel = MeteringViewModel()
+        viewModel.onMeteringResult(
+            MeteringResult(
+                ev100 = 10.0,
+                measuredLuminance = 0.18,
+                timestampNs = 1L,
+                revision = 0L,
+            ),
+        )
+        val previousState = viewModel.state.value
+
+        viewModel.selectFocalLength(80.0)
+
+        val zoomingState = viewModel.state.value
+        assertEquals(1L, zoomingState.meteringRevision)
+        assertEquals(previousState.ev100Metered, zoomingState.ev100Metered)
+        assertEquals(previousState.evTarget, zoomingState.evTarget)
+        assertEquals(previousState.primaryExposure, zoomingState.primaryExposure)
+        assertEquals(previousState.equivalentExposures, zoomingState.equivalentExposures)
+
+        viewModel.onMeteringResult(
+            MeteringResult(
+                ev100 = 20.0,
+                measuredLuminance = 0.5,
+                timestampNs = 2L,
+                revision = 0L,
+            ),
+        )
+        assertEquals(10.0, viewModel.state.value.ev100Metered!!, 0.0)
+
+        viewModel.onMeteringResult(
+            MeteringResult(
+                ev100 = 11.0,
+                measuredLuminance = 0.2,
+                timestampNs = 3L,
+                revision = 1L,
+            ),
+        )
+        assertEquals(11.0, viewModel.state.value.ev100Metered!!, 0.0)
+        assertNotNull(viewModel.state.value.primaryExposure)
+    }
+
+    @Test
+    fun unchangedFocalLengthDoesNotInvalidateMetering() {
+        val viewModel = MeteringViewModel()
+
+        viewModel.selectFocalLength(viewModel.state.value.focalLengthMm)
+
+        assertEquals(0L, viewModel.state.value.meteringRevision)
+    }
 }
 
 private class InMemoryAppSettingsStore : AppSettingsStore {

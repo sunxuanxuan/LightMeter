@@ -556,6 +556,8 @@ private fun CameraContent(
 
             CaptureControls(
                 isFrozen = state.isFrozen,
+                freezeVisualAvailable = state.isCameraReady &&
+                    state.ev100Metered != null,
                 canFreeze = state.isCameraReady &&
                     state.ev100Metered != null &&
                     isZoomReady,
@@ -874,6 +876,7 @@ private fun RiskLegendItem(
 @Composable
 private fun CaptureControls(
     isFrozen: Boolean,
+    freezeVisualAvailable: Boolean,
     canFreeze: Boolean,
     meteringMode: MeteringMode,
     meteringPreset: MeteringMode,
@@ -902,6 +905,7 @@ private fun CaptureControls(
             symbol = if (isFrozen) "▶" else "⏸",
             onClick = if (isFrozen) onResumeLive else onFreezePreview,
             enabled = isFrozen || canFreeze,
+            visuallyEnabled = isFrozen || freezeVisualAvailable,
         )
     }
 }
@@ -911,6 +915,7 @@ private fun SymbolButton(
     symbol: String,
     onClick: () -> Unit,
     enabled: Boolean,
+    visuallyEnabled: Boolean = enabled,
 ) {
     Button(
         onClick = onClick,
@@ -919,8 +924,16 @@ private fun SymbolButton(
         colors = ButtonDefaults.buttonColors(
             containerColor = Color.White,
             contentColor = Color.Black,
-            disabledContainerColor = Color.White.copy(alpha = 0.35f),
-            disabledContentColor = Color.Black.copy(alpha = 0.5f),
+            disabledContainerColor = if (visuallyEnabled) {
+                Color.White
+            } else {
+                Color.White.copy(alpha = 0.35f)
+            },
+            disabledContentColor = if (visuallyEnabled) {
+                Color.Black
+            } else {
+                Color.Black.copy(alpha = 0.5f)
+            },
         ),
         contentPadding = PaddingValues(0.dp),
         modifier = Modifier.size(52.dp),
