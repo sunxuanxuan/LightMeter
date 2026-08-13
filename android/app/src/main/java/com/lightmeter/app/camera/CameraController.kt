@@ -10,11 +10,14 @@ import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.Preview
 import androidx.camera.core.UseCaseGroup
+import androidx.camera.core.ZoomState
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
 import androidx.core.view.doOnLayout
+import androidx.lifecycle.LiveData
 import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.Observer
 import com.lightmeter.app.metering.MeteringAnalyzer
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -40,6 +43,8 @@ class CameraController(
     private var camera: Camera? = null
     private var requestedZoomRatio = 1.0f
     private var lastAppliedZoomRatio = Float.NaN
+    private var observedZoomState: LiveData<ZoomState>? = null
+    private var zoomStateObserver: Observer<ZoomState>? = null
     private var released = false
 
     fun bind(
@@ -91,7 +96,9 @@ class CameraController(
                             useCaseGroup,
                         )
                         camera = boundCamera
-                        boundCamera.cameraInfo.zoomState.observe(lifecycleOwner) { zoomState ->
+                        clearZoomStateObserver()
+                        val zoomStateSource = boundCamera.cameraInfo.zoomState
+                        val observer = Observer<ZoomState> { zoomState ->
                             onZoomStateChanged(
                                 CameraZoomState(
                                     zoomRatio = zoomState.zoomRatio,
@@ -101,6 +108,9 @@ class CameraController(
                                 ),
                             )
                         }
+                        observedZoomState = zoomStateSource
+                        zoomStateObserver = observer
+                        zoomStateSource.observe(lifecycleOwner, observer)
                         applyRequestedZoom()
 
                         val cameraInfo = Camera2CameraInfo.from(boundCamera.cameraInfo)
@@ -213,7 +223,17 @@ class CameraController(
         currentCamera.cameraControl.setZoomRatio(target)
     }
 
+    private fun clearZoomStateObserver() {
+        val observer = zoomStateObserver
+        if (observer != null) {
+            observedZoomState?.removeObserver(observer)
+        }
+        observedZoomState = null
+        zoomStateObserver = null
+    }
+
     fun unbind() {
+        clearZoomStateObserver()
         cameraProvider?.unbindAll()
         cameraProvider = null
         camera = null

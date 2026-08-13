@@ -60,12 +60,16 @@ EV100 = EV_setting + log2(Y_measured / Y_target) + calibration_offset
 
 CameraX `ImageAnalysis` 可获取 `ImageProxy`，从中读取 YUV 的 Y 平面。
 
-Y 平面像素通常不能视为严格线性光强，V1 使用 gamma 反变换做近似：
+Y 平面像素通常不能视为严格线性光强。当前 Android 实现按 Video Range
+`16–235` 做简化归一化，再使用 gamma 反变换近似：
 
 ```text
-Y_norm = Y / 255.0
+Y_norm = clamp((Y - 16) / (235 - 16), 0, 1)
 Y_linear = pow(Y_norm, 2.2)
 ```
+
+`Y >= 235` 作为手机预览信号高光裁切的保守判定。该简化策略不自动探测
+Full Range；后续若引入设备范围识别，需要同时切换归一化黑白电平和裁切阈值。
 
 测光亮度为测光区域内 `Y_linear` 的裁剪平均值。
 
@@ -216,7 +220,7 @@ V1 推荐使用安全快门优先：
 20mm ~ 35mm：优先快门不慢于 1/30s
 36mm ~ 50mm：优先快门不慢于 1/60s
 51mm ~ 90mm：优先快门不慢于 1/125s
-91mm ~ 120mm：优先快门不慢于 1/250s
+91mm ~ 150mm：优先快门不慢于 1/250s
 ```
 
 选择规则：

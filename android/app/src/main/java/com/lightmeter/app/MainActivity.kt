@@ -10,7 +10,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import com.lightmeter.app.activation.ActivationManager
 import com.lightmeter.app.activation.ActivationScreen
-import com.lightmeter.app.ui.MeteringRoute
+import com.lightmeter.app.ui.AppRoute
 import com.lightmeter.app.ui.theme.LightMeterTheme
 
 class MainActivity : ComponentActivity() {
@@ -21,7 +21,7 @@ class MainActivity : ComponentActivity() {
             LightMeterTheme {
                 if (BuildConfig.DEBUG) {
                     // Debug build: no activation required
-                    MeteringRoute()
+                    AppRoute()
                 } else {
                     // Release build: activation required
                     var isActivated by remember {
@@ -29,7 +29,7 @@ class MainActivity : ComponentActivity() {
                     }
 
                     if (isActivated) {
-                        MeteringRoute()
+                        AppRoute()
                     } else {
                         ActivationScreen(
                             onActivated = { isActivated = true },

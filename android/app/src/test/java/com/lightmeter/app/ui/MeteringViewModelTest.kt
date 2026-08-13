@@ -1,5 +1,6 @@
 package com.lightmeter.app.ui
 
+import com.lightmeter.app.camera.CameraOptics
 import com.lightmeter.app.exposure.FrameFormat
 import com.lightmeter.app.metering.FilmLatitudePreset
 import com.lightmeter.app.metering.MeteringMode
@@ -149,6 +150,57 @@ class MeteringViewModelTest {
         viewModel.selectFocalLength(viewModel.state.value.focalLengthMm)
 
         assertEquals(0L, viewModel.state.value.meteringRevision)
+    }
+
+    @Test
+    fun frameFormatChangeKeepsResultUntilReboundCameraFrameArrives() {
+        val viewModel = MeteringViewModel()
+        viewModel.onMeteringResult(
+            MeteringResult(
+                ev100 = 10.0,
+                measuredLuminance = 0.18,
+                timestampNs = 1L,
+                revision = 0L,
+            ),
+        )
+        val previousExposure = viewModel.state.value.primaryExposure
+
+        viewModel.selectFrameFormat(FrameFormat.FILM_66)
+
+        val rebindingState = viewModel.state.value
+        assertEquals(1L, rebindingState.meteringRevision)
+        assertEquals(10.0, rebindingState.ev100Metered!!, 0.0)
+        assertEquals(previousExposure, rebindingState.primaryExposure)
+
+        viewModel.onMeteringResult(
+            MeteringResult(
+                ev100 = 11.0,
+                measuredLuminance = 0.2,
+                timestampNs = 2L,
+                revision = 1L,
+            ),
+        )
+        assertEquals(11.0, viewModel.state.value.ev100Metered!!, 0.0)
+        assertNotNull(viewModel.state.value.primaryExposure)
+    }
+
+    @Test
+    fun repeatedCameraOpticsAfterFrameRebindDoesNotInvalidateAgain() {
+        val viewModel = MeteringViewModel()
+        val optics = CameraOptics(
+            sensorWidthMm = 6.4,
+            sensorHeightMm = 4.8,
+            focalLengthMm = 4.2,
+        )
+        viewModel.onCameraOpticsAvailable(optics)
+        val revisionAfterOptics = viewModel.state.value.meteringRevision
+
+        viewModel.selectFrameFormat(FrameFormat.FILM_66)
+        val revisionAfterFormat = viewModel.state.value.meteringRevision
+        viewModel.onCameraOpticsAvailable(optics)
+
+        assertEquals(revisionAfterOptics + 1L, revisionAfterFormat)
+        assertEquals(revisionAfterFormat, viewModel.state.value.meteringRevision)
     }
 }
 
