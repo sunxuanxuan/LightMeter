@@ -102,6 +102,7 @@ import com.lightmeter.app.metering.MeteringMode
 import com.lightmeter.app.metering.NormalizedMeteringRect
 import com.lightmeter.app.metering.NormalizedPoint
 import com.lightmeter.app.metering.MeteringResult
+import com.lightmeter.app.settings.SharedPreferencesAppSettingsStore
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -114,11 +115,15 @@ private val DEFAULT_CAMERA_OPTICS = CameraOptics(
 )
 
 @Composable
-fun MeteringRoute(
-    viewModel: MeteringViewModel = viewModel(),
-) {
-    val state by viewModel.state.collectAsStateWithLifecycle()
+fun MeteringRoute() {
     val context = LocalContext.current
+    val settingsStore = remember(context) {
+        SharedPreferencesAppSettingsStore(context.applicationContext)
+    }
+    val viewModel: MeteringViewModel = viewModel {
+        MeteringViewModel(settingsStore)
+    }
+    val state by viewModel.state.collectAsStateWithLifecycle()
     val activity = remember(context) { context.findActivity() }
     var hasRequestedPermission by rememberSaveable { mutableStateOf(false) }
 
@@ -169,6 +174,7 @@ fun MeteringRoute(
         onFilmLatitudePresetSelected = viewModel::selectFilmLatitudePreset,
         onHighlightLatitudeChanged = viewModel::adjustHighlightLatitude,
         onShadowLatitudeChanged = viewModel::adjustShadowLatitude,
+        onSaveSettings = viewModel::saveSettings,
         onIsoSelected = viewModel::selectIso,
         onFrameFormatSelected = viewModel::selectFrameFormat,
         onFocalLengthChanged = viewModel::selectFocalLength,
@@ -201,6 +207,7 @@ private fun MeteringScreen(
     onFilmLatitudePresetSelected: (FilmLatitudePreset?) -> Unit,
     onHighlightLatitudeChanged: (Double) -> Unit,
     onShadowLatitudeChanged: (Double) -> Unit,
+    onSaveSettings: () -> Boolean,
     onIsoSelected: (Int) -> Unit,
     onFrameFormatSelected: (FrameFormat) -> Unit,
     onFocalLengthChanged: (Double) -> Unit,
@@ -234,6 +241,7 @@ private fun MeteringScreen(
                 onFilmLatitudePresetSelected = onFilmLatitudePresetSelected,
                 onHighlightLatitudeChanged = onHighlightLatitudeChanged,
                 onShadowLatitudeChanged = onShadowLatitudeChanged,
+                onSaveSettings = onSaveSettings,
                 onIsoSelected = onIsoSelected,
                 onFrameFormatSelected = onFrameFormatSelected,
                 onFocalLengthChanged = onFocalLengthChanged,
@@ -278,6 +286,7 @@ private fun CameraContent(
     onFilmLatitudePresetSelected: (FilmLatitudePreset?) -> Unit,
     onHighlightLatitudeChanged: (Double) -> Unit,
     onShadowLatitudeChanged: (Double) -> Unit,
+    onSaveSettings: () -> Boolean,
     onIsoSelected: (Int) -> Unit,
     onFrameFormatSelected: (FrameFormat) -> Unit,
     onFocalLengthChanged: (Double) -> Unit,
@@ -536,6 +545,7 @@ private fun CameraContent(
             onFilmLatitudePresetSelected = onFilmLatitudePresetSelected,
             onHighlightLatitudeChanged = onHighlightLatitudeChanged,
             onShadowLatitudeChanged = onShadowLatitudeChanged,
+            onSaveSettings = onSaveSettings,
             onExposureCompensationSelected = onExposureCompensationSelected,
             zoomRatio = cameraZoomState.zoomRatio,
             zoomLimited = targetZoomRatio < cameraZoomState.minZoomRatio - 0.01f ||
@@ -1297,6 +1307,7 @@ private fun ExposurePanel(
     onFilmLatitudePresetSelected: (FilmLatitudePreset?) -> Unit,
     onHighlightLatitudeChanged: (Double) -> Unit,
     onShadowLatitudeChanged: (Double) -> Unit,
+    onSaveSettings: () -> Boolean,
     onExposureCompensationSelected: (Double) -> Unit,
     zoomRatio: Float,
     zoomLimited: Boolean,
@@ -1420,6 +1431,11 @@ private fun ExposurePanel(
             onFilmLatitudePresetSelected = onFilmLatitudePresetSelected,
             onHighlightLatitudeChanged = onHighlightLatitudeChanged,
             onShadowLatitudeChanged = onShadowLatitudeChanged,
+            onSave = {
+                if (onSaveSettings()) {
+                    showSettings = false
+                }
+            },
             onDismiss = { showSettings = false },
         )
     }
@@ -1447,6 +1463,7 @@ private fun AppSettingsDialog(
     onFilmLatitudePresetSelected: (FilmLatitudePreset?) -> Unit,
     onHighlightLatitudeChanged: (Double) -> Unit,
     onShadowLatitudeChanged: (Double) -> Unit,
+    onSave: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     var frameFormatExpanded by rememberSaveable { mutableStateOf(true) }
@@ -1635,8 +1652,8 @@ private fun AppSettingsDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text("完成")
+            TextButton(onClick = onSave) {
+                Text("保存")
             }
         },
         containerColor = Color(0xFF171717),

@@ -9,6 +9,8 @@ import com.lightmeter.app.metering.FilmLatitudePreset
 import com.lightmeter.app.metering.MeteringMode
 import com.lightmeter.app.metering.NormalizedPoint
 import com.lightmeter.app.metering.MeteringResult
+import com.lightmeter.app.settings.AppSettings
+import com.lightmeter.app.settings.AppSettingsStore
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -58,9 +60,21 @@ data class MeteringUiState(
     val errorMessage: String? = null,
 )
 
-class MeteringViewModel : ViewModel() {
-    private val mutableState = MutableStateFlow(MeteringUiState())
+class MeteringViewModel(
+    private val settingsStore: AppSettingsStore = AppSettingsStore.None,
+) : ViewModel() {
+    private val mutableState = MutableStateFlow(
+        restoreSettings(settingsStore.load()),
+    )
     val state: StateFlow<MeteringUiState> = mutableState.asStateFlow()
+
+    fun saveSettings(): Boolean {
+        val saved = settingsStore.save(mutableState.value.toAppSettings())
+        if (!saved) {
+            mutableState.update { it.copy(errorMessage = "设置保存失败，请重试") }
+        }
+        return saved
+    }
 
     fun updatePermission(state: CameraPermissionState) {
         mutableState.update {
@@ -373,8 +387,65 @@ class MeteringViewModel : ViewModel() {
         }
         const val MIN_FOCAL_LENGTH_MM = 20.0
         const val MAX_FOCAL_LENGTH_MM = 120.0
+
+        private fun restoreSettings(settings: AppSettings): MeteringUiState {
+            val defaults = MeteringUiState()
+            val normalizedIso = (
+                settings.selectedIso.coerceIn(MIN_ISO, MAX_ISO) / ISO_STEP.toDouble()
+                ).roundToInt() * ISO_STEP
+            return defaults.copy(
+                selectedIso = normalizedIso,
+                exposureCompensation = normalizeThirdStop(
+                    settings.exposureCompensation.takeIf(Double::isFinite)
+                        ?: defaults.exposureCompensation,
+                    MIN_EXPOSURE_COMPENSATION,
+                    MAX_EXPOSURE_COMPENSATION,
+                ),
+                meteringPreset = settings.meteringPreset,
+                meteringMode = settings.meteringPreset,
+                spotAreaPercent = settings.spotAreaPercent.coerceIn(1, 10),
+                centerAreaPercent = settings.centerAreaPercent.coerceIn(5, 80),
+                centerWeightPercent = settings.centerWeightPercent.coerceIn(50, 95),
+                cameraMeteringPreset = settings.cameraMeteringPreset,
+                frameFormat = settings.frameFormat,
+                focalLengthMm = settings.focalLengthMm
+                    .takeIf(Double::isFinite)
+                    ?.coerceIn(MIN_FOCAL_LENGTH_MM, MAX_FOCAL_LENGTH_MM)
+                    ?: defaults.focalLengthMm,
+                exposureRiskEnabled = settings.exposureRiskEnabled,
+                highlightLatitudeStops = normalizeThirdStop(
+                    settings.highlightLatitudeStops.takeIf(Double::isFinite)
+                        ?: defaults.highlightLatitudeStops,
+                    MIN_LATITUDE_STOPS,
+                    MAX_LATITUDE_STOPS,
+                ),
+                shadowLatitudeStops = normalizeThirdStop(
+                    settings.shadowLatitudeStops.takeIf(Double::isFinite)
+                        ?: defaults.shadowLatitudeStops,
+                    MIN_LATITUDE_STOPS,
+                    MAX_LATITUDE_STOPS,
+                ),
+                filmLatitudePreset = settings.filmLatitudePreset,
+            )
+        }
     }
 }
+
+private fun MeteringUiState.toAppSettings() = AppSettings(
+    selectedIso = selectedIso,
+    exposureCompensation = exposureCompensation,
+    meteringPreset = meteringPreset,
+    spotAreaPercent = spotAreaPercent,
+    centerAreaPercent = centerAreaPercent,
+    centerWeightPercent = centerWeightPercent,
+    cameraMeteringPreset = cameraMeteringPreset,
+    frameFormat = frameFormat,
+    focalLengthMm = focalLengthMm,
+    exposureRiskEnabled = exposureRiskEnabled,
+    highlightLatitudeStops = highlightLatitudeStops,
+    shadowLatitudeStops = shadowLatitudeStops,
+    filmLatitudePreset = filmLatitudePreset,
+)
 
 private fun normalizeThirdStop(
     value: Double,
