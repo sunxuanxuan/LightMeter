@@ -51,6 +51,7 @@ data class MeteringUiState(
     val selectedAperture: Double? = null,
     val calibrationOffset: Double = 0.0,
     val exposureRiskEnabled: Boolean = true,
+    val warnOnlyOutsideLatitude: Boolean = true,
     val highlightLatitudeStops: Double = 4.0,
     val shadowLatitudeStops: Double = 3.0,
     val filmLatitudePreset: FilmLatitudePreset? = null,
@@ -202,6 +203,12 @@ class MeteringViewModel(
     fun setExposureRiskEnabled(enabled: Boolean) {
         mutableState.update {
             it.copy(exposureRiskEnabled = enabled)
+        }
+    }
+
+    fun setWarnOnlyOutsideLatitude(enabled: Boolean) {
+        mutableState.update {
+            it.copy(warnOnlyOutsideLatitude = enabled)
         }
     }
 
@@ -417,6 +424,7 @@ class MeteringViewModel(
                     ?.coerceIn(MIN_FOCAL_LENGTH_MM, MAX_FOCAL_LENGTH_MM)
                     ?: defaults.focalLengthMm,
                 exposureRiskEnabled = settings.exposureRiskEnabled,
+                warnOnlyOutsideLatitude = settings.warnOnlyOutsideLatitude,
                 highlightLatitudeStops = normalizeThirdStop(
                     settings.highlightLatitudeStops.takeIf(Double::isFinite)
                         ?: defaults.highlightLatitudeStops,
@@ -446,6 +454,7 @@ private fun MeteringUiState.toAppSettings() = AppSettings(
     frameFormat = frameFormat,
     focalLengthMm = focalLengthMm,
     exposureRiskEnabled = exposureRiskEnabled,
+    warnOnlyOutsideLatitude = warnOnlyOutsideLatitude,
     highlightLatitudeStops = highlightLatitudeStops,
     shadowLatitudeStops = shadowLatitudeStops,
     filmLatitudePreset = filmLatitudePreset,

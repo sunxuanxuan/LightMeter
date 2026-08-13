@@ -7,8 +7,11 @@ import android.hardware.camera2.CameraCaptureSession
 import android.hardware.camera2.CaptureRequest
 import android.hardware.camera2.CaptureResult
 import android.hardware.camera2.TotalCaptureResult
+import android.os.SystemClock
+import android.util.Log
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
+import com.lightmeter.app.BuildConfig
 import com.lightmeter.app.camera.CameraExposureMetadata
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
@@ -18,6 +21,7 @@ import kotlin.math.abs
 import kotlin.math.log2
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
 data class CapturedExposureFrame(
@@ -131,18 +135,44 @@ class MeteringAnalyzer(
             if (!currentConfig.isZoomReady) return
             val luminance = measureLuminance(image, currentConfig) ?: return
             val ev = calculateEv100(metadata, luminance, currentConfig.calibrationOffset)
+            val captureRequestId = pendingFrameCaptureRequest.get()
+            val mapStartedAtNs = SystemClock.elapsedRealtimeNanos()
             val currentExposureMap = createExposureMap(image, metadata, currentConfig) ?: return
+            val mapDurationMs = (
+                SystemClock.elapsedRealtimeNanos() - mapStartedAtNs
+                ) / 1_000_000
             val currentSnapshot = ExposureSnapshot(
                 exposureMap = currentExposureMap,
                 meteredEv100 = ev,
                 timestampNs = timestampNs,
                 revision = currentConfig.revision,
             )
-            val captureRequestId = pendingFrameCaptureRequest.get()
+            val bitmapStartedAtNs = SystemClock.elapsedRealtimeNanos()
             val capturedBitmap = if (captureRequestId > 0) {
                 createCapturedBitmap(image)
             } else {
                 null
+            }
+            if (BuildConfig.DEBUG && captureRequestId > 0) {
+                Log.d(
+                    TAG,
+                    (
+                        "image=%dx%d crop=%s rotation=%d map=%dx%d mapMs=%d " +
+                            "bitmap=%s bitmapMs=%d"
+                        ).format(
+                            image.width,
+                            image.height,
+                            image.cropRect.toShortString(),
+                            image.imageInfo.rotationDegrees,
+                            currentExposureMap.width,
+                            currentExposureMap.height,
+                            mapDurationMs,
+                            capturedBitmap?.let { "${it.width}x${it.height}" } ?: "null",
+                            (
+                                SystemClock.elapsedRealtimeNanos() - bitmapStartedAtNs
+                                ) / 1_000_000,
+                        ),
+                )
             }
             synchronized(configLock) {
                 if (config.get() != currentConfig) {
@@ -414,33 +444,58 @@ class MeteringAnalyzer(
         val rawLuminanceMap = ByteArray(mapWidth * mapHeight)
         val clippedHighlights = BooleanArray(mapWidth * mapHeight)
         val buffer = plane.buffer
+        val sampleOffsets = doubleArrayOf(0.25, 0.75)
 
         for (mapY in 0 until mapHeight) {
-            val previewY = (mapY + 0.5) / mapHeight
             for (mapX in 0 until mapWidth) {
-                val previewX = (mapX + 0.5) / mapWidth
-                if (!meteringConfig.viewfinderRect.contains(previewX, previewY)) {
-                    pixelEv100[mapY * mapWidth + mapX] = Float.NaN
+                val mapIndex = mapY * mapWidth + mapX
+                val centerX = (mapX + 0.5) / mapWidth
+                val centerY = (mapY + 0.5) / mapHeight
+                if (!meteringConfig.viewfinderRect.contains(centerX, centerY)) {
+                    pixelEv100[mapIndex] = Float.NaN
                     continue
                 }
-                val imagePoint = mapPreviewPointToImage(
-                    previewX = previewX,
-                    previewY = previewY,
-                    rotationDegrees = image.imageInfo.rotationDegrees,
-                    cropRect = cropRect,
-                )
-                val index = imagePoint.second * plane.rowStride +
-                    imagePoint.first * plane.pixelStride
-                val rawLuminance = if (index < buffer.limit()) {
-                    buffer.get(index).toInt() and 0xFF
-                } else {
-                    0
+
+                var rawLuminanceSum = 0
+                var linearLuminanceSum = 0.0
+                var clippedSampleCount = 0
+                var sampleCount = 0
+                for (offsetY in sampleOffsets) {
+                    val previewY = (mapY + offsetY) / mapHeight
+                    for (offsetX in sampleOffsets) {
+                        val previewX = (mapX + offsetX) / mapWidth
+                        if (!meteringConfig.viewfinderRect.contains(previewX, previewY)) {
+                            continue
+                        }
+                        val index = mapPreviewPointToBufferIndex(
+                            previewX = previewX,
+                            previewY = previewY,
+                            rotationDegrees = image.imageInfo.rotationDegrees,
+                            cropRect = cropRect,
+                            rowStride = plane.rowStride,
+                            pixelStride = plane.pixelStride,
+                        )
+                        if (index !in 0 until buffer.limit()) continue
+                        val rawLuminance = buffer.get(index).toInt() and 0xFF
+                        rawLuminanceSum += rawLuminance
+                        linearLuminanceSum += YuvLuminance.linear(rawLuminance)
+                        if (YuvLuminance.isHighlightClipped(rawLuminance)) {
+                            clippedSampleCount++
+                        }
+                        sampleCount++
+                    }
                 }
-                rawLuminanceMap[mapY * mapWidth + mapX] = rawLuminance.toByte()
-                val linearLuminance = YuvLuminance.linear(rawLuminance)
-                clippedHighlights[mapY * mapWidth + mapX] =
-                    YuvLuminance.isHighlightClipped(rawLuminance)
-                pixelEv100[mapY * mapWidth + mapX] = (
+                if (sampleCount == 0) {
+                    pixelEv100[mapIndex] = Float.NaN
+                    continue
+                }
+
+                rawLuminanceMap[mapIndex] =
+                    (rawLuminanceSum / sampleCount.toDouble()).roundToInt().toByte()
+                clippedHighlights[mapIndex] =
+                    clippedSampleCount / sampleCount.toDouble() >= CLIPPED_SAMPLE_RATIO
+                val linearLuminance = linearLuminanceSum / sampleCount
+                pixelEv100[mapIndex] = (
                     settingEv100 +
                         log2(linearLuminance / TARGET_LUMINANCE) +
                         meteringConfig.calibrationOffset
@@ -455,6 +510,7 @@ class MeteringAnalyzer(
             rawLuminance = rawLuminanceMap,
             clippedHighlights = clippedHighlights,
             cameraSettingEv100 = settingEv100,
+            calibrationOffset = meteringConfig.calibrationOffset,
             timestampNs = image.imageInfo.timestamp,
             revision = meteringConfig.revision,
         )
@@ -484,17 +540,33 @@ class MeteringAnalyzer(
         }
     }
 
-    private fun mapPreviewPointToImage(
+    private fun mapPreviewPointToBufferIndex(
         previewX: Double,
         previewY: Double,
         rotationDegrees: Int,
         cropRect: Rect,
-    ): Pair<Int, Int> {
-        val (rawX, rawY) = when (rotationDegrees) {
-            90 -> Pair(previewY, 1.0 - previewX)
-            180 -> Pair(1.0 - previewX, 1.0 - previewY)
-            270 -> Pair(1.0 - previewY, previewX)
-            else -> Pair(previewX, previewY)
+        rowStride: Int,
+        pixelStride: Int,
+    ): Int {
+        val rawX: Double
+        val rawY: Double
+        when (rotationDegrees) {
+            90 -> {
+                rawX = previewY
+                rawY = 1.0 - previewX
+            }
+            180 -> {
+                rawX = 1.0 - previewX
+                rawY = 1.0 - previewY
+            }
+            270 -> {
+                rawX = 1.0 - previewY
+                rawY = previewX
+            }
+            else -> {
+                rawX = previewX
+                rawY = previewY
+            }
         }
         val x = (cropRect.left + rawX * cropRect.width())
             .toInt()
@@ -502,14 +574,16 @@ class MeteringAnalyzer(
         val y = (cropRect.top + rawY * cropRect.height())
             .toInt()
             .coerceIn(cropRect.top, cropRect.bottom - 1)
-        return Pair(x, y)
+        return y * rowStride + x * pixelStride
     }
 
     companion object {
+        private const val TAG = "MeteringAnalyzer"
         private const val ANALYSIS_INTERVAL_NS = 100_000_000L
         private const val METADATA_TOLERANCE_NS = 50_000_000L
         private const val MAX_METADATA_ENTRIES = 24
-        private const val EXPOSURE_MAP_LONG_EDGE = 240
+        private const val EXPOSURE_MAP_LONG_EDGE = 480
+        private const val CLIPPED_SAMPLE_RATIO = 0.25
         private const val SAMPLE_STEP = 4
         private const val FINE_SAMPLE_STEP = 2
         private const val MIN_SAMPLE_COUNT = 32
