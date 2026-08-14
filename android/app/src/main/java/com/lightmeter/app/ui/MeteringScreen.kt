@@ -136,6 +136,7 @@ private val DEFAULT_CAMERA_OPTICS = CameraOptics(
 private val PreviewAccent = Color(0xFFD3AA5F)
 private const val ZOOM_SETTLE_TIMEOUT_MS = 800L
 private const val ZOOM_RATIO_TOLERANCE = 0.02f
+private const val VIEWFINDER_CHROME_SCALE = 0.75f
 
 @Composable
 fun MeteringRoute(
@@ -856,6 +857,7 @@ private fun PreviewTopControls(
     onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val chromeScale = VIEWFINDER_CHROME_SCALE
     Row(
         modifier = modifier,
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -864,31 +866,34 @@ private fun PreviewTopControls(
         Surface(
             modifier = Modifier.clickable(onClick = onExit),
             color = Color.Black.copy(alpha = 0.68f),
-            shape = RoundedCornerShape(24.dp),
+            shape = RoundedCornerShape(18.dp),
             border = BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)),
         ) {
             Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                modifier = Modifier.padding(
+                    horizontal = (14 * chromeScale).dp,
+                    vertical = (10 * chromeScale).dp,
+                ),
             ) {
                 Icon(
                     imageVector = Icons.Outlined.GridView,
                     contentDescription = null,
                     tint = PreviewAccent,
-                    modifier = Modifier.size(22.dp),
+                    modifier = Modifier.size((22 * chromeScale).dp),
                 )
                 Text(
                     text = "模式",
                     color = PreviewAccent,
-                    style = MaterialTheme.typography.titleMedium,
+                    style = MaterialTheme.typography.labelLarge,
                 )
             }
         }
 
         Surface(
             modifier = Modifier
-                .size(48.dp)
+                .size((48 * chromeScale).dp)
                 .clickable(onClick = onOpenSettings),
             color = Color.Black.copy(alpha = 0.68f),
             shape = CircleShape,
@@ -899,7 +904,7 @@ private fun PreviewTopControls(
                     imageVector = Icons.Outlined.Settings,
                     contentDescription = "设置",
                     tint = PreviewAccent,
-                    modifier = Modifier.size(24.dp),
+                    modifier = Modifier.size((24 * chromeScale).dp),
                 )
             }
         }
@@ -1221,15 +1226,16 @@ private fun ExposureSideScale(
     onStep: (Int) -> Unit,
 ) {
     var dragOffset by remember { mutableStateOf(0f) }
+    val chromeScale = VIEWFINDER_CHROME_SCALE
 
     Surface(
         color = Color.Black.copy(alpha = 0.54f),
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(9.dp),
         modifier = Modifier
-            .width(68.dp)
+            .width((68 * chromeScale).dp)
             .pointerInput(candidates, selectedIndex) {
                 var accumulatedDrag = 0f
-                val stepThreshold = 28.dp.toPx()
+                val stepThreshold = (28 * chromeScale).dp.toPx()
                 detectVerticalDragGestures(
                     onDragStart = {
                         accumulatedDrag = 0f
@@ -1261,7 +1267,10 @@ private fun ExposureSideScale(
             },
     ) {
         Column(
-            modifier = Modifier.padding(horizontal = 4.dp, vertical = 9.dp),
+            modifier = Modifier.padding(
+                horizontal = 3.dp,
+                vertical = (9 * chromeScale).dp,
+            ),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Text(
@@ -1301,16 +1310,16 @@ private fun ExposureSideScale(
                         color = if (offset == 0) PreviewAccent else Color.White,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(22.dp)
+                            .height((22 * chromeScale).dp)
                             .graphicsLayer {
                                 scaleX = scale
                                 scaleY = scale
                                 alpha = itemAlpha
                             },
                         style = if (offset == 0) {
-                            MaterialTheme.typography.titleMedium
+                            MaterialTheme.typography.labelLarge
                         } else {
-                            MaterialTheme.typography.bodyMedium
+                            MaterialTheme.typography.bodySmall
                         },
                         textAlign = TextAlign.Center,
                     )
