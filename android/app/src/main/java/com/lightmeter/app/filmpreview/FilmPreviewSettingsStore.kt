@@ -38,7 +38,7 @@ data class ManualCameraConfig(
         shutterSeconds = 1.0 / shutterDenominator,
         flash = null,
         exposureEvidence = EvidenceLevel.ESTIMATED,
-        displayNameOverride = "手动配置",
+        displayNameOverride = "自定义",
     )
 
     companion object {
