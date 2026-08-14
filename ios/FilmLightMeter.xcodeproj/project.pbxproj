@@ -25,6 +25,13 @@
 		B2612D3C0830000CEA49DB17 /* MeteringEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A94AC5AF936B7D6A1971C81 /* MeteringEngine.swift */; };
 		C1155ABE462699B794091A09 /* MeteringViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52C0A47DB5E5D0E67B7A4248 /* MeteringViewModel.swift */; };
 		D750F0949CBD9744EEF5290F /* FilmLightMeterApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = F493BA18DA269A754F0FAC85 /* FilmLightMeterApp.swift */; };
+		D10000000000000000000001 /* DisposableCameraPreset.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10000000000000000000001 /* DisposableCameraPreset.swift */; };
+		D10000000000000000000002 /* FilmPreviewEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10000000000000000000002 /* FilmPreviewEngine.swift */; };
+		D10000000000000000000003 /* FilmPreviewSettingsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10000000000000000000003 /* FilmPreviewSettingsStore.swift */; };
+		D10000000000000000000004 /* FilmExposureRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10000000000000000000004 /* FilmExposureRenderer.swift */; };
+		D10000000000000000000005 /* FilmPreviewViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10000000000000000000005 /* FilmPreviewViewModel.swift */; };
+		D10000000000000000000006 /* FilmPreviewScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10000000000000000000006 /* FilmPreviewScreen.swift */; };
+		D10000000000000000000007 /* FilmPreviewSettingsScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10000000000000000000007 /* FilmPreviewSettingsScreen.swift */; };
 		EBB12526C1A4D1663A01B7E5 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = F2BF5CBB6118AC7E4355899E /* PrivacyInfo.xcprivacy */; };
 /* End PBXBuildFile section */
 
@@ -56,6 +63,13 @@
 		BAAD01F8565425CA6D4C9057 /* CameraPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraPreview.swift; sourceTree = "<group>"; };
 		BE486EF7815D51E6007A9EE4 /* CameraService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraService.swift; sourceTree = "<group>"; };
 		DB173AFED1BD0246B5E90799 /* SettingsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsStore.swift; sourceTree = "<group>"; };
+		E10000000000000000000001 /* DisposableCameraPreset.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DisposableCameraPreset.swift; sourceTree = "<group>"; };
+		E10000000000000000000002 /* FilmPreviewEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilmPreviewEngine.swift; sourceTree = "<group>"; };
+		E10000000000000000000003 /* FilmPreviewSettingsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilmPreviewSettingsStore.swift; sourceTree = "<group>"; };
+		E10000000000000000000004 /* FilmExposureRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilmExposureRenderer.swift; sourceTree = "<group>"; };
+		E10000000000000000000005 /* FilmPreviewViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilmPreviewViewModel.swift; sourceTree = "<group>"; };
+		E10000000000000000000006 /* FilmPreviewScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilmPreviewScreen.swift; sourceTree = "<group>"; };
+		E10000000000000000000007 /* FilmPreviewSettingsScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilmPreviewSettingsScreen.swift; sourceTree = "<group>"; };
 		E480E57E97069D09805DEC72 /* FilmLatitudePreset.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilmLatitudePreset.swift; sourceTree = "<group>"; };
 		F2BF5CBB6118AC7E4355899E /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		F493BA18DA269A754F0FAC85 /* FilmLightMeterApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilmLightMeterApp.swift; sourceTree = "<group>"; };
@@ -74,6 +88,7 @@
 		3EC8EB467CE94BE54D6AA510 /* Persistence */ = {
 			isa = PBXGroup;
 			children = (
+				E10000000000000000000003 /* FilmPreviewSettingsStore.swift */,
 				DB173AFED1BD0246B5E90799 /* SettingsStore.swift */,
 			);
 			path = Persistence;
@@ -131,9 +146,11 @@
 		6D58F62E493A8A0883D1AC8D /* Domain */ = {
 			isa = PBXGroup;
 			children = (
+				E10000000000000000000001 /* DisposableCameraPreset.swift */,
 				FA18E494DC1047496B8DBEA5 /* ExposureEngine.swift */,
 				54FB5AB8A4030AE3003DC1CA /* ExposureRiskEngine.swift */,
 				E480E57E97069D09805DEC72 /* FilmLatitudePreset.swift */,
+				E10000000000000000000002 /* FilmPreviewEngine.swift */,
 				7A94AC5AF936B7D6A1971C81 /* MeteringEngine.swift */,
 				0EE6E29FB6F5CF716D34101A /* MeteringModels.swift */,
 				1151647B0BC8739AAF07B339 /* ViewfinderEngine.swift */,
@@ -185,9 +202,21 @@
 			path = Metering;
 			sourceTree = "<group>";
 		};
+		F10000000000000000000001 /* FilmPreview */ = {
+			isa = PBXGroup;
+			children = (
+				E10000000000000000000004 /* FilmExposureRenderer.swift */,
+				E10000000000000000000006 /* FilmPreviewScreen.swift */,
+				E10000000000000000000007 /* FilmPreviewSettingsScreen.swift */,
+				E10000000000000000000005 /* FilmPreviewViewModel.swift */,
+			);
+			path = FilmPreview;
+			sourceTree = "<group>";
+		};
 		F9861867D3A30CEAC016E177 /* Features */ = {
 			isa = PBXGroup;
 			children = (
+				F10000000000000000000001 /* FilmPreview */,
 				F4D823928F4E6899DBD2775E /* Metering */,
 				47569B97D2CA13027F201993 /* Settings */,
 			);
@@ -296,6 +325,13 @@
 				3207887C581E2E2688C888CF /* CameraService.swift in Sources */,
 				5CAE466733B07B056341E68A /* ExposureEngine.swift in Sources */,
 				1943A00E132B025BA02A45A5 /* ExposureRiskEngine.swift in Sources */,
+				D10000000000000000000001 /* DisposableCameraPreset.swift in Sources */,
+				D10000000000000000000002 /* FilmPreviewEngine.swift in Sources */,
+				D10000000000000000000004 /* FilmExposureRenderer.swift in Sources */,
+				D10000000000000000000006 /* FilmPreviewScreen.swift in Sources */,
+				D10000000000000000000007 /* FilmPreviewSettingsScreen.swift in Sources */,
+				D10000000000000000000003 /* FilmPreviewSettingsStore.swift in Sources */,
+				D10000000000000000000005 /* FilmPreviewViewModel.swift in Sources */,
 				9B8315B011F81BC139B91858 /* FilmLatitudePreset.swift in Sources */,
 				D750F0949CBD9744EEF5290F /* FilmLightMeterApp.swift in Sources */,
 				B2612D3C0830000CEA49DB17 /* MeteringEngine.swift in Sources */,

@@ -9,6 +9,7 @@ private enum AppDestination {
 
 struct AppRoute: View {
     @ObservedObject var metering: MeteringViewModel
+    @ObservedObject var filmPreview: FilmPreviewViewModel
     let themeStyle: AppThemeStyle
     let onThemeStyleChanged: (AppThemeStyle) -> Void
     @Environment(\.scenePhase) private var scenePhase
@@ -33,9 +34,15 @@ struct AppRoute: View {
                     onThemeStyleChanged: onThemeStyleChanged
                 )
             case .filmPreview:
-                FilmPreviewPendingScreen {
-                    destination = .modeSelection
-                }
+                FilmPreviewScreen(
+                    viewModel: filmPreview,
+                    onSwitchMode: {
+                        filmPreview.leaveFilmPreviewMode()
+                        destination = .modeSelection
+                    },
+                    themeStyle: themeStyle,
+                    onThemeStyleChanged: onThemeStyleChanged
+                )
             }
         }
         .onAppear(perform: updateCameraState)
@@ -48,6 +55,13 @@ struct AppRoute: View {
             metering.start()
         } else {
             metering.stop()
+        }
+        if destination == .filmPreview, scenePhase == .active {
+            filmPreview.start(
+                calibrationOffset: metering.settings.calibrationOffset
+            )
+        } else {
+            filmPreview.stop()
         }
     }
 }
@@ -72,7 +86,6 @@ private struct ModeSelectionScreen: View {
                     systemImage: "film.stack",
                     title: "胶片预览",
                     description: "固定参数下的曝光效果与宽容度风险",
-                    badge: "迁移中",
                     action: onFilmPreviewSelected
                 )
                 ModeCard(
@@ -138,28 +151,5 @@ private struct ModeCard: View {
             }
         }
         .buttonStyle(.plain)
-    }
-}
-
-private struct FilmPreviewPendingScreen: View {
-    let onExit: () -> Void
-
-    var body: some View {
-        VStack(spacing: 18) {
-            Image(systemName: "film.stack")
-                .font(.system(size: 56))
-                .foregroundStyle(.orange)
-            Text("胶片预览迁移中")
-                .font(.title2.bold())
-            Text("该模式的预设、曝光仿真和风险分析将在下一阶段迁移。")
-                .multilineTextAlignment(.center)
-                .foregroundStyle(.secondary)
-            Button("返回模式选择", action: onExit)
-                .buttonStyle(.borderedProminent)
-                .tint(.orange)
-        }
-        .padding(28)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(uiColor: .systemBackground).ignoresSafeArea())
     }
 }
