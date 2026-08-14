@@ -97,6 +97,71 @@ class FilmPreviewEngineTest {
     }
 
     @Test
+    fun manualPresetIsFirstButBuiltInPresetRemainsDefault() {
+        val state = FilmPreviewViewModel().state.value
+
+        assertEquals(ManualCameraConfig.MANUAL_PRESET_ID, state.presets.first().id)
+        assertEquals(funSaver.id, state.selectedPreset?.id)
+    }
+
+    @Test
+    fun savedManualConfigIsSelectedAndUsedForPreviewEvaluation() {
+        val store = InMemoryFilmPreviewSettingsStore()
+        val viewModel = FilmPreviewViewModel(settingsStore = store)
+        val config = ManualCameraConfig(
+            iso = 200,
+            shutterDenominator = 60,
+            aperture = 8.0,
+            focalLengthMm = 40.0,
+        )
+
+        assertTrue(
+            viewModel.savePresetSettings(
+                ManualCameraConfig.MANUAL_PRESET_ID,
+                config,
+            ),
+        )
+        val preset = requireNotNull(viewModel.state.value.selectedPreset)
+        val referenceEv = FilmPreviewEngine.presetEv100(preset)
+        viewModel.onMeteringResult(
+            MeteringResult(
+                ev100 = referenceEv,
+                measuredLuminance = 0.18,
+                timestampNs = 1L,
+            ),
+        )
+
+        assertEquals(ManualCameraConfig.MANUAL_PRESET_ID, preset.id)
+        assertEquals(200, preset.film.iso)
+        assertEquals(1.0 / 60.0, preset.shutterSeconds, 1e-9)
+        assertEquals(8.0, preset.optics.aperture, 0.0)
+        assertEquals(40.0, preset.optics.focalLengthMm, 0.0)
+        assertEquals(0.0, viewModel.state.value.evaluation?.sceneDeltaEv ?: 1.0, 1e-9)
+    }
+
+    @Test
+    fun manualConfigAndSelectionAreRestored() {
+        val config = ManualCameraConfig(
+            iso = 1600,
+            shutterDenominator = 250,
+            aperture = 16.0,
+            focalLengthMm = 28.0,
+        )
+        val store = InMemoryFilmPreviewSettingsStore(
+            FilmPreviewSettings(
+                selectedPresetId = ManualCameraConfig.MANUAL_PRESET_ID,
+                manualConfig = config,
+            ),
+        )
+
+        val restored = FilmPreviewViewModel(settingsStore = store).state.value
+
+        assertEquals(ManualCameraConfig.MANUAL_PRESET_ID, restored.selectedPreset?.id)
+        assertEquals(config, restored.manualConfig)
+        assertEquals(28.0, restored.selectedPreset?.optics?.focalLengthMm ?: 0.0, 0.0)
+    }
+
+    @Test
     fun selectingPresetClearsMeteringFromPreviousFieldOfView() {
         val viewModel = FilmPreviewViewModel()
         val meteredEv = FilmPreviewEngine.presetEv100(quickSnap)
@@ -168,5 +233,16 @@ class FilmPreviewEngineTest {
 
         viewModel.resumeLivePreview()
         assertTrue(!viewModel.state.value.isFrozen)
+    }
+}
+
+private class InMemoryFilmPreviewSettingsStore(
+    private var settings: FilmPreviewSettings = FilmPreviewSettings(),
+) : FilmPreviewSettingsStore {
+    override fun load() = settings
+
+    override fun save(settings: FilmPreviewSettings): Boolean {
+        this.settings = settings
+        return true
     }
 }

@@ -53,6 +53,7 @@ data class DisposableCameraPreset(
     val shutterSeconds: Double,
     val flash: FlashProfile?,
     val exposureEvidence: EvidenceLevel,
+    val displayNameOverride: String? = null,
 ) {
     init {
         require(id.isNotBlank())
@@ -63,7 +64,7 @@ data class DisposableCameraPreset(
     }
 
     val displayName: String
-        get() = "$brand $model"
+        get() = displayNameOverride ?: "$brand $model"
 }
 
 interface DisposableCameraRepository {
