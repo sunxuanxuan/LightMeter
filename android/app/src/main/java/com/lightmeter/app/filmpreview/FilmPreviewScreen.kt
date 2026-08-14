@@ -592,6 +592,8 @@ private fun PreviewStatusPanel(
     modifier: Modifier = Modifier,
 ) {
     val evaluation = state.evaluation
+    val presetEv100 = evaluation?.presetEv100 ?: FilmPreviewEngine.presetEv100(preset)
+    val sceneEv100 = evaluation?.sceneDeltaEv?.let { presetEv100 + it }
     Surface(
         modifier = modifier.fillMaxWidth(),
         color = MaterialTheme.colorScheme.surface,
@@ -599,43 +601,46 @@ private fun PreviewStatusPanel(
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {
         Column(modifier = Modifier.padding(horizontal = 18.dp, vertical = 12.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = preset.displayName,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    Text(
-                        text = "参数由预设锁定",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                }
-                Text(
-                    text = evaluation?.rating?.displayName ?: "不可判断",
-                    color = ratingColor(evaluation?.rating),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                )
-            }
+            Text(
+                text = preset.displayName,
+                color = MaterialTheme.colorScheme.onSurface,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                text = "参数由预设锁定",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
+            )
 
             Spacer(modifier = Modifier.height(12.dp))
             Text(
-                text = evaluation?.sceneDeltaEv?.let {
-                    "场景相对固定曝光 ${formatSignedStops(it)}"
-                } ?: "正在等待稳定测光结果",
+                text = "胶片预设固定曝光：${formatEv(presetEv100)}",
+                color = MaterialTheme.colorScheme.onSurface,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Text(
+                text = "场景推荐曝光：${sceneEv100?.let(::formatEv) ?: "--"}",
+                color = MaterialTheme.colorScheme.onSurface,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Text(
+                text = "相对差值：${
+                    evaluation?.sceneDeltaEv?.let(::formatSignedStops) ?: "--"
+                }",
                 color = MaterialTheme.colorScheme.onSurface,
                 style = MaterialTheme.typography.bodyMedium,
             )
             Text(
                 text = adviceText(evaluation?.adviceCode, preset),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = when (evaluation?.adviceCode) {
+                    PreviewAdviceCode.SUITABLE,
+                    PreviewAdviceCode.UNAVAILABLE,
+                    null,
+                    -> MaterialTheme.colorScheme.onSurfaceVariant
+
+                    else -> MaterialTheme.colorScheme.error
+                },
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.padding(top = 4.dp),
             )
@@ -930,6 +935,10 @@ private fun formatSignedStops(value: Double): String {
     return String.format(Locale.US, "%+.1f EV", value)
 }
 
+private fun formatEv(value: Double): String {
+    return String.format(Locale.US, "%.1f EV", value)
+}
+
 private fun adviceText(
     code: PreviewAdviceCode?,
     preset: DisposableCameraPreset,
@@ -947,17 +956,6 @@ private fun adviceText(
         PreviewAdviceCode.UNAVAILABLE,
         null,
         -> "稳定后将显示固定曝光下的场景判断。"
-    }
-}
-
-private fun ratingColor(rating: PreviewSceneRating?): Color {
-    return when (rating) {
-        PreviewSceneRating.GOOD -> Color(0xFF5F8769)
-        PreviewSceneRating.CAUTION -> Color(0xFFA96F24)
-        PreviewSceneRating.POOR -> Color(0xFFC85743)
-        PreviewSceneRating.UNAVAILABLE,
-        null,
-        -> Color(0xFF625B51)
     }
 }
 
