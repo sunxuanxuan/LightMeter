@@ -249,7 +249,9 @@ final class MeteringViewModel: ObservableObject {
             return
         }
         let current = result.meteredEV100
-        displayedEV100 = previousDisplayedEV.map { $0 * 0.75 + current * 0.25 } ?? current
+        displayedEV100 = previousDisplayedEV.map {
+            $0 * (1 - Self.smoothingWeight) + current * Self.smoothingWeight
+        } ?? current
         previousDisplayedEV = displayedEV100
         updateRecommendation()
     }
@@ -499,6 +501,8 @@ final class MeteringViewModel: ObservableObject {
             intent: .defaultIntent
         )
     }
+
+    private static let smoothingWeight = 0.44
 }
 
 private enum ExposureCompensationRenderer {

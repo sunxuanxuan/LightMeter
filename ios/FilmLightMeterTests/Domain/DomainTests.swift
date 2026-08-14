@@ -127,6 +127,36 @@ final class DomainTests: XCTestCase {
         XCTAssertTrue(MeteringEngine.isHighlightClipped(250, isVideoRange: false))
     }
 
+    func testFrozenExposureMapUsesAndroidResolution() throws {
+        var configuration = MeteringConfiguration()
+        configuration.previewAspectRatio = 1
+        let metadata = CameraExposureMetadata(
+            exposureSeconds: 1.0 / 125,
+            sensitivityISO: 100,
+            aperture: 2.8
+        )
+        let result = MeteringResult(
+            meteredEV100: 10,
+            measuredLuminance: 0.18,
+            metadata: metadata,
+            timestampNanoseconds: 1,
+            revision: configuration.revision
+        )
+        let snapshot = try XCTUnwrap(MeteringEngine().makeSnapshot(
+            plane: LuminancePlane(
+                width: 4,
+                height: 4,
+                values: [UInt8](repeating: 128, count: 16),
+                isVideoRange: false
+            ),
+            result: result,
+            configuration: configuration
+        ))
+
+        XCTAssertEqual(snapshot.exposureMap.width, 480)
+        XCTAssertEqual(snapshot.exposureMap.height, 480)
+    }
+
     func testAspectFillMappingCropsInvisibleBufferRows() throws {
         let mappedTop = MeteringEngine.displayPointToBuffer(
             x: 0.5,

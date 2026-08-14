@@ -4,10 +4,14 @@ import UIKit
 struct MeteringScreen: View {
     @ObservedObject var viewModel: MeteringViewModel
     let onSwitchMode: () -> Void
+    let themeStyle: AppThemeStyle
+    let onThemeStyleChanged: (AppThemeStyle) -> Void
+
+    @State private var frozenChromeVisible = true
 
     var body: some View {
         ZStack {
-            Color.black.ignoresSafeArea()
+            Color(uiColor: .systemBackground).ignoresSafeArea()
             switch viewModel.camera.permissionState {
             case .denied:
                 PermissionRequiredView()
@@ -16,26 +20,35 @@ struct MeteringScreen: View {
             case .granted:
                 meteringContent
             }
-            VStack {
-                HStack {
-                    Button(action: onSwitchMode) {
-                        Label("模式", systemImage: "square.grid.2x2")
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 8)
-                            .background(.ultraThinMaterial, in: Capsule())
+            if chromeVisible {
+                VStack {
+                    HStack {
+                        Button(action: onSwitchMode) {
+                            Label("模式", systemImage: "square.grid.2x2")
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 8)
+                                .background(.ultraThinMaterial, in: Capsule())
+                                .scaleEffect(chromeScale, anchor: .topLeading)
+                        }
+                        .frame(minWidth: 44, minHeight: 44, alignment: .topLeading)
+                        .accessibilityLabel("切换模式")
+                        Spacer()
                     }
-                    .accessibilityLabel("切换模式")
                     Spacer()
                 }
-                Spacer()
+                .padding()
             }
-            .padding()
         }
         .sheet(isPresented: $viewModel.showsSettings) {
             SettingsScreen(
                 initialSettings: viewModel.settings,
+                themeStyle: themeStyle,
+                onThemeStyleChanged: onThemeStyleChanged,
                 onSave: { viewModel.applySettings($0) }
             )
+        }
+        .onChange(of: viewModel.isFrozen) { _, _ in
+            frozenChromeVisible = true
         }
         .alert(
             "FilmLightMeter",
@@ -67,7 +80,7 @@ struct MeteringScreen: View {
                     }
                 controlPanel
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(Color(red: 0.08, green: 0.08, blue: 0.09))
+                    .background(Color(uiColor: .secondarySystemBackground))
             }
         }
     }
@@ -91,44 +104,51 @@ struct MeteringScreen: View {
                         .allowsHitTesting(false)
                 }
                 ViewfinderOverlay(rect: viewModel.viewfinder)
-                SpotMeteringOverlay(
-                    viewfinder: viewModel.viewfinder,
-                    point: viewModel.spotMeteringPoint,
-                    areaPercent: viewModel.settings.spotAreaPercent,
-                    isVisible: viewModel.settings.meteringMode == .spot
-                        || viewModel.spotMeteringPoint != nil
-                )
-                if let pair = viewModel.recommendation?.primary {
-                    ExposureScaleOverlay(
-                        apertureLabels: ExposureEngine.apertureLabels,
-                        shutterLabels: ExposureEngine.shutterLabels,
-                        selectedPair: pair,
-                        onApertureStep: { viewModel.stepAperture($0) },
-                        onShutterStep: { viewModel.stepShutter($0) }
+                if chromeVisible {
+                    SpotMeteringOverlay(
+                        viewfinder: viewModel.viewfinder,
+                        point: viewModel.spotMeteringPoint,
+                        areaPercent: viewModel.settings.spotAreaPercent,
+                        isVisible: viewModel.settings.meteringMode == .spot
+                            || viewModel.spotMeteringPoint != nil
                     )
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 56)
+                    if let pair = viewModel.recommendation?.primary {
+                        ExposureScaleOverlay(
+                            apertureLabels: ExposureEngine.apertureLabels,
+                            shutterLabels: ExposureEngine.shutterLabels,
+                            selectedPair: pair,
+                            scale: chromeScale,
+                            onApertureStep: { viewModel.stepAperture($0) },
+                            onShutterStep: { viewModel.stepShutter($0) }
+                        )
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 56)
+                    }
+                    settingsButton
+                    freezeButton
                 }
-                topStatus
-                freezeButton
+                riskStatus
             }
             .contentShape(Rectangle())
             .onTapGesture { point in
-                viewModel.selectSpot(
-                    x: point.x / geometry.size.width,
-                    y: point.y / geometry.size.height
-                )
+                if viewModel.isFrozen {
+                    frozenChromeVisible.toggle()
+                } else {
+                    viewModel.selectSpot(
+                        x: point.x / geometry.size.width,
+                        y: point.y / geometry.size.height
+                    )
+                }
             }
         }
     }
 
-    private var topStatus: some View {
+    private var riskStatus: some View {
         VStack {
-            HStack {
-                Color.clear.frame(width: 70, height: 1)
-                if (viewModel.isFrozen || viewModel.isFreezing),
-                   !viewModel.isExposureSimulationEnabled,
-                   viewModel.riskImage != nil {
+            if (viewModel.isFrozen || viewModel.isFreezing),
+               !viewModel.isExposureSimulationEnabled,
+               viewModel.riskImage != nil {
+                HStack(spacing: 12) {
                     Label(
                         String(format: "高光 %.1f%%", viewModel.highlightRiskRatio * 100),
                         systemImage: "sun.max.fill"
@@ -140,17 +160,32 @@ struct MeteringScreen: View {
                     )
                     .foregroundStyle(.green)
                 }
+                .font(.caption.bold())
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(.ultraThinMaterial, in: Capsule())
+                .padding(.top, 16)
+            }
+            Spacer()
+        }
+        .allowsHitTesting(false)
+    }
+
+    private var settingsButton: some View {
+        VStack {
+            HStack {
                 Spacer()
                 Button {
                     viewModel.showsSettings = true
                 } label: {
                     Image(systemName: "gearshape.fill")
-                        .padding(10)
+                        .font(.system(size: 17 * chromeScale))
+                        .frame(width: 36 * chromeScale, height: 36 * chromeScale)
                         .background(.ultraThinMaterial, in: Circle())
                 }
+                .frame(width: 44, height: 44)
                 .accessibilityLabel("设置")
             }
-            .font(.caption.bold())
             .padding()
             Spacer()
         }
@@ -307,12 +342,21 @@ struct MeteringScreen: View {
         guard let pair = viewModel.recommendation?.primary else { return "--" }
         return "\(pair.apertureLabel) · \(pair.shutterLabel)"
     }
+
+    private var chromeVisible: Bool {
+        !viewModel.isFrozen || frozenChromeVisible
+    }
+
+    private var chromeScale: CGFloat {
+        viewModel.settings.frameFormat == .film66 ? 0.75 : 1
+    }
 }
 
 private struct ExposureScaleOverlay: View {
     let apertureLabels: [String]
     let shutterLabels: [String]
     let selectedPair: ExposurePair
+    let scale: CGFloat
     let onApertureStep: (Int) -> Void
     let onShutterStep: (Int) -> Void
 
@@ -323,6 +367,7 @@ private struct ExposureScaleOverlay: View {
                     title: "光圈",
                     values: apertureLabels,
                     selectedIndex: index,
+                    scale: scale,
                     onStep: onApertureStep
                 )
             }
@@ -332,6 +377,7 @@ private struct ExposureScaleOverlay: View {
                     title: "快门",
                     values: shutterLabels,
                     selectedIndex: index,
+                    scale: scale,
                     onStep: onShutterStep
                 )
             }
@@ -343,6 +389,7 @@ private struct ExposureSideScale: View {
     let title: String
     let values: [String]
     let selectedIndex: Int
+    let scale: CGFloat
     let onStep: (Int) -> Void
 
     @State private var dragOffset: CGFloat = 0
@@ -351,29 +398,35 @@ private struct ExposureSideScale: View {
     var body: some View {
         VStack(spacing: 1) {
             Text(title)
-                .font(.caption2)
+                .font(.system(size: 11 * scale))
                 .foregroundStyle(.white.opacity(0.58))
             VStack(spacing: 1) {
                 ForEach(-4...4, id: \.self) { offset in
                     let distance = abs(offset)
                     Text(values[safe: selectedIndex + offset] ?? " ")
-                        .font(offset == 0 ? .headline : .subheadline)
+                        .font(.system(
+                            size: (offset == 0 ? 17 : 15) * scale,
+                            weight: offset == 0 ? .semibold : .regular
+                        ))
                         .foregroundStyle(offset == 0 ? .orange : .white)
                         .opacity(itemOpacity(distance))
                         .scaleEffect(itemScale(distance))
-                        .frame(width: 60, height: 22)
+                        .frame(width: 60 * scale, height: 22 * scale)
                         .lineLimit(1)
                 }
             }
             .offset(y: dragOffset)
         }
-        .padding(.horizontal, 4)
-        .padding(.vertical, 9)
-        .background(.black.opacity(0.54), in: RoundedRectangle(cornerRadius: 12))
+        .padding(.horizontal, 4 * scale)
+        .padding(.vertical, 9 * scale)
+        .background(
+            .black.opacity(0.54),
+            in: RoundedRectangle(cornerRadius: 12 * scale)
+        )
         .gesture(
             DragGesture(minimumDistance: 3)
                 .onChanged { value in
-                    let threshold: CGFloat = 28
+                    let threshold: CGFloat = 28 * scale
                     let steps = Int(-value.translation.height / threshold)
                     if steps != emittedSteps {
                         onStep(steps - emittedSteps)

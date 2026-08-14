@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 private enum AppDestination {
     case modeSelection
@@ -8,6 +9,8 @@ private enum AppDestination {
 
 struct AppRoute: View {
     @ObservedObject var metering: MeteringViewModel
+    let themeStyle: AppThemeStyle
+    let onThemeStyleChanged: (AppThemeStyle) -> Void
     @Environment(\.scenePhase) private var scenePhase
     @State private var destination = AppDestination.modeSelection
 
@@ -25,7 +28,9 @@ struct AppRoute: View {
                     onSwitchMode: {
                         metering.leaveProfessionalMode()
                         destination = .modeSelection
-                    }
+                    },
+                    themeStyle: themeStyle,
+                    onThemeStyleChanged: onThemeStyleChanged
                 )
             case .filmPreview:
                 FilmPreviewPendingScreen {
@@ -81,7 +86,7 @@ private struct ModeSelectionScreen: View {
         }
         .padding(.horizontal, 24)
         .padding(.vertical, 28)
-        .background(Color(red: 0.06, green: 0.06, blue: 0.07).ignoresSafeArea())
+        .background(Color(uiColor: .systemBackground).ignoresSafeArea())
     }
 }
 
@@ -123,10 +128,13 @@ private struct ModeCard: View {
             .padding(.horizontal, 18)
             .padding(.vertical, 16)
             .frame(maxWidth: .infinity, minHeight: 116)
-            .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 14))
+            .background(
+                Color(uiColor: .secondarySystemBackground),
+                in: RoundedRectangle(cornerRadius: 14)
+            )
             .overlay {
                 RoundedRectangle(cornerRadius: 14)
-                    .stroke(Color.white.opacity(0.12))
+                    .stroke(Color(uiColor: .separator))
             }
         }
         .buttonStyle(.plain)
@@ -152,6 +160,6 @@ private struct FilmPreviewPendingScreen: View {
         }
         .padding(28)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(red: 0.06, green: 0.06, blue: 0.07).ignoresSafeArea())
+        .background(Color(uiColor: .systemBackground).ignoresSafeArea())
     }
 }
