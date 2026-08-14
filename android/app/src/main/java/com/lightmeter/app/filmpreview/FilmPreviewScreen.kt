@@ -39,6 +39,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.GridView
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.AlertDialog
@@ -89,6 +90,7 @@ import com.lightmeter.app.metering.MeteringMode
 import com.lightmeter.app.ui.CameraPermissionState
 import com.lightmeter.app.ui.CameraPreviewView
 import com.lightmeter.app.ui.CameraViewfinderMask
+import com.lightmeter.app.ui.theme.AppThemeStyle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.Locale
@@ -98,6 +100,9 @@ import kotlin.math.roundToInt
 @Composable
 fun FilmPreviewRoute(
     onExit: () -> Unit,
+    calibrationOffset: Double = 0.0,
+    themeStyle: AppThemeStyle = AppThemeStyle.DARK,
+    onThemeStyleChanged: (AppThemeStyle) -> Unit = {},
 ) {
     val context = LocalContext.current
     val viewModel: FilmPreviewViewModel = viewModel()
@@ -137,6 +142,10 @@ fun FilmPreviewRoute(
         }
     }
 
+    LaunchedEffect(calibrationOffset) {
+        viewModel.invalidateMetering()
+    }
+
     BackHandler {
         onExit()
     }
@@ -158,6 +167,9 @@ fun FilmPreviewRoute(
         onFreezePreview = viewModel::freezePreview,
         onResumeLive = viewModel::resumeLivePreview,
         onFreezeCaptureFailed = viewModel::onFreezeCaptureFailed,
+        calibrationOffset = calibrationOffset,
+        themeStyle = themeStyle,
+        onThemeStyleChanged = onThemeStyleChanged,
     )
 }
 
@@ -254,6 +266,9 @@ private fun FilmPreviewWorkspace(
     onFreezePreview: () -> Unit,
     onResumeLive: () -> Unit,
     onFreezeCaptureFailed: () -> Unit,
+    calibrationOffset: Double,
+    themeStyle: AppThemeStyle,
+    onThemeStyleChanged: (AppThemeStyle) -> Unit,
 ) {
     val preset = state.selectedPreset ?: return
     var showsSettings by rememberSaveable { mutableStateOf(false) }
@@ -291,8 +306,18 @@ private fun FilmPreviewWorkspace(
     val normalizedViewfinder = remember(projection, effectiveZoomRatio) {
         projection.viewfinderAt(effectiveZoomRatio.toDouble())
     }
-    val presetRevision = remember(preset.id, preset.presetVersion, cameraOptics) {
-        listOf(preset.id, preset.presetVersion, cameraOptics).hashCode().toLong()
+    val presetRevision = remember(
+        preset.id,
+        preset.presetVersion,
+        cameraOptics,
+        calibrationOffset,
+    ) {
+        listOf(
+            preset.id,
+            preset.presetVersion,
+            cameraOptics,
+            calibrationOffset,
+        ).hashCode().toLong()
     }
 
     LaunchedEffect(
@@ -415,6 +440,7 @@ private fun FilmPreviewWorkspace(
                             targetZoomRatio = effectiveZoomRatio.toDouble(),
                             isZoomReady = isZoomReady,
                             revision = presetRevision,
+                            calibrationOffset = calibrationOffset,
                         ),
                         targetZoomRatio = if (state.isFrozen) {
                             cameraZoomState.zoomRatio
@@ -513,20 +539,31 @@ private fun FilmPreviewWorkspace(
 
                 Surface(
                     color = Color.Black.copy(alpha = 0.68f),
-                    shape = RoundedCornerShape(8.dp),
-                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.18f)),
+                    shape = RoundedCornerShape(24.dp),
+                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)),
                     modifier = Modifier
-                        .align(Alignment.TopEnd)
+                        .align(Alignment.TopStart)
                         .padding(10.dp),
                 ) {
-                    Text(
-                        text = "切换模式",
-                        color = Color.White,
-                        style = MaterialTheme.typography.labelMedium,
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
                             .clickable(onClick = onBack)
-                            .padding(horizontal = 12.dp, vertical = 9.dp),
-                    )
+                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.GridView,
+                            contentDescription = null,
+                            tint = Color(0xFFD3AA5F),
+                            modifier = Modifier.size(22.dp),
+                        )
+                        Text(
+                            text = "模式",
+                            color = Color(0xFFD3AA5F),
+                            style = MaterialTheme.typography.titleMedium,
+                        )
+                    }
                 }
 
                 Row(
@@ -575,6 +612,8 @@ private fun FilmPreviewWorkspace(
         PresetSettingsDialog(
             presets = state.presets,
             selectedPreset = preset,
+            themeStyle = themeStyle,
+            onThemeStyleChanged = onThemeStyleChanged,
             onSave = {
                 onPresetSelected(it)
                 showsSettings = false
@@ -837,6 +876,8 @@ private fun ReadOnlyParameter(
 private fun PresetSettingsDialog(
     presets: List<DisposableCameraPreset>,
     selectedPreset: DisposableCameraPreset,
+    themeStyle: AppThemeStyle,
+    onThemeStyleChanged: (AppThemeStyle) -> Unit,
     onSave: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -855,6 +896,30 @@ private fun PresetSettingsDialog(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
+                Text(
+                    text = "外观",
+                    color = MaterialTheme.colorScheme.onSurface,
+                    style = MaterialTheme.typography.titleSmall,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    AppThemeStyle.entries
+                        .filter(AppThemeStyle::available)
+                        .forEach { style ->
+                            OutlinedButton(
+                                onClick = { onThemeStyleChanged(style) },
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    containerColor = if (themeStyle == style) {
+                                        MaterialTheme.colorScheme.primaryContainer
+                                    } else {
+                                        Color.Transparent
+                                    },
+                                ),
+                            ) {
+                                Text(style.displayName)
+                            }
+                        }
+                }
+                Spacer(modifier = Modifier.height(6.dp))
                 Text(
                     text = "曝光参数由预设提供，预览模式中不可单独修改。",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,

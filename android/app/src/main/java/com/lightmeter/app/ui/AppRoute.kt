@@ -20,15 +20,18 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.lightmeter.app.filmpreview.FilmPreviewRoute
+import com.lightmeter.app.settings.SharedPreferencesAppSettingsStore
+import com.lightmeter.app.ui.theme.AppThemeStyle
 
 private enum class AppDestination {
     MODE_SELECTION,
@@ -37,16 +40,21 @@ private enum class AppDestination {
 }
 
 @Composable
-fun AppRoute() {
+fun AppRoute(
+    themeStyle: AppThemeStyle,
+    onThemeStyleChanged: (AppThemeStyle) -> Unit,
+) {
+    val context = LocalContext.current
+    val settingsStore = remember(context) {
+        SharedPreferencesAppSettingsStore(context.applicationContext)
+    }
+    val appSettings = remember(settingsStore) { settingsStore.load() }
     var destination by rememberSaveable {
         mutableStateOf(AppDestination.MODE_SELECTION)
     }
-    var professionalChromeVisible by rememberSaveable { mutableStateOf(true) }
-
     when (destination) {
         AppDestination.MODE_SELECTION -> ModeSelectionScreen(
             onProfessionalSelected = {
-                professionalChromeVisible = true
                 destination = AppDestination.PROFESSIONAL
             },
             onFilmPreviewSelected = { destination = AppDestination.FILM_PREVIEW },
@@ -56,26 +64,19 @@ fun AppRoute() {
             BackHandler {
                 destination = AppDestination.MODE_SELECTION
             }
-            Box(modifier = Modifier.fillMaxSize()) {
-                MeteringRoute(
-                    onPreviewChromeVisibilityChanged = {
-                        professionalChromeVisible = it
-                    },
-                )
-                if (professionalChromeVisible) {
-                    ModeButton(
-                        onClick = { destination = AppDestination.MODE_SELECTION },
-                        modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .statusBarsPadding()
-                            .padding(12.dp),
-                    )
-                }
-            }
+            MeteringRoute(
+                calibrationOffset = appSettings.calibrationOffset,
+                onExit = { destination = AppDestination.MODE_SELECTION },
+                themeStyle = themeStyle,
+                onThemeStyleChanged = onThemeStyleChanged,
+            )
         }
 
         AppDestination.FILM_PREVIEW -> FilmPreviewRoute(
             onExit = { destination = AppDestination.MODE_SELECTION },
+            calibrationOffset = appSettings.calibrationOffset,
+            themeStyle = themeStyle,
+            onThemeStyleChanged = onThemeStyleChanged,
         )
     }
 }
@@ -191,25 +192,5 @@ private fun ModeCard(
                 color = MaterialTheme.colorScheme.primary,
             )
         }
-    }
-}
-
-@Composable
-private fun ModeButton(
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Surface(
-        modifier = modifier.clickable(onClick = onClick),
-        color = Color.Black.copy(alpha = 0.68f),
-        shape = RoundedCornerShape(8.dp),
-        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.18f)),
-    ) {
-        Text(
-            text = "切换模式",
-            color = Color.White,
-            style = MaterialTheme.typography.labelMedium,
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
-        )
     }
 }

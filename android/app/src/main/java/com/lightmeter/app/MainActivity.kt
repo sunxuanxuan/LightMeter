@@ -10,6 +10,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import com.lightmeter.app.activation.ActivationManager
 import com.lightmeter.app.activation.ActivationScreen
+import com.lightmeter.app.settings.SharedPreferencesAppSettingsStore
 import com.lightmeter.app.ui.AppRoute
 import com.lightmeter.app.ui.theme.LightMeterTheme
 
@@ -18,10 +19,26 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            LightMeterTheme {
+            val settingsStore = remember {
+                SharedPreferencesAppSettingsStore(applicationContext)
+            }
+            var themeStyle by remember {
+                mutableStateOf(settingsStore.load().themeStyle)
+            }
+            LightMeterTheme(themeStyle = themeStyle) {
                 if (BuildConfig.DEBUG) {
                     // Debug build: no activation required
-                    AppRoute()
+                    AppRoute(
+                        themeStyle = themeStyle,
+                        onThemeStyleChanged = { selected ->
+                            if (settingsStore.save(
+                                    settingsStore.load().copy(themeStyle = selected),
+                                )
+                            ) {
+                                themeStyle = selected
+                            }
+                        },
+                    )
                 } else {
                     // Release build: activation required
                     var isActivated by remember {
@@ -29,7 +46,17 @@ class MainActivity : ComponentActivity() {
                     }
 
                     if (isActivated) {
-                        AppRoute()
+                        AppRoute(
+                            themeStyle = themeStyle,
+                            onThemeStyleChanged = { selected ->
+                                if (settingsStore.save(
+                                        settingsStore.load().copy(themeStyle = selected),
+                                    )
+                                ) {
+                                    themeStyle = selected
+                                }
+                            },
+                        )
                     } else {
                         ActivationScreen(
                             onActivated = { isActivated = true },
