@@ -18,7 +18,7 @@ struct CameraCapabilities: Sendable {
     let currentZoomFactor: Double
 }
 
-struct CameraAnalyzedFrame: @unchecked Sendable {
+struct CameraCapturedFrame: @unchecked Sendable {
     let snapshot: ExposureSnapshot
     let image: CGImage
 }
@@ -31,7 +31,8 @@ final class CameraService: NSObject, ObservableObject, @unchecked Sendable {
     @Published private(set) var errorMessage: String?
     @Published private(set) var capabilities: CameraCapabilities?
 
-    var onFrame: (@Sendable (CameraAnalyzedFrame) -> Void)?
+    var onMeteringResult: (@Sendable (MeteringResult) -> Void)?
+    var onFrameCaptured: (@Sendable (CameraCapturedFrame?) -> Void)?
 
     private let logger = Logger(subsystem: "com.lightmeter.app.ios", category: "camera")
     private let sessionQueue = DispatchQueue(label: "com.lightmeter.camera.session")
@@ -45,13 +46,7 @@ final class CameraService: NSObject, ObservableObject, @unchecked Sendable {
     private var configuration = MeteringConfiguration()
     private var lastAnalysisNanoseconds: Int64 = 0
     private var sessionID = UUID()
-    private var probeContinuation: CheckedContinuation<ExposureSnapshot?, Never>?
-    private var probeDiscardCount = 0
-    private var probeToken: UUID?
-    private var probeBaselineSettingEV: Double?
-    private var probeDirection = 0.0
-    private var bracketOriginalBias: Float?
-    private var latestSnapshot: ExposureSnapshot?
+    private var pendingFrameCaptureToken: UUID?
 
     override init() {
         super.init()
@@ -93,13 +88,37 @@ final class CameraService: NSObject, ObservableObject, @unchecked Sendable {
     }
 
     func stop() {
-        cancelProbe()
+        cancelFrameCapture()
         sessionQueue.async { [weak self] in
             guard let self else { return }
             if self.session.isRunning {
                 self.session.stopRunning()
             }
             Task { @MainActor in self.isRunning = false }
+        }
+    }
+
+    func requestFrameCapture() {
+        let token = UUID()
+        stateLock.withLock {
+            pendingFrameCaptureToken = token
+        }
+        outputQueue.asyncAfter(deadline: .now() + .milliseconds(800)) { [weak self] in
+            guard let self else { return }
+            let timedOut = self.stateLock.withLock {
+                guard self.pendingFrameCaptureToken == token else { return false }
+                self.pendingFrameCaptureToken = nil
+                return true
+            }
+            if timedOut {
+                self.onFrameCaptured?(nil)
+            }
+        }
+    }
+
+    func cancelFrameCapture() {
+        stateLock.withLock {
+            pendingFrameCaptureToken = nil
         }
     }
 
@@ -123,67 +142,14 @@ final class CameraService: NSObject, ObservableObject, @unchecked Sendable {
                 do {
                     try device.lockForConfiguration()
                     device.videoZoomFactor = CGFloat(target)
+                    let applied = Double(device.videoZoomFactor)
                     device.unlockForConfiguration()
-                    continuation.resume(returning: target)
+                    continuation.resume(returning: applied)
                 } catch {
                     continuation.resume(returning: nil)
                 }
             }
         }
-    }
-
-    func captureProbe(offsetStops: Float) async -> ExposureSnapshot? {
-        guard abs(offsetStops) >= 1 else { return nil }
-        let originalBias = stateLock.withLock { () -> Float in
-            if let bracketOriginalBias { return bracketOriginalBias }
-            let value = device?.exposureTargetBias ?? 0
-            bracketOriginalBias = value
-            return value
-        }
-        let baselineSettingEV = stateLock.withLock {
-            latestSnapshot.map { MeteringEngine.cameraSettingEV100($0.metadata) }
-        }
-        let applied = await setExposureBias(originalBias + offsetStops)
-        guard applied else { return nil }
-        return await withTaskCancellationHandler {
-            await withCheckedContinuation { continuation in
-                let token = UUID()
-                stateLock.withLock {
-                    probeContinuation?.resume(returning: nil)
-                    probeContinuation = continuation
-                    probeDiscardCount = 2
-                    probeToken = token
-                    probeBaselineSettingEV = baselineSettingEV
-                    probeDirection = offsetStops < 0 ? 1 : -1
-                }
-                outputQueue.asyncAfter(deadline: .now() + .milliseconds(800)) {
-                    self.stateLock.withLock {
-                        guard self.probeToken == token else { return }
-                        self.probeContinuation?.resume(returning: nil)
-                        self.clearProbeState()
-                    }
-                }
-            }
-        } onCancel: {
-            self.cancelProbe()
-        }
-    }
-
-    func restoreExposureBias() async {
-        let original = stateLock.withLock { () -> Float? in
-            defer { bracketOriginalBias = nil }
-            return bracketOriginalBias
-        }
-        guard let original else { return }
-        _ = await setExposureBias(original)
-    }
-
-    func cancelProbe() {
-        stateLock.withLock {
-            probeContinuation?.resume(returning: nil)
-            clearProbeState()
-        }
-        Task { await restoreExposureBias() }
     }
 
     private func configureSession() throws {
@@ -223,7 +189,7 @@ final class CameraService: NSObject, ObservableObject, @unchecked Sendable {
         let value = CameraCapabilities(
             horizontalFieldOfViewDegrees: Double(device.activeFormat.videoFieldOfView),
             minimumZoomFactor: Double(device.minAvailableVideoZoomFactor),
-            maximumZoomFactor: min(Double(device.maxAvailableVideoZoomFactor), 12),
+            maximumZoomFactor: Double(device.maxAvailableVideoZoomFactor),
             currentZoomFactor: Double(device.videoZoomFactor)
         )
         Task { @MainActor in self.capabilities = value }
@@ -247,34 +213,6 @@ final class CameraService: NSObject, ObservableObject, @unchecked Sendable {
         ) { [weak self] _ in self?.start() }
     }
 
-    private func setExposureBias(_ requested: Float) async -> Bool {
-        await withCheckedContinuation { continuation in
-            sessionQueue.async { [weak self] in
-                guard let device = self?.device else {
-                    continuation.resume(returning: false)
-                    return
-                }
-                let target = min(
-                    max(requested, device.minExposureTargetBias),
-                    device.maxExposureTargetBias
-                )
-                guard abs(target) >= 1 || requested == 0 else {
-                    continuation.resume(returning: false)
-                    return
-                }
-                do {
-                    try device.lockForConfiguration()
-                    device.setExposureTargetBias(target) { _ in
-                        continuation.resume(returning: true)
-                    }
-                    device.unlockForConfiguration()
-                } catch {
-                    continuation.resume(returning: false)
-                }
-            }
-        }
-    }
-
     private static func currentPermissionState() -> CameraPermissionState {
         switch AVCaptureDevice.authorizationStatus(for: .video) {
         case .authorized: .granted
@@ -292,7 +230,11 @@ extension CameraService: AVCaptureVideoDataOutputSampleBufferDelegate {
     ) {
         let timestamp = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
         let nanoseconds = Int64(CMTimeGetSeconds(timestamp) * 1_000_000_000)
-        guard nanoseconds - lastAnalysisNanoseconds >= 100_000_000 else { return }
+        let captureToken = stateLock.withLock { pendingFrameCaptureToken }
+        guard captureToken != nil
+            || nanoseconds - lastAnalysisNanoseconds >= Self.analysisIntervalNanoseconds else {
+            return
+        }
         guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer),
               let device,
               let plane = copyLuminancePlane(pixelBuffer),
@@ -301,7 +243,7 @@ extension CameraService: AVCaptureVideoDataOutputSampleBufferDelegate {
         }
 
         let currentConfiguration = stateLock.withLock { configuration }
-        guard let snapshot = analyzer.analyze(
+        guard let result = analyzer.analyze(
             plane: plane,
             metadata: metadata,
             timestampNanoseconds: nanoseconds,
@@ -310,14 +252,25 @@ extension CameraService: AVCaptureVideoDataOutputSampleBufferDelegate {
             return
         }
         lastAnalysisNanoseconds = nanoseconds
-        stateLock.withLock {
-            latestSnapshot = snapshot
-        }
+        onMeteringResult?(result)
 
-        if let image = makePortraitImage(pixelBuffer) {
-            onFrame?(CameraAnalyzedFrame(snapshot: snapshot, image: image))
+        guard let captureToken,
+              let snapshot = analyzer.makeSnapshot(
+                plane: plane,
+                result: result,
+                configuration: currentConfiguration
+              ),
+              let image = makePortraitImage(pixelBuffer) else {
+            return
         }
-        completeProbeIfReady(snapshot)
+        let shouldDeliver = stateLock.withLock {
+            guard pendingFrameCaptureToken == captureToken else { return false }
+            pendingFrameCaptureToken = nil
+            return true
+        }
+        if shouldDeliver {
+            onFrameCaptured?(CameraCapturedFrame(snapshot: snapshot, image: image))
+        }
     }
 
     private func exposureMetadata(
@@ -328,7 +281,7 @@ extension CameraService: AVCaptureVideoDataOutputSampleBufferDelegate {
             allocator: kCFAllocatorDefault,
             target: sampleBuffer,
             attachmentMode: kCMAttachmentMode_ShouldPropagate
-        ) as? NSDictionary,
+        ) as NSDictionary?,
            let exif = attachments.object(
             forKey: kCGImagePropertyExifDictionary
            ) as? NSDictionary,
@@ -383,7 +336,7 @@ extension CameraService: AVCaptureVideoDataOutputSampleBufferDelegate {
         let source = baseAddress.assumingMemoryBound(to: UInt8.self)
         var values = [UInt8](repeating: 0, count: width * height)
         for row in 0..<height {
-            values.withUnsafeMutableBytes { destination in
+            _ = values.withUnsafeMutableBytes { destination in
                 memcpy(
                     destination.baseAddress!.advanced(by: row * width),
                     source.advanced(by: row * bytesPerRow),
@@ -407,29 +360,7 @@ extension CameraService: AVCaptureVideoDataOutputSampleBufferDelegate {
         return ciContext.createCGImage(image, from: image.extent)
     }
 
-    private func completeProbeIfReady(_ snapshot: ExposureSnapshot) {
-        stateLock.withLock {
-            guard probeContinuation != nil else { return }
-            if probeDiscardCount > 0 || device?.isAdjustingExposure == true {
-                probeDiscardCount = max(probeDiscardCount - 1, 0)
-                return
-            }
-            if let baseline = probeBaselineSettingEV {
-                let current = MeteringEngine.cameraSettingEV100(snapshot.metadata)
-                guard (current - baseline) * probeDirection >= 0.8 else { return }
-            }
-            probeContinuation?.resume(returning: snapshot)
-            clearProbeState()
-        }
-    }
-
-    private func clearProbeState() {
-        probeContinuation = nil
-        probeDiscardCount = 0
-        probeToken = nil
-        probeBaselineSettingEV = nil
-        probeDirection = 0
-    }
+    private static let analysisIntervalNanoseconds: Int64 = 200_000_000
 }
 
 private enum CameraError: LocalizedError {

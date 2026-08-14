@@ -7,6 +7,7 @@ import com.lightmeter.app.metering.MeteringMode
 import com.lightmeter.app.metering.MeteringResult
 import com.lightmeter.app.settings.AppSettings
 import com.lightmeter.app.settings.AppSettingsStore
+import com.lightmeter.app.ui.theme.AppThemeStyle
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
@@ -76,7 +77,9 @@ class MeteringViewModelTest {
 
     @Test
     fun savedSettingsAreRestoredByANewViewModel() {
-        val store = InMemoryAppSettingsStore()
+        val store = InMemoryAppSettingsStore(
+            AppSettings(themeStyle = AppThemeStyle.LIGHT),
+        )
         val firstViewModel = MeteringViewModel(store)
         firstViewModel.selectIso(400)
         firstViewModel.selectExposureCompensation(2.0 / 3.0)
@@ -97,6 +100,30 @@ class MeteringViewModelTest {
         assertEquals(FilmLatitudePreset.KODAK_E100, restoredState.filmLatitudePreset)
         assertEquals(2.0 / 3.0, restoredState.highlightLatitudeStops, 0.0001)
         assertEquals(5.0 / 3.0, restoredState.shadowLatitudeStops, 0.0001)
+        assertEquals(AppThemeStyle.LIGHT, store.load().themeStyle)
+    }
+
+    @Test
+    fun appThemeDefaultsToDark() {
+        assertEquals(AppThemeStyle.DARK, AppSettings().themeStyle)
+    }
+
+    @Test
+    fun calibrationOffsetIsRestoredAndApplied() {
+        val store = InMemoryAppSettingsStore(
+            AppSettings(
+                calibrationOffset = 0.4,
+                grayCardCalibrationCompleted = true,
+                grayCardCalibrationPromptSeen = true,
+            ),
+        )
+        val viewModel = MeteringViewModel(store)
+
+        assertEquals(0.4, viewModel.state.value.calibrationOffset, 1e-9)
+
+        viewModel.applyCalibrationOffset(-0.2)
+
+        assertEquals(-0.2, viewModel.state.value.calibrationOffset, 1e-9)
     }
 
     @Test
@@ -204,8 +231,9 @@ class MeteringViewModelTest {
     }
 }
 
-private class InMemoryAppSettingsStore : AppSettingsStore {
-    private var settings = AppSettings()
+private class InMemoryAppSettingsStore(
+    private var settings: AppSettings = AppSettings(),
+) : AppSettingsStore {
 
     override fun load() = settings
 

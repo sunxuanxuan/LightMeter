@@ -1,9 +1,6 @@
 import Foundation
 
 public final class MeteringEngine: @unchecked Sendable {
-    private var previousEV: Double?
-    private var previousConfiguration: MeteringConfiguration?
-
     public init() {}
 
     public func analyze(
@@ -11,8 +8,8 @@ public final class MeteringEngine: @unchecked Sendable {
         metadata: CameraExposureMetadata,
         timestampNanoseconds: Int64,
         configuration: MeteringConfiguration
-    ) -> ExposureSnapshot? {
-        guard metadata.isValid else { return nil }
+    ) -> MeteringResult? {
+        guard metadata.isValid, configuration.isZoomReady else { return nil }
         guard let measured = measuredLuminance(
             plane: plane,
             configuration: configuration
@@ -23,25 +20,7 @@ public final class MeteringEngine: @unchecked Sendable {
         let settingEV = Self.cameraSettingEV100(metadata)
         let rawEV = settingEV + log2(measured / Self.targetLuminance)
             + configuration.calibrationOffset
-        let smoothedEV: Double
-        if previousConfiguration != configuration {
-            smoothedEV = rawEV
-        } else if let previousEV {
-            smoothedEV = previousEV * 0.75 + rawEV * 0.25
-        } else {
-            smoothedEV = rawEV
-        }
-        previousConfiguration = configuration
-        previousEV = smoothedEV
-
-        let map = exposureMap(
-            plane: plane,
-            settingEV: settingEV,
-            timestampNanoseconds: timestampNanoseconds,
-            configuration: configuration
-        )
-        return ExposureSnapshot(
-            exposureMap: map,
+        return MeteringResult(
             meteredEV100: rawEV,
             measuredLuminance: measured,
             metadata: metadata,
@@ -50,9 +29,26 @@ public final class MeteringEngine: @unchecked Sendable {
         )
     }
 
-    public func resetSmoothing() {
-        previousEV = nil
-        previousConfiguration = nil
+    public func makeSnapshot(
+        plane: LuminancePlane,
+        result: MeteringResult,
+        configuration: MeteringConfiguration
+    ) -> ExposureSnapshot? {
+        guard result.revision == configuration.revision else { return nil }
+        let map = exposureMap(
+            plane: plane,
+            settingEV: Self.cameraSettingEV100(result.metadata),
+            timestampNanoseconds: result.timestampNanoseconds,
+            configuration: configuration
+        )
+        return ExposureSnapshot(
+            exposureMap: map,
+            meteredEV100: result.meteredEV100,
+            measuredLuminance: result.measuredLuminance,
+            metadata: result.metadata,
+            timestampNanoseconds: result.timestampNanoseconds,
+            revision: result.revision
+        )
     }
 
     public static func cameraSettingEV100(_ metadata: CameraExposureMetadata) -> Double {

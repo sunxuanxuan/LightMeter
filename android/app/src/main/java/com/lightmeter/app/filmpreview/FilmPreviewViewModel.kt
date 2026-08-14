@@ -64,6 +64,18 @@ class FilmPreviewViewModel(
         }
     }
 
+    fun invalidateMetering() {
+        mutableState.update { current ->
+            val preset = current.selectedPreset ?: return@update current
+            current.copy(
+                isFrozen = false,
+                meteredEv100 = null,
+                evaluation = FilmPreviewEngine.evaluate(null, preset),
+                errorMessage = null,
+            )
+        }
+    }
+
     fun freezePreview() {
         mutableState.update {
             if (!it.isCameraReady || it.meteredEv100 == null || it.isFrozen) {

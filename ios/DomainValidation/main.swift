@@ -24,6 +24,24 @@ let recommendation = ExposureEngine.recommendation(
 check(recommendation != nil, "exposure recommendation exists")
 check(recommendation!.primary.error <= 1.0 / 6.0, "exposure error tolerance")
 
+let aperturePair = ExposureEngine.closestPair(apertureLabel: "f/8", targetEV: 12)
+check(aperturePair?.apertureLabel == "f/8", "selected aperture is retained")
+check((aperturePair?.error ?? 1) <= 1.0 / 6.0, "selected aperture matches target EV")
+let shutterPair = ExposureEngine.closestPair(shutterLabel: "1/125", targetEV: 12)
+check(shutterPair?.shutterLabel == "1/125", "selected shutter is retained")
+check((shutterPair?.error ?? 1) <= 1.0 / 6.0, "selected shutter matches target EV")
+
+var presetSettings = AppSettings()
+presetSettings.meteringMode = .spot
+presetSettings.cameraMeteringPreset = .canonAL1
+presetSettings.normalize()
+check(presetSettings.meteringMode == .centerWeighted, "camera preset selects center weighted")
+check(presetSettings.centerAreaPercent == 40, "camera preset center area")
+check(presetSettings.centerWeightPercent == 65, "camera preset center weight")
+presetSettings.focalLengthMillimeters = 180
+presetSettings.normalize()
+check(presetSettings.focalLengthMillimeters == 150, "focal length maximum")
+
 check(
     MeteringEngine.normalizedLuminance(16, isVideoRange: true) == 0,
     "video range black"
@@ -93,6 +111,29 @@ let mask = ExposureRiskEngine.calculate(
 check(mask.highlightRatio == 0, "viewfinder risk clipping")
 check(mask.bgra[7] == 0, "outside risk pixel transparency")
 
+let boundaryMap = ExposureMap(
+    width: 6,
+    height: 1,
+    pixelEV100: [13, 13.04, 13.11, 7, 6.96, 6.89],
+    rawLuminance: [128, 128, 128, 128, 128, 128],
+    clippedHighlights: [false, false, false, false, false, false],
+    timestampNanoseconds: 1,
+    revision: 1
+)
+let boundaryMask = ExposureRiskEngine.calculate(
+    baseline: boundaryMap,
+    viewfinder: .full,
+    referenceEV100: 10,
+    highlightLatitude: 3,
+    shadowLatitude: 3
+)
+check(boundaryMask.bgra[3] == 0, "highlight boundary is not risk")
+check(boundaryMask.bgra[7] == 0, "highlight rounds to boundary")
+check(boundaryMask.bgra[11] > 0, "highlight beyond boundary is risk")
+check(boundaryMask.bgra[15] == 0, "shadow boundary is not risk")
+check(boundaryMask.bgra[19] == 0, "shadow rounds to boundary")
+check(boundaryMask.bgra[23] > 0, "shadow beyond boundary is risk")
+
 check(
     ViewfinderEngine.constrainedZoom(
         fitZoomFactor: 12,
@@ -102,4 +143,45 @@ check(
     "zoom capability limit"
 )
 
-print("Domain validation passed: 16 checks")
+let supportedFocalRange = ViewfinderEngine.supportedFocalLengthRange(
+    previewAspectRatio: 9.0 / 16.0,
+    frameFormat: .film135,
+    cameraHorizontalFieldOfViewDegrees: 60,
+    minimumZoomFactor: 1,
+    maximumZoomFactor: 8,
+    allowedRange: 20...150
+)
+check((supportedFocalRange?.lowerBound ?? 0) >= 20, "hardware focal minimum")
+check((supportedFocalRange?.upperBound ?? 151) <= 150, "hardware focal maximum")
+check(
+    ViewfinderEngine.supportedFocalLengthRange(
+        previewAspectRatio: 9.0 / 16.0,
+        frameFormat: .film66,
+        cameraHorizontalFieldOfViewDegrees: 20,
+        minimumZoomFactor: 1,
+        maximumZoomFactor: 1,
+        allowedRange: 100...150
+    ) == nil,
+    "hardware focal range without intersection"
+)
+
+var zoomingConfiguration = MeteringConfiguration()
+zoomingConfiguration.isZoomReady = false
+let zoomingResult = MeteringEngine().analyze(
+    plane: LuminancePlane(
+        width: 1,
+        height: 1,
+        values: [128],
+        isVideoRange: true
+    ),
+    metadata: CameraExposureMetadata(
+        exposureSeconds: 1.0 / 125,
+        sensitivityISO: 100,
+        aperture: 2.8
+    ),
+    timestampNanoseconds: 1,
+    configuration: zoomingConfiguration
+)
+check(zoomingResult == nil, "metering waits for zoom readiness")
+
+print("Domain validation passed: 34 checks")

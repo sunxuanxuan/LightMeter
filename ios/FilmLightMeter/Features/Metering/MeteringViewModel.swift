@@ -1,5 +1,6 @@
 import Combine
 import CoreGraphics
+import CoreImage
 import Foundation
 
 @MainActor
@@ -8,11 +9,17 @@ final class MeteringViewModel: ObservableObject {
     @Published private(set) var displayedEV100: Double?
     @Published private(set) var recommendation: ExposureRecommendation?
     @Published private(set) var frozenImage: CGImage?
+    @Published private(set) var simulatedFrozenImage: CGImage?
     @Published private(set) var riskImage: CGImage?
     @Published private(set) var highlightRiskRatio = 0.0
     @Published private(set) var shadowRiskRatio = 0.0
     @Published private(set) var viewfinder = NormalizedRect.full
+    @Published private(set) var spotMeteringPoint: NormalizedPoint?
+    @Published private(set) var focalLengthRange: ClosedRange<Double> = 20...150
     @Published private(set) var actualZoomFactor = 1.0
+    @Published private(set) var isZoomLimited = false
+    @Published private(set) var isZoomReady = false
+    @Published private(set) var isExposureSimulationEnabled = false
     @Published private(set) var isFrozen = false
     @Published private(set) var isFreezing = false
     @Published private(set) var errorMessage: String?
@@ -22,15 +29,14 @@ final class MeteringViewModel: ObservableObject {
 
     private let settingsStore: SettingsStore
     private var configuration = MeteringConfiguration()
-    private var latestFrame: CameraAnalyzedFrame?
+    private var selectedAperture: Double?
     private var frozenSnapshot: ExposureSnapshot?
-    private var shadowProbe: ExposureMap?
-    private var highlightProbe: ExposureMap?
     private var previewAspectRatio = 9.0 / 16.0
     private var previousDisplayedEV: Double?
     private var cancellables = Set<AnyCancellable>()
-    private var freezeTask: Task<Void, Never>?
     private var riskTask: Task<Void, Never>?
+    private var simulationTask: Task<Void, Never>?
+    private var zoomRequestID = UUID()
 
     init(
         camera: CameraService = CameraService(),
@@ -39,8 +45,11 @@ final class MeteringViewModel: ObservableObject {
         self.camera = camera
         self.settingsStore = settingsStore
         settings = settingsStore.load()
-        camera.onFrame = { [weak self] frame in
-            Task { @MainActor in self?.receive(frame) }
+        camera.onMeteringResult = { [weak self] result in
+            Task { @MainActor in self?.receive(result) }
+        }
+        camera.onFrameCaptured = { [weak self] frame in
+            Task { @MainActor in self?.receiveCapturedFrame(frame) }
         }
         camera.$errorMessage
             .receive(on: DispatchQueue.main)
@@ -59,13 +68,30 @@ final class MeteringViewModel: ObservableObject {
     }
 
     func start() {
-        Task { await camera.requestAccessAndStart() }
+        Task {
+            await camera.requestAccessAndStart()
+            applyFocalLength(invalidateMetering: !isFrozen)
+        }
     }
 
     func stop() {
-        freezeTask?.cancel()
+        zoomRequestID = UUID()
+        isZoomReady = false
         riskTask?.cancel()
+        simulationTask?.cancel()
+        if isFreezing {
+            camera.cancelFrameCapture()
+            isFreezing = false
+        }
         camera.stop()
+    }
+
+    func leaveProfessionalMode() {
+        if isFrozen || isFreezing {
+            resumeLive()
+        }
+        restoreMeteringMode()
+        stop()
     }
 
     func updatePreviewSize(width: Double, height: Double) {
@@ -77,10 +103,12 @@ final class MeteringViewModel: ObservableObject {
     }
 
     func selectSpot(x: Double, y: Double) {
-        guard !isFrozen else { return }
+        guard !isFrozen, !isFreezing, viewfinder.contains(x: x, y: y) else { return }
+        let point = NormalizedPoint(x: x, y: y)
         configuration.mode = .spot
-        configuration.spotPoint = NormalizedPoint(x: x, y: y)
+        configuration.spotPoint = point
         configuration.revision += 1
+        spotMeteringPoint = point
         camera.updateConfiguration(configuration)
     }
 
@@ -88,6 +116,7 @@ final class MeteringViewModel: ObservableObject {
         configuration.mode = settings.meteringMode
         configuration.spotPoint = nil
         configuration.revision += 1
+        spotMeteringPoint = nil
         camera.updateConfiguration(configuration)
     }
 
@@ -105,25 +134,95 @@ final class MeteringViewModel: ObservableObject {
         updateRecommendation()
         if isFrozen {
             recalculateRisk()
+            recalculateFrozenSimulation()
         }
     }
 
+    func stepAperture(_ delta: Int) {
+        guard delta != 0,
+              let recommendation,
+              let currentIndex = ExposureEngine.apertureLabels.firstIndex(
+                of: recommendation.primary.apertureLabel
+              ) else {
+            return
+        }
+        let nextIndex = min(
+            max(currentIndex + delta, 0),
+            ExposureEngine.apertureLabels.count - 1
+        )
+        guard let pair = ExposureEngine.closestPair(
+            apertureLabel: ExposureEngine.apertureLabels[nextIndex],
+            targetEV: recommendation.targetEV
+        ) else {
+            return
+        }
+        selectedAperture = pair.aperture
+        self.recommendation = ExposureRecommendation(
+            targetEV: recommendation.targetEV,
+            primary: pair,
+            equivalents: recommendation.equivalents
+        )
+    }
+
+    func stepShutter(_ delta: Int) {
+        guard delta != 0,
+              let recommendation,
+              let currentIndex = ExposureEngine.shutterLabels.firstIndex(
+                of: recommendation.primary.shutterLabel
+              ) else {
+            return
+        }
+        let nextIndex = min(
+            max(currentIndex + delta, 0),
+            ExposureEngine.shutterLabels.count - 1
+        )
+        guard let pair = ExposureEngine.closestPair(
+            shutterLabel: ExposureEngine.shutterLabels[nextIndex],
+            targetEV: recommendation.targetEV
+        ) else {
+            return
+        }
+        selectedAperture = pair.aperture
+        self.recommendation = ExposureRecommendation(
+            targetEV: recommendation.targetEV,
+            primary: pair,
+            equivalents: recommendation.equivalents
+        )
+    }
+
     func setFocalLength(_ value: Double) {
-        guard !isFrozen else { return }
-        settings.focalLengthMillimeters = value
+        guard !isFrozen, !isFreezing else { return }
+        settings.focalLengthMillimeters = min(
+            max(value, focalLengthRange.lowerBound),
+            focalLengthRange.upperBound
+        )
         settings.normalize()
         persistSettings()
+        restoreMeteringMode()
         applyFocalLength()
     }
 
     func applySettings(_ newSettings: AppSettings) {
-        settings = newSettings
-        settings.normalize()
-        if persistSettings() {
-            showsSettings = false
-            refreshConfiguration(invalidate: true)
-            applyFocalLength()
-            updateRecommendation()
+        var normalized = newSettings
+        normalized.normalize()
+        do {
+            try settingsStore.save(normalized)
+        } catch {
+            errorMessage = "设置保存失败：\(error.localizedDescription)"
+            return
+        }
+        if isFreezing {
+            resumeLive()
+        }
+        let preserveFrozenFrame = isFrozen
+        settings = normalized
+        showsSettings = false
+        refreshConfiguration(invalidate: !preserveFrozenFrame)
+        applyFocalLength(invalidateMetering: !preserveFrozenFrame)
+        updateRecommendation()
+        if preserveFrozenFrame {
+            recalculateRisk()
+            recalculateFrozenSimulation()
         }
     }
 
@@ -135,86 +234,77 @@ final class MeteringViewModel: ObservableObject {
         }
     }
 
+    func toggleExposureSimulation() {
+        guard isFrozen, riskImage != nil, simulatedFrozenImage != nil else { return }
+        isExposureSimulationEnabled.toggle()
+    }
+
     func dismissError() {
         errorMessage = nil
     }
 
-    private func receive(_ frame: CameraAnalyzedFrame) {
-        latestFrame = frame
-        guard !isFrozen, !isFreezing,
-              frame.snapshot.revision == configuration.revision else {
+    private func receive(_ result: MeteringResult) {
+        guard isZoomReady, !isFrozen, !isFreezing,
+              result.revision == configuration.revision else {
             return
         }
-        let current = frame.snapshot.meteredEV100
+        let current = result.meteredEV100
         displayedEV100 = previousDisplayedEV.map { $0 * 0.75 + current * 0.25 } ?? current
         previousDisplayedEV = displayedEV100
         updateRecommendation()
     }
 
     private func freeze() {
-        guard let frame = latestFrame,
-              frame.snapshot.revision == configuration.revision else {
+        guard camera.isRunning, isZoomReady, displayedEV100 != nil else {
             errorMessage = "当前没有可冻结的稳定测光帧"
             return
         }
         isFreezing = true
+        errorMessage = nil
+        camera.requestFrameCapture()
+    }
+
+    private func receiveCapturedFrame(_ frame: CameraCapturedFrame?) {
+        guard isFreezing else { return }
+        guard let frame, frame.snapshot.revision == configuration.revision else {
+            isFreezing = false
+            errorMessage = "无法定格当前预览，请重试"
+            return
+        }
         frozenImage = frame.image
         frozenSnapshot = frame.snapshot
-        shadowProbe = nil
-        highlightProbe = nil
+        displayedEV100 = frame.snapshot.meteredEV100
+        previousDisplayedEV = displayedEV100
+        isFreezing = false
+        isFrozen = true
+        isExposureSimulationEnabled = false
+        updateRecommendation()
         recalculateRisk()
-
-        freezeTask = Task { [weak self] in
-            guard let self, let snapshot = self.frozenSnapshot else { return }
-            let reference = ExposureRiskEngine.referenceEV100(
-                frozenMeteredEV100: snapshot.meteredEV100,
-                exposureCompensation: self.settings.exposureCompensation
-            )
-            let requirements = ExposureRiskEngine.probeRequirements(
-                map: snapshot.exposureMap,
-                viewfinder: self.viewfinder,
-                referenceEV100: reference,
-                highlightLatitude: self.settings.highlightLatitude,
-                shadowLatitude: self.settings.shadowLatitude
-            )
-
-            if requirements.highlight, !Task.isCancelled {
-                self.highlightProbe = await self.camera.captureProbe(offsetStops: -2)?
-                    .exposureMap
-            }
-            if requirements.shadow, !Task.isCancelled {
-                self.shadowProbe = await self.camera.captureProbe(offsetStops: 2)?
-                    .exposureMap
-            }
-            await self.camera.restoreExposureBias()
-            guard !Task.isCancelled else { return }
-            self.isFreezing = false
-            self.isFrozen = true
-            self.recalculateRisk()
-        }
+        recalculateFrozenSimulation()
     }
 
     private func resumeLive() {
-        freezeTask?.cancel()
-        freezeTask = nil
         riskTask?.cancel()
         riskTask = nil
-        camera.cancelProbe()
+        simulationTask?.cancel()
+        simulationTask = nil
+        camera.cancelFrameCapture()
         isFreezing = false
         isFrozen = false
         frozenImage = nil
+        simulatedFrozenImage = nil
         frozenSnapshot = nil
         riskImage = nil
-        shadowProbe = nil
-        highlightProbe = nil
         highlightRiskRatio = 0
         shadowRiskRatio = 0
+        isExposureSimulationEnabled = false
     }
 
     private func recalculateRisk() {
         riskTask?.cancel()
         guard settings.exposureRiskEnabled, let snapshot = frozenSnapshot else {
             riskImage = nil
+            isExposureSimulationEnabled = false
             return
         }
         let reference = ExposureRiskEngine.referenceEV100(
@@ -225,8 +315,6 @@ final class MeteringViewModel: ObservableObject {
         let currentViewfinder = viewfinder
         let highlightLatitude = settings.highlightLatitude
         let shadowLatitude = settings.shadowLatitude
-        let currentShadowProbe = shadowProbe
-        let currentHighlightProbe = highlightProbe
         riskTask = Task {
             let mask = await Task.detached(priority: .userInitiated) {
                 ExposureRiskEngine.calculate(
@@ -234,9 +322,7 @@ final class MeteringViewModel: ObservableObject {
                     viewfinder: currentViewfinder,
                     referenceEV100: reference,
                     highlightLatitude: highlightLatitude,
-                    shadowLatitude: shadowLatitude,
-                    shadowProbe: currentShadowProbe,
-                    highlightProbe: currentHighlightProbe
+                    shadowLatitude: shadowLatitude
                 )
             }.value
             guard !Task.isCancelled else { return }
@@ -251,12 +337,48 @@ final class MeteringViewModel: ObservableObject {
             recommendation = nil
             return
         }
-        recommendation = ExposureEngine.recommendation(
+        guard let generated = ExposureEngine.recommendation(
             meteredEV100: displayedEV100,
             filmISO: settings.selectedISO,
             exposureCompensation: settings.exposureCompensation,
             focalLengthMillimeters: settings.focalLengthMillimeters
+        ) else {
+            recommendation = nil
+            return
+        }
+        let selected = selectedAperture.flatMap { aperture in
+            generated.equivalents.min(by: {
+                abs($0.aperture - aperture) < abs($1.aperture - aperture)
+            })
+        } ?? generated.primary
+        recommendation = ExposureRecommendation(
+            targetEV: generated.targetEV,
+            primary: selected,
+            equivalents: generated.equivalents
         )
+    }
+
+    private func recalculateFrozenSimulation() {
+        simulationTask?.cancel()
+        guard let frozenImage else {
+            simulatedFrozenImage = nil
+            return
+        }
+        let compensation = settings.exposureCompensation
+        guard compensation != 0 else {
+            simulatedFrozenImage = frozenImage
+            return
+        }
+        simulationTask = Task {
+            let rendered = await Task.detached(priority: .userInitiated) {
+                ExposureCompensationRenderer.render(
+                    image: frozenImage,
+                    stops: compensation
+                )
+            }.value
+            guard !Task.isCancelled else { return }
+            simulatedFrozenImage = rendered ?? frozenImage
+        }
     }
 
     @discardableResult
@@ -273,10 +395,12 @@ final class MeteringViewModel: ObservableObject {
     private func refreshConfiguration(invalidate: Bool) {
         configuration.mode = settings.meteringMode
         configuration.spotPoint = nil
+        spotMeteringPoint = nil
         configuration.spotAreaPercent = settings.spotAreaPercent
         configuration.centerAreaPercent = settings.centerAreaPercent
         configuration.centerWeightPercent = settings.centerWeightPercent
         configuration.previewAspectRatio = previewAspectRatio
+        configuration.isZoomReady = isZoomReady
         configuration.calibrationOffset = settings.calibrationOffset
         configuration.viewfinder = viewfinder
         if invalidate {
@@ -287,28 +411,70 @@ final class MeteringViewModel: ObservableObject {
         camera.updateConfiguration(configuration)
     }
 
-    private func applyFocalLength() {
+    private func applyFocalLength(invalidateMetering: Bool = true) {
         guard let capabilities = camera.capabilities else { return }
+        let supportedRange = ViewfinderEngine.supportedFocalLengthRange(
+            previewAspectRatio: previewAspectRatio,
+            frameFormat: settings.frameFormat,
+            cameraHorizontalFieldOfViewDegrees: capabilities.horizontalFieldOfViewDegrees,
+            minimumZoomFactor: capabilities.minimumZoomFactor,
+            maximumZoomFactor: capabilities.maximumZoomFactor,
+            allowedRange: 20...150
+        )
+        focalLengthRange = supportedRange ?? 20...20
+        let supportedFocalLength = min(
+            max(settings.focalLengthMillimeters, focalLengthRange.lowerBound),
+            focalLengthRange.upperBound
+        )
+        if supportedFocalLength != settings.focalLengthMillimeters {
+            settings.focalLengthMillimeters = supportedFocalLength
+            persistSettings()
+        }
         let projection = ViewfinderEngine.projection(
             previewAspectRatio: previewAspectRatio,
             frameFormat: settings.frameFormat,
-            targetFocalLengthMillimeters: settings.focalLengthMillimeters,
+            targetFocalLengthMillimeters: supportedFocalLength,
             cameraHorizontalFieldOfViewDegrees: capabilities.horizontalFieldOfViewDegrees
         )
+        isZoomLimited = projection.fitZoomFactor < capabilities.minimumZoomFactor - 0.01
+            || projection.fitZoomFactor > capabilities.maximumZoomFactor + 0.01
         let zoom = ViewfinderEngine.constrainedZoom(
             fitZoomFactor: projection.fitZoomFactor,
             minimum: capabilities.minimumZoomFactor,
             maximum: capabilities.maximumZoomFactor
         )
         viewfinder = projection.rect(actualZoomFactor: zoom)
+        isZoomReady = false
+        configuration.mode = settings.meteringMode
+        configuration.spotPoint = nil
+        spotMeteringPoint = nil
         configuration.viewfinder = viewfinder
         configuration.previewAspectRatio = previewAspectRatio
+        configuration.isZoomReady = false
         configuration.revision += 1
-        displayedEV100 = nil
-        previousDisplayedEV = nil
+        if invalidateMetering {
+            displayedEV100 = nil
+            previousDisplayedEV = nil
+        }
         camera.updateConfiguration(configuration)
+        let requestID = UUID()
+        zoomRequestID = requestID
         Task {
-            actualZoomFactor = await camera.setZoomFactor(zoom) ?? actualZoomFactor
+            let applied = await camera.setZoomFactor(zoom)
+            guard zoomRequestID == requestID else { return }
+            let effectiveZoom = applied ?? actualZoomFactor
+            actualZoomFactor = effectiveZoom
+            viewfinder = projection.rect(actualZoomFactor: effectiveZoom)
+            isZoomLimited = applied == nil
+                || projection.fitZoomFactor < capabilities.minimumZoomFactor - 0.01
+                || projection.fitZoomFactor > capabilities.maximumZoomFactor + 0.01
+            isZoomReady = true
+            configuration.viewfinder = viewfinder
+            configuration.isZoomReady = true
+            camera.updateConfiguration(configuration)
+            if isFrozen {
+                recalculateRisk()
+            }
         }
     }
 
@@ -333,4 +499,24 @@ final class MeteringViewModel: ObservableObject {
             intent: .defaultIntent
         )
     }
+}
+
+private enum ExposureCompensationRenderer {
+    static func render(
+        image: CGImage,
+        stops: Double
+    ) -> CGImage? {
+        guard stops.isFinite else { return nil }
+        if stops == 0 { return image }
+        let input = CIImage(cgImage: image)
+        let output = input.applyingFilter(
+            "CIExposureAdjust",
+            parameters: [kCIInputEVKey: stops]
+        )
+        return simulationContext.createCGImage(output, from: input.extent)
+    }
+
+    private static let simulationContext = CIContext(
+        options: [.cacheIntermediates: false]
+    )
 }

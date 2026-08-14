@@ -45,6 +45,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.GridView
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.AlertDialog
@@ -114,6 +116,7 @@ import com.lightmeter.app.metering.MeteringResult
 import com.lightmeter.app.settings.SharedPreferencesAppSettingsStore
 import com.lightmeter.app.BuildConfig
 import com.lightmeter.app.activation.DebugToolsDialog
+import com.lightmeter.app.ui.theme.AppThemeStyle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -136,6 +139,10 @@ private const val ZOOM_RATIO_TOLERANCE = 0.02f
 
 @Composable
 fun MeteringRoute(
+    calibrationOffset: Double = 0.0,
+    onExit: () -> Unit = {},
+    themeStyle: AppThemeStyle = AppThemeStyle.DARK,
+    onThemeStyleChanged: (AppThemeStyle) -> Unit = {},
     onPreviewChromeVisibilityChanged: (Boolean) -> Unit = {},
 ) {
     val context = LocalContext.current
@@ -148,6 +155,10 @@ fun MeteringRoute(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val activity = remember(context) { context.findActivity() }
     var hasRequestedPermission by rememberSaveable { mutableStateOf(false) }
+
+    LaunchedEffect(calibrationOffset) {
+        viewModel.applyCalibrationOffset(calibrationOffset)
+    }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
@@ -206,6 +217,9 @@ fun MeteringRoute(
         onFreezePreview = viewModel::freezePreview,
         onResumeLive = viewModel::resumeLivePreview,
         onFreezeCaptureFailed = viewModel::onFreezeCaptureFailed,
+        onExit = onExit,
+        themeStyle = themeStyle,
+        onThemeStyleChanged = onThemeStyleChanged,
         onPreviewChromeVisibilityChanged = onPreviewChromeVisibilityChanged,
     )
 }
@@ -240,6 +254,9 @@ private fun MeteringScreen(
     onFreezePreview: () -> Unit,
     onResumeLive: () -> Unit,
     onFreezeCaptureFailed: () -> Unit,
+    onExit: () -> Unit,
+    themeStyle: AppThemeStyle,
+    onThemeStyleChanged: (AppThemeStyle) -> Unit,
     onPreviewChromeVisibilityChanged: (Boolean) -> Unit,
 ) {
     Box(
@@ -275,6 +292,9 @@ private fun MeteringScreen(
                 onFreezePreview = onFreezePreview,
                 onResumeLive = onResumeLive,
                 onFreezeCaptureFailed = onFreezeCaptureFailed,
+                onExit = onExit,
+                themeStyle = themeStyle,
+                onThemeStyleChanged = onThemeStyleChanged,
                 onPreviewChromeVisibilityChanged = onPreviewChromeVisibilityChanged,
             )
 
@@ -321,6 +341,9 @@ private fun CameraContent(
     onFreezePreview: () -> Unit,
     onResumeLive: () -> Unit,
     onFreezeCaptureFailed: () -> Unit,
+    onExit: () -> Unit,
+    themeStyle: AppThemeStyle,
+    onThemeStyleChanged: (AppThemeStyle) -> Unit,
     onPreviewChromeVisibilityChanged: (Boolean) -> Unit,
 ) {
     var frozenFrame by remember { mutableStateOf<Bitmap?>(null) }
@@ -332,6 +355,7 @@ private fun CameraContent(
     var cameraZoomState by remember { mutableStateOf(CameraZoomState()) }
     var zoomSettleTimedOut by remember { mutableStateOf(false) }
     var frozenChromeVisible by rememberSaveable { mutableStateOf(true) }
+    var showSettings by rememberSaveable { mutableStateOf(false) }
     val selectedFrameAspectRatio = remember(state.frameFormat) {
         min(state.frameFormat.frameWidthMm, state.frameFormat.frameHeightMm) /
             max(state.frameFormat.frameWidthMm, state.frameFormat.frameHeightMm)
@@ -663,6 +687,15 @@ private fun CameraContent(
                 }
 
                 if (!state.isFrozen || frozenChromeVisible) {
+                    PreviewTopControls(
+                        onExit = onExit,
+                        onOpenSettings = { showSettings = true },
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                    )
+
                     ExposureScaleOverlay(
                         apertureCandidates = state.apertureCandidates,
                         shutterCandidates = state.shutterCandidates,
@@ -717,6 +750,10 @@ private fun CameraContent(
             onHighlightLatitudeChanged = onHighlightLatitudeChanged,
             onShadowLatitudeChanged = onShadowLatitudeChanged,
             onSaveSettings = onSaveSettings,
+            showSettings = showSettings,
+            onShowSettingsChanged = { showSettings = it },
+            themeStyle = themeStyle,
+            onThemeStyleChanged = onThemeStyleChanged,
             onExposureCompensationSelected = onExposureCompensationSelected,
             zoomRatio = cameraZoomState.zoomRatio,
             zoomLimited = targetZoomRatio < cameraZoomState.minZoomRatio - 0.01f ||
@@ -811,6 +848,62 @@ private fun NormalizedMeteringRect.toComposeRect(
         right = (right * viewWidth).toFloat(),
         bottom = (bottom * viewHeight).toFloat(),
     )
+}
+
+@Composable
+private fun PreviewTopControls(
+    onExit: () -> Unit,
+    onOpenSettings: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Surface(
+            modifier = Modifier.clickable(onClick = onExit),
+            color = Color.Black.copy(alpha = 0.68f),
+            shape = RoundedCornerShape(24.dp),
+            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)),
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.GridView,
+                    contentDescription = null,
+                    tint = PreviewAccent,
+                    modifier = Modifier.size(22.dp),
+                )
+                Text(
+                    text = "模式",
+                    color = PreviewAccent,
+                    style = MaterialTheme.typography.titleMedium,
+                )
+            }
+        }
+
+        Surface(
+            modifier = Modifier
+                .size(48.dp)
+                .clickable(onClick = onOpenSettings),
+            color = Color.Black.copy(alpha = 0.68f),
+            shape = CircleShape,
+            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)),
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    imageVector = Icons.Outlined.Settings,
+                    contentDescription = "设置",
+                    tint = PreviewAccent,
+                    modifier = Modifier.size(24.dp),
+                )
+            }
+        }
+    }
 }
 
 @Composable
@@ -1500,6 +1593,10 @@ private fun ExposurePanel(
     onHighlightLatitudeChanged: (Double) -> Unit,
     onShadowLatitudeChanged: (Double) -> Unit,
     onSaveSettings: () -> Boolean,
+    showSettings: Boolean,
+    onShowSettingsChanged: (Boolean) -> Unit,
+    themeStyle: AppThemeStyle,
+    onThemeStyleChanged: (AppThemeStyle) -> Unit,
     onExposureCompensationSelected: (Double) -> Unit,
     zoomRatio: Float,
     zoomLimited: Boolean,
@@ -1509,7 +1606,6 @@ private fun ExposurePanel(
     onFocalLengthChanged: (Double) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    var showSettings by rememberSaveable { mutableStateOf(false) }
     var quickSetting by rememberSaveable { mutableStateOf<QuickSetting?>(null) }
     var showDebugTools by rememberSaveable { mutableStateOf(false) }
 
@@ -1528,27 +1624,13 @@ private fun ExposurePanel(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 ParameterValue(
-                    label = "EV",
+                    label = "EV100",
                     value = state.ev100Metered?.let { "%.1f".format(it) } ?: "--",
                     horizontalAlignment = Alignment.Start,
                     modifier = Modifier.weight(1f),
                 )
-                FocalLengthSlider(
-                    frameFormat = state.frameFormat,
-                    focalLengthMm = state.focalLengthMm,
-                    zoomRatio = zoomRatio,
-                    zoomLimited = zoomLimited,
-                    minimumFocalLengthMm = minimumFocalLengthMm,
-                    maximumFocalLengthMm = maximumFocalLengthMm,
-                    hasSupportedFocalRange = hasSupportedFocalRange,
-                    enabled = !state.isFrozen,
-                    onFocalLengthChanged = onFocalLengthChanged,
-                    modifier = Modifier
-                        .weight(1.45f)
-                        .padding(horizontal = 10.dp),
-                )
                 ParameterValue(
-                    label = "推荐",
+                    label = "曝光组合",
                     value = state.primaryExposure?.let {
                         "${it.apertureLabel}  ${it.shutterLabel}"
                     } ?: "--",
@@ -1579,12 +1661,18 @@ private fun ExposurePanel(
 
             Spacer(modifier = Modifier.height(6.dp))
 
-            OutlinedButton(
-                onClick = { showSettings = true },
+            FocalLengthSlider(
+                frameFormat = state.frameFormat,
+                focalLengthMm = state.focalLengthMm,
+                zoomRatio = zoomRatio,
+                zoomLimited = zoomLimited,
+                minimumFocalLengthMm = minimumFocalLengthMm,
+                maximumFocalLengthMm = maximumFocalLengthMm,
+                hasSupportedFocalRange = hasSupportedFocalRange,
+                enabled = !state.isFrozen,
+                onFocalLengthChanged = onFocalLengthChanged,
                 modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text("设置")
-            }
+            )
 
             if (BuildConfig.DEBUG) {
                 Spacer(modifier = Modifier.height(6.dp))
@@ -1636,6 +1724,7 @@ private fun ExposurePanel(
             selectedFilmLatitudePreset = state.filmLatitudePreset,
             highlightLatitudeStops = state.highlightLatitudeStops,
             shadowLatitudeStops = state.shadowLatitudeStops,
+            themeStyle = themeStyle,
             onFrameFormatSelected = onFrameFormatSelected,
             onMeteringPresetSelected = onMeteringPresetSelected,
             onCameraMeteringPresetSelected = onCameraMeteringPresetSelected,
@@ -1646,12 +1735,13 @@ private fun ExposurePanel(
             onFilmLatitudePresetSelected = onFilmLatitudePresetSelected,
             onHighlightLatitudeChanged = onHighlightLatitudeChanged,
             onShadowLatitudeChanged = onShadowLatitudeChanged,
+            onThemeStyleChanged = onThemeStyleChanged,
             onSave = {
                 if (onSaveSettings()) {
-                    showSettings = false
+                    onShowSettingsChanged(false)
                 }
             },
-            onDismiss = { showSettings = false },
+            onDismiss = { onShowSettingsChanged(false) },
         )
     }
 
@@ -1681,6 +1771,7 @@ private fun AppSettingsDialog(
     selectedFilmLatitudePreset: FilmLatitudePreset?,
     highlightLatitudeStops: Double,
     shadowLatitudeStops: Double,
+    themeStyle: AppThemeStyle,
     onFrameFormatSelected: (FrameFormat) -> Unit,
     onMeteringPresetSelected: (MeteringMode) -> Unit,
     onCameraMeteringPresetSelected: (CameraMeteringPreset?) -> Unit,
@@ -1691,12 +1782,14 @@ private fun AppSettingsDialog(
     onFilmLatitudePresetSelected: (FilmLatitudePreset?) -> Unit,
     onHighlightLatitudeChanged: (Double) -> Unit,
     onShadowLatitudeChanged: (Double) -> Unit,
+    onThemeStyleChanged: (AppThemeStyle) -> Unit,
     onSave: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     var frameFormatExpanded by rememberSaveable { mutableStateOf(true) }
     var meteringExpanded by rememberSaveable { mutableStateOf(false) }
     var exposureRiskExpanded by rememberSaveable { mutableStateOf(false) }
+    var appearanceExpanded by rememberSaveable { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1708,6 +1801,24 @@ private fun AppSettingsDialog(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
+                CollapsibleSettingsSection(
+                    title = "外观",
+                    expanded = appearanceExpanded,
+                    onToggle = { appearanceExpanded = !appearanceExpanded },
+                ) {
+                    OptionRow {
+                        AppThemeStyle.entries
+                            .filter(AppThemeStyle::available)
+                            .forEach { style ->
+                                ChoiceButton(
+                                    text = style.displayName,
+                                    selected = themeStyle == style,
+                                    onClick = { onThemeStyleChanged(style) },
+                                )
+                            }
+                    }
+                }
+
                 CollapsibleSettingsSection(
                     title = "画幅选择",
                     expanded = frameFormatExpanded,

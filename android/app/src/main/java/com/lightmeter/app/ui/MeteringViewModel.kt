@@ -50,6 +50,9 @@ data class MeteringUiState(
     val shutterCandidates: List<String> = shutterStops.map(ShutterStop::label),
     val selectedAperture: Double? = null,
     val calibrationOffset: Double = 0.0,
+    val grayCardCalibrationCompleted: Boolean = false,
+    val grayCardCalibrationPromptSeen: Boolean = false,
+    val grayCardCalibrationSignature: String? = null,
     val exposureRiskEnabled: Boolean = true,
     val highlightLatitudeStops: Double = 4.0,
     val shadowLatitudeStops: Double = 3.0,
@@ -69,7 +72,11 @@ class MeteringViewModel(
     val state: StateFlow<MeteringUiState> = mutableState.asStateFlow()
 
     fun saveSettings(): Boolean {
-        val saved = settingsStore.save(mutableState.value.toAppSettings())
+        val saved = settingsStore.save(
+            mutableState.value.toAppSettings().copy(
+                themeStyle = settingsStore.load().themeStyle,
+            ),
+        )
         if (!saved) {
             mutableState.update { it.copy(errorMessage = "设置保存失败，请重试") }
         }
@@ -111,6 +118,19 @@ class MeteringViewModel(
                 isCameraReady = false,
                 errorMessage = error.message ?: "Camera initialization failed",
             )
+        }
+    }
+
+    fun applyCalibrationOffset(offset: Double) {
+        if (!offset.isFinite()) return
+        mutableState.update {
+            if (abs(it.calibrationOffset - offset) < 1e-9) return@update it
+            it.copy(
+                calibrationOffset = offset.coerceIn(
+                    MIN_CALIBRATION_OFFSET,
+                    MAX_CALIBRATION_OFFSET,
+                ),
+            ).withInvalidatedMetering()
         }
     }
 
@@ -430,8 +450,18 @@ class MeteringViewModel(
                     MAX_LATITUDE_STOPS,
                 ),
                 filmLatitudePreset = settings.filmLatitudePreset,
+                calibrationOffset = settings.calibrationOffset
+                    .takeIf(Double::isFinite)
+                    ?.coerceIn(MIN_CALIBRATION_OFFSET, MAX_CALIBRATION_OFFSET)
+                    ?: defaults.calibrationOffset,
+                grayCardCalibrationCompleted = settings.grayCardCalibrationCompleted,
+                grayCardCalibrationPromptSeen = settings.grayCardCalibrationPromptSeen,
+                grayCardCalibrationSignature = settings.grayCardCalibrationSignature,
             )
         }
+
+        private const val MIN_CALIBRATION_OFFSET = -3.0
+        private const val MAX_CALIBRATION_OFFSET = 3.0
     }
 }
 
@@ -449,6 +479,10 @@ private fun MeteringUiState.toAppSettings() = AppSettings(
     highlightLatitudeStops = highlightLatitudeStops,
     shadowLatitudeStops = shadowLatitudeStops,
     filmLatitudePreset = filmLatitudePreset,
+    calibrationOffset = calibrationOffset,
+    grayCardCalibrationCompleted = grayCardCalibrationCompleted,
+    grayCardCalibrationPromptSeen = grayCardCalibrationPromptSeen,
+    grayCardCalibrationSignature = grayCardCalibrationSignature,
 )
 
 private fun normalizeThirdStop(

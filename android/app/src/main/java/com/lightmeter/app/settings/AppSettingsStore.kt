@@ -5,8 +5,10 @@ import com.lightmeter.app.exposure.FrameFormat
 import com.lightmeter.app.metering.CameraMeteringPreset
 import com.lightmeter.app.metering.FilmLatitudePreset
 import com.lightmeter.app.metering.MeteringMode
+import com.lightmeter.app.ui.theme.AppThemeStyle
 
 data class AppSettings(
+    val themeStyle: AppThemeStyle = AppThemeStyle.DARK,
     val selectedIso: Int = 100,
     val exposureCompensation: Double = 0.0,
     val meteringPreset: MeteringMode = MeteringMode.CENTER_WEIGHTED,
@@ -20,6 +22,10 @@ data class AppSettings(
     val highlightLatitudeStops: Double = 4.0,
     val shadowLatitudeStops: Double = 3.0,
     val filmLatitudePreset: FilmLatitudePreset? = null,
+    val calibrationOffset: Double = 0.0,
+    val grayCardCalibrationCompleted: Boolean = false,
+    val grayCardCalibrationPromptSeen: Boolean = false,
+    val grayCardCalibrationSignature: String? = null,
 )
 
 interface AppSettingsStore {
@@ -43,6 +49,7 @@ class SharedPreferencesAppSettingsStore(context: Context) : AppSettingsStore {
     override fun load(): AppSettings {
         val defaults = AppSettings()
         return AppSettings(
+            themeStyle = preferences.getEnum(KEY_THEME_STYLE, defaults.themeStyle),
             selectedIso = preferences.getInt(KEY_ISO, defaults.selectedIso),
             exposureCompensation = preferences.getDouble(
                 KEY_EXPOSURE_COMPENSATION,
@@ -85,11 +92,28 @@ class SharedPreferencesAppSettingsStore(context: Context) : AppSettingsStore {
             ),
             filmLatitudePreset = preferences
                 .getNullableEnum<FilmLatitudePreset>(KEY_FILM_LATITUDE_PRESET),
+            calibrationOffset = preferences.getDouble(
+                KEY_CALIBRATION_OFFSET,
+                defaults.calibrationOffset,
+            ),
+            grayCardCalibrationCompleted = preferences.getBoolean(
+                KEY_GRAY_CARD_CALIBRATION_COMPLETED,
+                defaults.grayCardCalibrationCompleted,
+            ),
+            grayCardCalibrationPromptSeen = preferences.getBoolean(
+                KEY_GRAY_CARD_CALIBRATION_PROMPT_SEEN,
+                defaults.grayCardCalibrationPromptSeen,
+            ),
+            grayCardCalibrationSignature = preferences.getString(
+                KEY_GRAY_CARD_CALIBRATION_SIGNATURE,
+                defaults.grayCardCalibrationSignature,
+            ),
         )
     }
 
     override fun save(settings: AppSettings): Boolean {
         return preferences.edit()
+            .putString(KEY_THEME_STYLE, settings.themeStyle.name)
             .putInt(KEY_ISO, settings.selectedIso)
             .putLong(
                 KEY_EXPOSURE_COMPENSATION,
@@ -112,11 +136,25 @@ class SharedPreferencesAppSettingsStore(context: Context) : AppSettingsStore {
                 settings.shadowLatitudeStops.toRawBits(),
             )
             .putNullableEnum(KEY_FILM_LATITUDE_PRESET, settings.filmLatitudePreset)
+            .putLong(KEY_CALIBRATION_OFFSET, settings.calibrationOffset.toRawBits())
+            .putBoolean(
+                KEY_GRAY_CARD_CALIBRATION_COMPLETED,
+                settings.grayCardCalibrationCompleted,
+            )
+            .putBoolean(
+                KEY_GRAY_CARD_CALIBRATION_PROMPT_SEEN,
+                settings.grayCardCalibrationPromptSeen,
+            )
+            .putString(
+                KEY_GRAY_CARD_CALIBRATION_SIGNATURE,
+                settings.grayCardCalibrationSignature,
+            )
             .commit()
     }
 
     private companion object {
         const val PREFERENCES_NAME = "light_meter_settings"
+        const val KEY_THEME_STYLE = "theme_style"
         const val KEY_ISO = "iso"
         const val KEY_EXPOSURE_COMPENSATION = "exposure_compensation"
         const val KEY_METERING_PRESET = "metering_preset"
@@ -130,6 +168,13 @@ class SharedPreferencesAppSettingsStore(context: Context) : AppSettingsStore {
         const val KEY_HIGHLIGHT_LATITUDE_STOPS = "highlight_latitude_stops"
         const val KEY_SHADOW_LATITUDE_STOPS = "shadow_latitude_stops"
         const val KEY_FILM_LATITUDE_PRESET = "film_latitude_preset"
+        const val KEY_CALIBRATION_OFFSET = "calibration_offset"
+        const val KEY_GRAY_CARD_CALIBRATION_COMPLETED =
+            "gray_card_calibration_completed"
+        const val KEY_GRAY_CARD_CALIBRATION_PROMPT_SEEN =
+            "gray_card_calibration_prompt_seen"
+        const val KEY_GRAY_CARD_CALIBRATION_SIGNATURE =
+            "gray_card_calibration_signature"
     }
 }
 

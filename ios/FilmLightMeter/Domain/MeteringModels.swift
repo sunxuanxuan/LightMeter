@@ -14,6 +14,34 @@ public enum MeteringMode: String, Codable, CaseIterable, Sendable {
     }
 }
 
+public enum CameraMeteringPreset: String, Codable, CaseIterable, Sendable, Identifiable {
+    case canonNewF1
+    case canonAL1
+
+    public var id: String { rawValue }
+
+    public var displayName: String {
+        switch self {
+        case .canonNewF1: "Canon New F-1"
+        case .canonAL1: "Canon AL-1"
+        }
+    }
+
+    public var centerAreaPercent: Int {
+        switch self {
+        case .canonNewF1: 60
+        case .canonAL1: 40
+        }
+    }
+
+    public var centerWeightPercent: Int {
+        switch self {
+        case .canonNewF1: 70
+        case .canonAL1: 65
+        }
+    }
+}
+
 public enum FrameFormat: String, Codable, CaseIterable, Sendable {
     case film135
     case apsC
@@ -83,6 +111,7 @@ public struct MeteringConfiguration: Equatable, Sendable {
     public var centerWeightPercent = 70
     public var viewfinder = NormalizedRect.full
     public var previewAspectRatio = 9.0 / 16.0
+    public var isZoomReady = true
     public var calibrationOffset = 0.0
     public var revision: UInt64 = 0
 
@@ -148,6 +177,28 @@ public struct ExposureMap: Sendable {
         self.pixelEV100 = pixelEV100
         self.rawLuminance = rawLuminance
         self.clippedHighlights = clippedHighlights
+        self.timestampNanoseconds = timestampNanoseconds
+        self.revision = revision
+    }
+}
+
+public struct MeteringResult: Sendable {
+    public let meteredEV100: Double
+    public let measuredLuminance: Double
+    public let metadata: CameraExposureMetadata
+    public let timestampNanoseconds: Int64
+    public let revision: UInt64
+
+    public init(
+        meteredEV100: Double,
+        measuredLuminance: Double,
+        metadata: CameraExposureMetadata,
+        timestampNanoseconds: Int64,
+        revision: UInt64
+    ) {
+        self.meteredEV100 = meteredEV100
+        self.measuredLuminance = measuredLuminance
+        self.metadata = metadata
         self.timestampNanoseconds = timestampNanoseconds
         self.revision = revision
     }

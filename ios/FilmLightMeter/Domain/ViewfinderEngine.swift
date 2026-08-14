@@ -15,9 +15,49 @@ public struct ViewfinderProjection: Equatable, Sendable {
             bottom: (1 + height) / 2
         )
     }
+
+    public func equivalentFocalLength(
+        targetFocalLengthMillimeters: Double,
+        zoomFactor: Double
+    ) -> Double {
+        precondition(targetFocalLengthMillimeters > 0)
+        precondition(zoomFactor > 0)
+        return targetFocalLengthMillimeters * zoomFactor / fitZoomFactor
+    }
 }
 
 public enum ViewfinderEngine {
+    public static func supportedFocalLengthRange(
+        previewAspectRatio: Double,
+        frameFormat: FrameFormat,
+        cameraHorizontalFieldOfViewDegrees: Double,
+        minimumZoomFactor: Double,
+        maximumZoomFactor: Double,
+        allowedRange: ClosedRange<Double>
+    ) -> ClosedRange<Double>? {
+        precondition(minimumZoomFactor > 0)
+        precondition(maximumZoomFactor >= minimumZoomFactor)
+        precondition(allowedRange.lowerBound > 0)
+
+        let reference = projection(
+            previewAspectRatio: previewAspectRatio,
+            frameFormat: frameFormat,
+            targetFocalLengthMillimeters: 1,
+            cameraHorizontalFieldOfViewDegrees: cameraHorizontalFieldOfViewDegrees
+        )
+        let hardwareMinimum = ceil(reference.equivalentFocalLength(
+            targetFocalLengthMillimeters: 1,
+            zoomFactor: minimumZoomFactor
+        ))
+        let hardwareMaximum = floor(reference.equivalentFocalLength(
+            targetFocalLengthMillimeters: 1,
+            zoomFactor: maximumZoomFactor
+        ))
+        let minimum = max(allowedRange.lowerBound, hardwareMinimum)
+        let maximum = min(allowedRange.upperBound, hardwareMaximum)
+        return minimum <= maximum ? minimum...maximum : nil
+    }
+
     public static func projection(
         previewAspectRatio: Double,
         frameFormat: FrameFormat,
