@@ -17,6 +17,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -40,7 +41,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.ExpandLess
+import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.GridView
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.AlertDialog
@@ -66,6 +70,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
@@ -187,16 +192,16 @@ private fun PresetCard(
     preset: DisposableCameraPreset,
     selected: Boolean,
     onClick: () -> Unit,
+    expandedContent: @Composable (() -> Unit)? = null,
 ) {
+    var detailsExpanded by rememberSaveable(preset.id) { mutableStateOf(false) }
     val containerColor = if (selected) {
         MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
     } else {
         MaterialTheme.colorScheme.surface
     }
     Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick),
+        modifier = Modifier.fillMaxWidth(),
         color = containerColor,
         shape = RoundedCornerShape(8.dp),
         border = BorderStroke(
@@ -208,9 +213,11 @@ private fun PresetCard(
             },
         ),
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
+        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onClick),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -220,42 +227,53 @@ private fun PresetCard(
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.weight(1f),
                 )
-                Column(horizontalAlignment = Alignment.End) {
-                    Text(
-                        text = "参数 ${preset.exposureEvidence.displayName}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                    Text(
-                        text = "宽容度 ${preset.film.evidence.displayName}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
-                    )
-                }
-            }
-            preset.regionOrBatch?.let {
-                Text(
-                    text = it,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
-                    modifier = Modifier.padding(top = 2.dp),
+                Icon(
+                    imageVector = if (detailsExpanded) {
+                        Icons.Outlined.ExpandLess
+                    } else {
+                        Icons.Outlined.ExpandMore
+                    },
+                    contentDescription = if (detailsExpanded) {
+                        "收起参数"
+                    } else {
+                        "展开参数"
+                    },
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .size(32.dp)
+                        .clickable { detailsExpanded = !detailsExpanded }
+                        .padding(4.dp),
                 )
             }
-            Text(
-                text = preset.parameterSummary(),
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.padding(top = 10.dp),
-            )
-            val flashText = preset.flash?.let {
-                "闪光有效距离 ${formatDecimal(it.effectiveDistanceMinMeters)}-" +
-                    "${formatDecimal(it.effectiveDistanceMaxMeters)} m"
-            } ?: "无闪光参数"
-            Text(
-                text = flashText,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
-                modifier = Modifier.padding(top = 4.dp),
-            )
+            if (detailsExpanded) {
+                Text(
+                    text = preset.parameterSummary(),
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(top = 10.dp),
+                )
+                val flashText = preset.flash?.let {
+                    "闪光有效距离 ${formatDecimal(it.effectiveDistanceMinMeters)}-" +
+                        "${formatDecimal(it.effectiveDistanceMaxMeters)} m"
+                } ?: "无闪光参数"
+                Text(
+                    text = flashText,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+                preset.regionOrBatch?.let {
+                    Text(
+                        text = it,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                }
+                expandedContent?.let { content ->
+                    Spacer(modifier = Modifier.height(10.dp))
+                    content()
+                }
+            }
         }
     }
 }
@@ -282,6 +300,7 @@ private fun FilmPreviewWorkspace(
     val preset = state.selectedPreset ?: return
     var showsSettings by rememberSaveable { mutableStateOf(false) }
     var isExposureSimulationEnabled by rememberSaveable { mutableStateOf(false) }
+    var frozenChromeVisible by rememberSaveable { mutableStateOf(true) }
     var frozenFrame by remember { mutableStateOf<Bitmap?>(null) }
     var simulatedFrame by remember { mutableStateOf<Bitmap?>(null) }
     var frozenSnapshot by remember { mutableStateOf<ExposureSnapshot?>(null) }
@@ -395,6 +414,10 @@ private fun FilmPreviewWorkspace(
             frozenSnapshot = null
             exposureRiskMask = null
         }
+    }
+    LaunchedEffect(state.isFrozen, state.freezeRequestId) {
+        frozenChromeVisible = true
+        isExposureSimulationEnabled = false
     }
 
     Column(
@@ -546,67 +569,58 @@ private fun FilmPreviewWorkspace(
                     modifier = Modifier.fillMaxSize(),
                 )
 
-                Surface(
-                    color = Color.Black.copy(alpha = 0.68f),
-                    shape = RoundedCornerShape(18.dp),
-                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)),
-                    modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .padding(10.dp),
-                ) {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
+                if (state.isFrozen) {
+                    Box(
                         modifier = Modifier
-                            .clickable(onClick = onBack)
-                            .padding(
-                                horizontal = (14 * PREVIEW_CHROME_SCALE).dp,
-                                vertical = (10 * PREVIEW_CHROME_SCALE).dp,
-                            ),
-                    ) {
-                        Icon(
-                            imageVector = Icons.Outlined.GridView,
-                            contentDescription = null,
-                            tint = Color(0xFFD3AA5F),
-                            modifier = Modifier.size((22 * PREVIEW_CHROME_SCALE).dp),
-                        )
-                        Text(
-                            text = "模式",
-                            color = Color(0xFFD3AA5F),
-                            style = MaterialTheme.typography.labelLarge,
-                        )
-                    }
+                            .fillMaxSize()
+                            .pointerInput(state.freezeRequestId) {
+                                detectTapGestures {
+                                    frozenChromeVisible = !frozenChromeVisible
+                                }
+                            },
+                    )
                 }
 
-                Row(
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(bottom = 12.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    PreviewFreezeButton(
-                        isFrozen = state.isFrozen,
-                        enabled = state.isFrozen ||
-                            (
-                                state.isCameraReady &&
-                                    state.meteredEv100 != null &&
-                                    isZoomReady
-                                ),
-                        onClick = if (state.isFrozen) onResumeLive else onFreezePreview,
+                if (!state.isFrozen || frozenChromeVisible) {
+                    PreviewTopControls(
+                        onBack = onBack,
+                        onOpenSettings = { showsSettings = true },
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .fillMaxWidth()
+                            .padding(10.dp),
                     )
-                    if (
-                        state.isFrozen &&
-                        exposureRiskMask != null &&
-                        simulatedFrame != null
+
+                    Row(
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .padding(bottom = 12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        ExposureSimulationToggle(
-                            isSimulationEnabled = isExposureSimulationEnabled,
-                            onClick = {
-                                isExposureSimulationEnabled =
-                                    !isExposureSimulationEnabled
-                            },
+                        PreviewFreezeButton(
+                            isFrozen = state.isFrozen,
+                            enabled = state.isFrozen ||
+                                (
+                                    state.isCameraReady &&
+                                        state.meteredEv100 != null &&
+                                        isZoomReady
+                                    ),
+                            onClick = if (state.isFrozen) onResumeLive else onFreezePreview,
                         )
+                        if (
+                            state.isFrozen &&
+                            exposureRiskMask != null &&
+                            simulatedFrame != null
+                        ) {
+                            ExposureSimulationToggle(
+                                isSimulationEnabled = isExposureSimulationEnabled,
+                                onClick = {
+                                    isExposureSimulationEnabled =
+                                        !isExposureSimulationEnabled
+                                },
+                            )
+                        }
                     }
                 }
             }
@@ -615,7 +629,6 @@ private fun FilmPreviewWorkspace(
         PreviewStatusPanel(
             preset = preset,
             state = state,
-            onOpenSettings = { showsSettings = true },
             modifier = Modifier.fillMaxWidth(),
         )
     }
@@ -641,7 +654,6 @@ private fun FilmPreviewWorkspace(
 private fun PreviewStatusPanel(
     preset: DisposableCameraPreset,
     state: FilmPreviewUiState,
-    onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val evaluation = state.evaluation
@@ -723,19 +735,71 @@ private fun PreviewStatusPanel(
                     modifier = Modifier.weight(1f),
                 )
             }
-            Spacer(modifier = Modifier.height(8.dp))
-            OutlinedButton(
-                onClick = onOpenSettings,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text("设置")
-            }
             state.errorMessage?.let {
                 Text(
                     text = it,
                     color = MaterialTheme.colorScheme.error,
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(top = 6.dp),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun PreviewTopControls(
+    onBack: () -> Unit,
+    onOpenSettings: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Surface(
+            color = Color.Black.copy(alpha = 0.68f),
+            shape = RoundedCornerShape(18.dp),
+            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)),
+            modifier = Modifier.clickable(onClick = onBack),
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(
+                    horizontal = (14 * PREVIEW_CHROME_SCALE).dp,
+                    vertical = (10 * PREVIEW_CHROME_SCALE).dp,
+                ),
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.GridView,
+                    contentDescription = null,
+                    tint = Color(0xFFD3AA5F),
+                    modifier = Modifier.size((22 * PREVIEW_CHROME_SCALE).dp),
+                )
+                Text(
+                    text = "模式",
+                    color = Color(0xFFD3AA5F),
+                    style = MaterialTheme.typography.labelLarge,
+                )
+            }
+        }
+
+        Surface(
+            color = Color.Black.copy(alpha = 0.68f),
+            shape = CircleShape,
+            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)),
+            modifier = Modifier
+                .size((48 * PREVIEW_CHROME_SCALE).dp)
+                .clickable(onClick = onOpenSettings),
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    imageVector = Icons.Outlined.Settings,
+                    contentDescription = "设置",
+                    tint = Color(0xFFD3AA5F),
+                    modifier = Modifier.size((24 * PREVIEW_CHROME_SCALE).dp),
                 )
             }
         }
@@ -972,23 +1036,24 @@ private fun PresetSettingsDialog(
                         preset = preset,
                         selected = preset.id == pendingPresetId,
                         onClick = { pendingPresetId = preset.id },
+                        expandedContent = if (preset.id == ManualCameraConfig.MANUAL_PRESET_ID) {
+                            {
+                                ManualCameraConfigEditor(
+                                    iso = manualIso,
+                                    shutterDenominator = manualShutter,
+                                    aperture = manualAperture,
+                                    focalLengthMm = manualFocalLength,
+                                    isValid = manualConfigValid,
+                                    onIsoChanged = { manualIso = it },
+                                    onShutterChanged = { manualShutter = it },
+                                    onApertureChanged = { manualAperture = it },
+                                    onFocalLengthChanged = { manualFocalLength = it },
+                                )
+                            }
+                        } else {
+                            null
+                        },
                     )
-                    if (
-                        preset.id == ManualCameraConfig.MANUAL_PRESET_ID &&
-                        pendingPresetId == ManualCameraConfig.MANUAL_PRESET_ID
-                    ) {
-                        ManualCameraConfigEditor(
-                            iso = manualIso,
-                            shutterDenominator = manualShutter,
-                            aperture = manualAperture,
-                            focalLengthMm = manualFocalLength,
-                            isValid = manualConfigValid,
-                            onIsoChanged = { manualIso = it },
-                            onShutterChanged = { manualShutter = it },
-                            onApertureChanged = { manualAperture = it },
-                            onFocalLengthChanged = { manualFocalLength = it },
-                        )
-                    }
                 }
             }
         },
