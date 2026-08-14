@@ -25,9 +25,99 @@ final class DomainTests: XCTestCase {
         XCTAssertLessThanOrEqual(result.primary.error, 1.0 / 6.0)
     }
 
+    func testSelectingApertureKeepsTargetExposure() throws {
+        let pair = try XCTUnwrap(ExposureEngine.closestPair(
+            apertureLabel: "f/8",
+            targetEV: 12
+        ))
+        XCTAssertEqual(pair.apertureLabel, "f/8")
+        XCTAssertLessThanOrEqual(pair.error, 1.0 / 6.0)
+    }
+
+    func testSelectingShutterKeepsTargetExposure() throws {
+        let pair = try XCTUnwrap(ExposureEngine.closestPair(
+            shutterLabel: "1/125",
+            targetEV: 12
+        ))
+        XCTAssertEqual(pair.shutterLabel, "1/125")
+        XCTAssertLessThanOrEqual(pair.error, 1.0 / 6.0)
+    }
+
+    func testExposureControlLabelsContainFullRanges() {
+        XCTAssertEqual(ExposureEngine.apertureLabels.first, "f/1")
+        XCTAssertEqual(ExposureEngine.apertureLabels.last, "f/22")
+        XCTAssertEqual(ExposureEngine.shutterLabels.first, "1/2000")
+        XCTAssertEqual(ExposureEngine.shutterLabels.last, "8s")
+    }
+
+    func testCameraMeteringPresetsMatchAndroidParameters() {
+        XCTAssertEqual(CameraMeteringPreset.canonNewF1.centerAreaPercent, 60)
+        XCTAssertEqual(CameraMeteringPreset.canonNewF1.centerWeightPercent, 70)
+        XCTAssertEqual(CameraMeteringPreset.canonAL1.centerAreaPercent, 40)
+        XCTAssertEqual(CameraMeteringPreset.canonAL1.centerWeightPercent, 65)
+    }
+
+    func testCameraMeteringPresetNormalizesModeAndWeights() {
+        var settings = AppSettings()
+        settings.meteringMode = .spot
+        settings.centerAreaPercent = 25
+        settings.centerWeightPercent = 95
+        settings.cameraMeteringPreset = .canonAL1
+        settings.normalize()
+
+        XCTAssertEqual(settings.meteringMode, .centerWeighted)
+        XCTAssertEqual(settings.centerAreaPercent, 40)
+        XCTAssertEqual(settings.centerWeightPercent, 65)
+    }
+
+    func testFocalLengthNormalizesToAndroidRange() {
+        var settings = AppSettings()
+        settings.focalLengthMillimeters = 180
+        settings.normalize()
+        XCTAssertEqual(settings.focalLengthMillimeters, 150)
+
+        settings.focalLengthMillimeters = 10
+        settings.normalize()
+        XCTAssertEqual(settings.focalLengthMillimeters, 20)
+    }
+
+    func testSettingsDecodeWithoutCameraPreset() throws {
+        let encoded = try JSONEncoder().encode(AppSettings())
+        var object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: encoded) as? [String: Any]
+        )
+        object.removeValue(forKey: "cameraMeteringPreset")
+        let legacyData = try JSONSerialization.data(withJSONObject: object)
+
+        let decoded = try JSONDecoder().decode(AppSettings.self, from: legacyData)
+        XCTAssertNil(decoded.cameraMeteringPreset)
+    }
+
     func testVideoRangeLuminanceUsesLegalRange() {
         XCTAssertEqual(MeteringEngine.normalizedLuminance(16, isVideoRange: true), 0)
         XCTAssertEqual(MeteringEngine.normalizedLuminance(235, isVideoRange: true), 1)
+    }
+
+    func testMeteringRejectsFramesUntilZoomIsReady() {
+        var configuration = MeteringConfiguration()
+        configuration.isZoomReady = false
+        let result = MeteringEngine().analyze(
+            plane: LuminancePlane(
+                width: 1,
+                height: 1,
+                values: [128],
+                isVideoRange: true
+            ),
+            metadata: CameraExposureMetadata(
+                exposureSeconds: 1.0 / 125,
+                sensitivityISO: 100,
+                aperture: 2.8
+            ),
+            timestampNanoseconds: 1,
+            configuration: configuration
+        )
+
+        XCTAssertNil(result)
     }
 
     func testHighlightClippingUsesPixelRangeSpecificThresholds() {
@@ -89,11 +179,99 @@ final class DomainTests: XCTestCase {
         XCTAssertEqual(mask.bgra[7], 0)
     }
 
+    func testRiskMaskUsesStrictTenthStopBoundaries() {
+        let map = ExposureMap(
+            width: 6,
+            height: 1,
+            pixelEV100: [13, 13.04, 13.11, 7, 6.96, 6.89],
+            rawLuminance: [128, 128, 128, 128, 128, 128],
+            clippedHighlights: [false, false, false, false, false, false],
+            timestampNanoseconds: 1,
+            revision: 1
+        )
+        let mask = ExposureRiskEngine.calculate(
+            baseline: map,
+            viewfinder: .full,
+            referenceEV100: 10,
+            highlightLatitude: 3,
+            shadowLatitude: 3
+        )
+        XCTAssertEqual(mask.highlightRatio, 1.0 / 6.0, accuracy: 0.000_001)
+        XCTAssertEqual(mask.shadowRatio, 1.0 / 6.0, accuracy: 0.000_001)
+        XCTAssertEqual(mask.bgra[3], 0)
+        XCTAssertEqual(mask.bgra[7], 0)
+        XCTAssertGreaterThan(mask.bgra[11], 0)
+        XCTAssertEqual(mask.bgra[15], 0)
+        XCTAssertEqual(mask.bgra[19], 0)
+        XCTAssertGreaterThan(mask.bgra[23], 0)
+    }
+
+    func testClippedHighlightIsAlwaysMarked() {
+        let map = ExposureMap(
+            width: 1,
+            height: 1,
+            pixelEV100: [10],
+            rawLuminance: [250],
+            clippedHighlights: [true],
+            timestampNanoseconds: 1,
+            revision: 1
+        )
+        let mask = ExposureRiskEngine.calculate(
+            baseline: map,
+            viewfinder: .full,
+            referenceEV100: 10,
+            highlightLatitude: 3,
+            shadowLatitude: 3
+        )
+        XCTAssertEqual(mask.highlightRatio, 1)
+        XCTAssertEqual(mask.bgra[3], 230)
+    }
+
     func testConstrainedZoomUsesDeviceLimits() {
         XCTAssertEqual(ViewfinderEngine.constrainedZoom(
             fitZoomFactor: 12,
             minimum: 1,
             maximum: 8
         ), 8)
+    }
+
+    func testSupportedFocalRangeRespectsHardwareZoomAndProductLimits() throws {
+        let range = try XCTUnwrap(ViewfinderEngine.supportedFocalLengthRange(
+            previewAspectRatio: 9.0 / 16.0,
+            frameFormat: .film135,
+            cameraHorizontalFieldOfViewDegrees: 60,
+            minimumZoomFactor: 1,
+            maximumZoomFactor: 8,
+            allowedRange: 20...150
+        ))
+
+        XCTAssertGreaterThanOrEqual(range.lowerBound, 20)
+        XCTAssertLessThanOrEqual(range.upperBound, 150)
+        XCTAssertLessThanOrEqual(range.lowerBound, range.upperBound)
+        let minimumProjection = ViewfinderEngine.projection(
+            previewAspectRatio: 9.0 / 16.0,
+            frameFormat: .film135,
+            targetFocalLengthMillimeters: range.lowerBound,
+            cameraHorizontalFieldOfViewDegrees: 60
+        )
+        let maximumProjection = ViewfinderEngine.projection(
+            previewAspectRatio: 9.0 / 16.0,
+            frameFormat: .film135,
+            targetFocalLengthMillimeters: range.upperBound,
+            cameraHorizontalFieldOfViewDegrees: 60
+        )
+        XCTAssertGreaterThanOrEqual(minimumProjection.fitZoomFactor, 1)
+        XCTAssertLessThanOrEqual(maximumProjection.fitZoomFactor, 8)
+    }
+
+    func testSupportedFocalRangeReturnsNilWithoutHardwareIntersection() {
+        XCTAssertNil(ViewfinderEngine.supportedFocalLengthRange(
+            previewAspectRatio: 9.0 / 16.0,
+            frameFormat: .film66,
+            cameraHorizontalFieldOfViewDegrees: 20,
+            minimumZoomFactor: 1,
+            maximumZoomFactor: 1,
+            allowedRange: 100...150
+        ))
     }
 }

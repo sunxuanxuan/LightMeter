@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		0EE6D8837D8615EDC98E3E5C /* SettingsScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3EA6CB2641360ABB8CE605D /* SettingsScreen.swift */; };
+		12A8C56B9FE742A9ACFD0001 /* AppRoute.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12A8C56B9FE742A9ACFD0002 /* AppRoute.swift */; };
 		1943A00E132B025BA02A45A5 /* ExposureRiskEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54FB5AB8A4030AE3003DC1CA /* ExposureRiskEngine.swift */; };
 		3207887C581E2E2688C888CF /* CameraService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE486EF7815D51E6007A9EE4 /* CameraService.swift */; };
 		4407DA5DB0345A3EA00E2F5B /* MeteringModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0EE6E29FB6F5CF716D34101A /* MeteringModels.swift */; };
@@ -39,6 +40,7 @@
 
 /* Begin PBXFileReference section */
 		0EE6E29FB6F5CF716D34101A /* MeteringModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeteringModels.swift; sourceTree = "<group>"; };
+		12A8C56B9FE742A9ACFD0002 /* AppRoute.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppRoute.swift; sourceTree = "<group>"; };
 		1151647B0BC8739AAF07B339 /* ViewfinderEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewfinderEngine.swift; sourceTree = "<group>"; };
 		19F09894D5F314AD40A7EA1B /* MeteringScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeteringScreen.swift; sourceTree = "<group>"; };
 		1D1F2D31B1B0540BAAB12368 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -142,6 +144,7 @@
 		B38F4391E3145C74E0394593 /* App */ = {
 			isa = PBXGroup;
 			children = (
+				12A8C56B9FE742A9ACFD0002 /* AppRoute.swift */,
 				F493BA18DA269A754F0FAC85 /* FilmLightMeterApp.swift */,
 			);
 			path = App;
@@ -286,6 +289,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				12A8C56B9FE742A9ACFD0001 /* AppRoute.swift in Sources */,
 				828711FAFE5BB1C7EAD0F34B /* ActivationScreen.swift in Sources */,
 				45C6A937DE2A67F038B142D6 /* ActivationStore.swift in Sources */,
 				A9D7476AF08C22E38A3944F3 /* CameraPreview.swift in Sources */,

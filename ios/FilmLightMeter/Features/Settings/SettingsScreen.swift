@@ -19,9 +19,15 @@ struct SettingsScreen: View {
                             Text($0.displayName).tag($0)
                         }
                     }
-                    Picker("测光模式", selection: $settings.meteringMode) {
+                    Picker("测光模式", selection: meteringMode) {
                         ForEach(MeteringMode.allCases, id: \.self) {
                             Text($0.displayName).tag($0)
+                        }
+                    }
+                    Picker("机型预设", selection: cameraMeteringPresetID) {
+                        Text("自定义").tag("")
+                        ForEach(CameraMeteringPreset.allCases) { preset in
+                            Text(preset.displayName).tag(preset.rawValue)
                         }
                     }
                     if settings.meteringMode == .spot {
@@ -34,13 +40,13 @@ struct SettingsScreen: View {
                     if settings.meteringMode == .centerWeighted {
                         Stepper(
                             "中央区域 \(settings.centerAreaPercent)%",
-                            value: $settings.centerAreaPercent,
+                            value: centerAreaPercent,
                             in: 5...80,
                             step: 5
                         )
                         Stepper(
                             "中央权重 \(settings.centerWeightPercent)%",
-                            value: $settings.centerWeightPercent,
+                            value: centerWeightPercent,
                             in: 50...95,
                             step: 5
                         )
@@ -51,25 +57,22 @@ struct SettingsScreen: View {
                     Toggle("启用风险预览", isOn: $settings.exposureRiskEnabled)
                     Picker(
                         "胶片预设",
-                        selection: Binding(
-                            get: { settings.filmLatitudePreset },
-                            set: applyPreset
-                        )
+                        selection: filmLatitudePresetID
                     ) {
-                        Text("自定义").tag(FilmLatitudePreset?.none)
-                        ForEach(FilmLatitudePreset.allCases) {
-                            Text($0.values.name).tag(FilmLatitudePreset?.some($0))
+                        Text("自定义").tag("")
+                        ForEach(FilmLatitudePreset.allCases) { preset in
+                            Text(preset.values.name).tag(preset.rawValue)
                         }
                     }
                     Stepper(
                         "高光 +\(stopText(settings.highlightLatitude)) EV",
-                        value: $settings.highlightLatitude,
+                        value: highlightLatitude,
                         in: 1.0 / 3...8,
                         step: 1.0 / 3
                     )
                     Stepper(
                         "暗部 -\(stopText(settings.shadowLatitude)) EV",
-                        value: $settings.shadowLatitude,
+                        value: shadowLatitude,
                         in: 1.0 / 3...8,
                         step: 1.0 / 3
                     )
@@ -99,12 +102,88 @@ struct SettingsScreen: View {
         }
     }
 
+    private var meteringMode: Binding<MeteringMode> {
+        Binding(
+            get: { settings.meteringMode },
+            set: { mode in
+                settings.meteringMode = mode
+                settings.cameraMeteringPreset = nil
+            }
+        )
+    }
+
+    private var cameraMeteringPresetID: Binding<String> {
+        Binding(
+            get: { settings.cameraMeteringPreset?.rawValue ?? "" },
+            set: { rawValue in
+                applyCameraMeteringPreset(CameraMeteringPreset(rawValue: rawValue))
+            }
+        )
+    }
+
+    private var centerAreaPercent: Binding<Int> {
+        Binding(
+            get: { settings.centerAreaPercent },
+            set: {
+                settings.centerAreaPercent = $0
+                settings.cameraMeteringPreset = nil
+            }
+        )
+    }
+
+    private var centerWeightPercent: Binding<Int> {
+        Binding(
+            get: { settings.centerWeightPercent },
+            set: {
+                settings.centerWeightPercent = $0
+                settings.cameraMeteringPreset = nil
+            }
+        )
+    }
+
+    private var filmLatitudePresetID: Binding<String> {
+        Binding(
+            get: { settings.filmLatitudePreset?.rawValue ?? "" },
+            set: { rawValue in
+                applyPreset(FilmLatitudePreset(rawValue: rawValue))
+            }
+        )
+    }
+
+    private var highlightLatitude: Binding<Double> {
+        Binding(
+            get: { settings.highlightLatitude },
+            set: {
+                settings.highlightLatitude = $0
+                settings.filmLatitudePreset = nil
+            }
+        )
+    }
+
+    private var shadowLatitude: Binding<Double> {
+        Binding(
+            get: { settings.shadowLatitude },
+            set: {
+                settings.shadowLatitude = $0
+                settings.filmLatitudePreset = nil
+            }
+        )
+    }
+
     private func applyPreset(_ preset: FilmLatitudePreset?) {
         settings.filmLatitudePreset = preset
         if let values = preset?.values {
             settings.highlightLatitude = values.highlight
             settings.shadowLatitude = values.shadow
         }
+    }
+
+    private func applyCameraMeteringPreset(_ preset: CameraMeteringPreset?) {
+        settings.cameraMeteringPreset = preset
+        guard let preset else { return }
+        settings.meteringMode = .centerWeighted
+        settings.centerAreaPercent = preset.centerAreaPercent
+        settings.centerWeightPercent = preset.centerWeightPercent
     }
 
     private func stopText(_ value: Double) -> String {

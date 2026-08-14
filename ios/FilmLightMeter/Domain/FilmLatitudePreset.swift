@@ -39,6 +39,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
     public var spotAreaPercent = 5
     public var centerAreaPercent = 25
     public var centerWeightPercent = 70
+    public var cameraMeteringPreset: CameraMeteringPreset?
     public var frameFormat = FrameFormat.film135
     public var focalLengthMillimeters = 50.0
     public var exposureRiskEnabled = true
@@ -55,7 +56,12 @@ public struct AppSettings: Codable, Equatable, Sendable {
         spotAreaPercent = min(max(spotAreaPercent, 1), 10)
         centerAreaPercent = min(max(centerAreaPercent, 5), 80)
         centerWeightPercent = min(max(centerWeightPercent, 50), 95)
-        focalLengthMillimeters = min(max(focalLengthMillimeters, 20), 120)
+        if let cameraMeteringPreset {
+            meteringMode = .centerWeighted
+            centerAreaPercent = cameraMeteringPreset.centerAreaPercent
+            centerWeightPercent = cameraMeteringPreset.centerWeightPercent
+        }
+        focalLengthMillimeters = min(max(focalLengthMillimeters, 20), 150)
         highlightLatitude = Self.thirdStop(highlightLatitude, range: 1.0 / 3...8)
         shadowLatitude = Self.thirdStop(shadowLatitude, range: 1.0 / 3...8)
         calibrationOffset = min(max(calibrationOffset, -3), 3)

@@ -22,5 +22,10 @@ let package = Package(
             dependencies: ["FilmLightMeterDomain"],
             path: "DomainValidation"
         ),
+        .testTarget(
+            name: "FilmLightMeterDomainTests",
+            dependencies: ["FilmLightMeterDomain"],
+            path: "FilmLightMeterTests/Domain"
+        ),
     ]
 )
