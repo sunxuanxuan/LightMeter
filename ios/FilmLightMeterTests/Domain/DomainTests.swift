@@ -6,6 +6,95 @@ import XCTest
 #endif
 
 final class DomainTests: XCTestCase {
+    func testDisposableCameraPresetsMatchAndroidCatalog() throws {
+        let presets = BuiltInDisposableCameraRepository.presets
+        XCTAssertEqual(presets.count, 6)
+        XCTAssertEqual(Set(presets.map(\.id)).count, presets.count)
+        XCTAssertTrue(presets.allSatisfy { $0.presetVersion > 0 })
+
+        let quickSnap = try XCTUnwrap(
+            BuiltInDisposableCameraRepository.find(
+                id: "fujifilm-quicksnap-flash-400"
+            )
+        )
+        XCTAssertEqual(quickSnap.presetVersion, 2)
+        XCTAssertEqual(quickSnap.film.iso, 400)
+        XCTAssertEqual(quickSnap.optics.aperture, 10)
+        XCTAssertEqual(quickSnap.optics.focalLengthMillimeters, 32)
+        XCTAssertEqual(quickSnap.shutterSeconds, 1.0 / 100, accuracy: 1e-12)
+    }
+
+    func testDisposableCameraReferenceEVMatchesAndroid() throws {
+        let quickSnap = try XCTUnwrap(
+            BuiltInDisposableCameraRepository.find(
+                id: "fujifilm-quicksnap-flash-400"
+            )
+        )
+        XCTAssertEqual(
+            FilmPreviewEngine.presetEV100(quickSnap),
+            11.2877,
+            accuracy: 0.0001
+        )
+    }
+
+    func testDarkDisposableCameraSceneRecommendsFlash() throws {
+        let quickSnap = try XCTUnwrap(
+            BuiltInDisposableCameraRepository.find(
+                id: "fujifilm-quicksnap-flash-400"
+            )
+        )
+        let reference = FilmPreviewEngine.presetEV100(quickSnap)
+        let result = FilmPreviewEngine.evaluate(
+            meteredEV100: reference - 4,
+            preset: quickSnap
+        )
+        XCTAssertEqual(result.rating, .poor)
+        XCTAssertEqual(result.adviceCode, .useFlash)
+    }
+
+    func testDisposableCameraLatitudeBoundaryMatchesAndroid() throws {
+        let quickSnap = try XCTUnwrap(
+            BuiltInDisposableCameraRepository.find(
+                id: "fujifilm-quicksnap-flash-400"
+            )
+        )
+        let result = FilmPreviewEngine.evaluate(
+            meteredEV100: FilmPreviewEngine.presetEV100(quickSnap)
+                - quickSnap.film.shadowLatitudeStops,
+            preset: quickSnap
+        )
+        XCTAssertEqual(result.rating, .caution)
+        XCTAssertEqual(result.adviceCode, .useFlash)
+    }
+
+    func testManualDisposableCameraConfigMapsEveryParameter() {
+        let config = ManualCameraConfig(
+            iso: 200,
+            shutterDenominator: 60,
+            aperture: 8,
+            focalLengthMillimeters: 40
+        )
+        let preset = config.makePreset()
+        XCTAssertEqual(preset.id, ManualCameraConfig.presetID)
+        XCTAssertEqual(preset.displayName, "自定义")
+        XCTAssertEqual(preset.film.iso, 200)
+        XCTAssertEqual(preset.shutterSeconds, 1.0 / 60, accuracy: 1e-12)
+        XCTAssertEqual(preset.optics.aperture, 8)
+        XCTAssertEqual(preset.optics.focalLengthMillimeters, 40)
+    }
+
+    func testFilmResponseCurveKeepsMiddleGrayAnchor() {
+        XCTAssertEqual(
+            FilmResponseCurve.targetLuminance(
+                deltaEV: 0,
+                highlightLatitudeStops: 3,
+                shadowLatitudeStops: 2
+            ),
+            0.18,
+            accuracy: 1e-12
+        )
+    }
+
     func testTargetEVAppliesISOAndCompensation() {
         let value = ExposureEngine.targetEV(
             meteredEV100: 12,

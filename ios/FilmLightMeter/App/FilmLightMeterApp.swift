@@ -18,6 +18,7 @@ enum AppThemeStyle: String, CaseIterable, Identifiable {
 struct FilmLightMeterApp: App {
     @StateObject private var activation = ActivationStore()
     @StateObject private var metering = MeteringViewModel()
+    @StateObject private var filmPreview = FilmPreviewViewModel()
     @AppStorage("app_theme_style") private var themeStyleRaw = AppThemeStyle.dark.rawValue
 
     var body: some Scene {
@@ -26,6 +27,7 @@ struct FilmLightMeterApp: App {
                 if activation.isActivated {
                     AppRoute(
                         metering: metering,
+                        filmPreview: filmPreview,
                         themeStyle: themeStyle,
                         onThemeStyleChanged: {
                             themeStyleRaw = $0.rawValue
