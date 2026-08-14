@@ -2,6 +2,8 @@ package com.lightmeter.app.ui
 
 import com.lightmeter.app.camera.CameraOptics
 import com.lightmeter.app.exposure.FrameFormat
+import com.lightmeter.app.metering.ExposureMap
+import com.lightmeter.app.metering.ExposureSnapshot
 import com.lightmeter.app.metering.FilmLatitudePreset
 import com.lightmeter.app.metering.MeteringMode
 import com.lightmeter.app.metering.MeteringResult
@@ -208,6 +210,39 @@ class MeteringViewModelTest {
             ),
         )
         assertEquals(11.0, viewModel.state.value.ev100Metered!!, 0.0)
+        assertNotNull(viewModel.state.value.primaryExposure)
+    }
+
+    @Test
+    fun freezeUsesCapturedSnapshotForDisplayedEvAndRecommendation() {
+        val viewModel = MeteringViewModel()
+        viewModel.onCameraReady()
+        viewModel.onMeteringResult(
+            MeteringResult(
+                ev100 = 10.0,
+                measuredLuminance = 0.18,
+                timestampNs = 1L,
+            ),
+        )
+        viewModel.freezePreview()
+        val frozenState = viewModel.state.value
+        val snapshot = ExposureSnapshot(
+            exposureMap = ExposureMap(
+                width = 1,
+                height = 1,
+                pixelEv100 = floatArrayOf(12.0f),
+                timestampNs = 2L,
+                revision = frozenState.meteringRevision,
+            ),
+            meteredEv100 = 12.0,
+            timestampNs = 2L,
+            revision = frozenState.meteringRevision,
+        )
+
+        viewModel.onFrozenSnapshot(frozenState.freezeRequestId, snapshot)
+
+        assertEquals(12.0, viewModel.state.value.ev100Metered!!, 0.0)
+        assertEquals(12.0, viewModel.state.value.evTarget!!, 0.0)
         assertNotNull(viewModel.state.value.primaryExposure)
     }
 

@@ -5,6 +5,7 @@ import com.lightmeter.app.camera.CameraOptics
 import com.lightmeter.app.exposure.ExposurePair
 import com.lightmeter.app.exposure.FrameFormat
 import com.lightmeter.app.metering.CameraMeteringPreset
+import com.lightmeter.app.metering.ExposureSnapshot
 import com.lightmeter.app.metering.FilmLatitudePreset
 import com.lightmeter.app.metering.MeteringMode
 import com.lightmeter.app.metering.NormalizedPoint
@@ -272,6 +273,19 @@ class MeteringViewModel(
                 freezeRequestId = it.freezeRequestId + 1,
                 errorMessage = null,
             )
+        }
+    }
+
+    fun onFrozenSnapshot(requestId: Int, snapshot: ExposureSnapshot) {
+        mutableState.update {
+            if (!it.isFrozen || it.freezeRequestId != requestId ||
+                snapshot.revision != it.meteringRevision
+            ) {
+                return@update it
+            }
+            it.copy(
+                ev100Metered = snapshot.meteredEv100,
+            ).withRecommendation()
         }
     }
 

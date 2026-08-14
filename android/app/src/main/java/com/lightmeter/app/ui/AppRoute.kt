@@ -48,9 +48,11 @@ fun AppRoute(
     val settingsStore = remember(context) {
         SharedPreferencesAppSettingsStore(context.applicationContext)
     }
-    val appSettings = remember(settingsStore) { settingsStore.load() }
     var destination by rememberSaveable {
         mutableStateOf(AppDestination.MODE_SELECTION)
+    }
+    val appSettings = remember(settingsStore, destination) {
+        settingsStore.load()
     }
     when (destination) {
         AppDestination.MODE_SELECTION -> ModeSelectionScreen(

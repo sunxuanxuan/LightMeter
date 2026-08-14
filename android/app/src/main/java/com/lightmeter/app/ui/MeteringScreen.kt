@@ -118,7 +118,6 @@ import com.lightmeter.app.BuildConfig
 import com.lightmeter.app.activation.DebugToolsDialog
 import com.lightmeter.app.ui.theme.AppThemeStyle
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlin.math.PI
 import kotlin.math.abs
@@ -134,7 +133,6 @@ private val DEFAULT_CAMERA_OPTICS = CameraOptics(
 )
 
 private val PreviewAccent = Color(0xFFD3AA5F)
-private const val ZOOM_SETTLE_TIMEOUT_MS = 800L
 private const val ZOOM_RATIO_TOLERANCE = 0.02f
 private const val VIEWFINDER_CHROME_SCALE = 0.75f
 
@@ -216,6 +214,7 @@ fun MeteringRoute(
         onApertureStep = viewModel::stepAperture,
         onShutterStep = viewModel::stepShutter,
         onFreezePreview = viewModel::freezePreview,
+        onFrozenSnapshot = viewModel::onFrozenSnapshot,
         onResumeLive = viewModel::resumeLivePreview,
         onFreezeCaptureFailed = viewModel::onFreezeCaptureFailed,
         onExit = onExit,
@@ -253,6 +252,7 @@ private fun MeteringScreen(
     onApertureStep: (Int) -> Unit,
     onShutterStep: (Int) -> Unit,
     onFreezePreview: () -> Unit,
+    onFrozenSnapshot: (Int, ExposureSnapshot) -> Unit,
     onResumeLive: () -> Unit,
     onFreezeCaptureFailed: () -> Unit,
     onExit: () -> Unit,
@@ -291,6 +291,7 @@ private fun MeteringScreen(
                 onApertureStep = onApertureStep,
                 onShutterStep = onShutterStep,
                 onFreezePreview = onFreezePreview,
+                onFrozenSnapshot = onFrozenSnapshot,
                 onResumeLive = onResumeLive,
                 onFreezeCaptureFailed = onFreezeCaptureFailed,
                 onExit = onExit,
@@ -340,6 +341,7 @@ private fun CameraContent(
     onApertureStep: (Int) -> Unit,
     onShutterStep: (Int) -> Unit,
     onFreezePreview: () -> Unit,
+    onFrozenSnapshot: (Int, ExposureSnapshot) -> Unit,
     onResumeLive: () -> Unit,
     onFreezeCaptureFailed: () -> Unit,
     onExit: () -> Unit,
@@ -354,7 +356,6 @@ private fun CameraContent(
     var exposureRiskMask by remember { mutableStateOf<ExposureRiskMask?>(null) }
     var previewSize by remember { mutableStateOf(IntSize.Zero) }
     var cameraZoomState by remember { mutableStateOf(CameraZoomState()) }
-    var zoomSettleTimedOut by remember { mutableStateOf(false) }
     var frozenChromeVisible by rememberSaveable { mutableStateOf(true) }
     var showSettings by rememberSaveable { mutableStateOf(false) }
     val selectedFrameAspectRatio = remember(state.frameFormat) {
@@ -435,21 +436,8 @@ private fun CameraContent(
         cameraZoomState.minZoomRatio,
         cameraZoomState.maxZoomRatio,
     )
-    LaunchedEffect(
-        state.frameFormat,
-        targetZoomRatio,
-        cameraZoomState.minZoomRatio,
-        cameraZoomState.maxZoomRatio,
-    ) {
-        zoomSettleTimedOut = false
-        delay(ZOOM_SETTLE_TIMEOUT_MS)
-        zoomSettleTimedOut = true
-    }
     val isZoomReady = cameraZoomState.isInitialized &&
-        (
-            abs(cameraZoomState.zoomRatio - effectiveZoomRatio) <= ZOOM_RATIO_TOLERANCE ||
-                zoomSettleTimedOut
-            )
+        abs(cameraZoomState.zoomRatio - effectiveZoomRatio) <= ZOOM_RATIO_TOLERANCE
     val normalizedViewfinder = remember(projection, effectiveZoomRatio) {
         projection.viewfinderAt(effectiveZoomRatio.toDouble())
     }
@@ -594,15 +582,19 @@ private fun CameraContent(
                         shouldCaptureFrame = state.isFrozen,
                         onMeteringResult = onMeteringResult,
                         onFrameCaptured = { capturedFrame ->
+                            val requestId = capturedFrame?.requestId
                             val bitmap = capturedFrame?.bitmap
                             val snapshot = capturedFrame?.snapshot
                             if (
+                                requestId == null ||
+                                requestId != state.freezeRequestId ||
                                 bitmap == null ||
                                 snapshot == null ||
                                 snapshot.revision != state.meteringRevision
                             ) {
                                 onFreezeCaptureFailed()
                             } else {
+                                onFrozenSnapshot(requestId, snapshot)
                                 frozenFrame = bitmap
                                 simulatedFrame = null
                                 frozenExposureSnapshot = snapshot
