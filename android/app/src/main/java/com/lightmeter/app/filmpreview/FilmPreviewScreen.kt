@@ -525,8 +525,8 @@ private fun FilmPreviewWorkspace(
                             FilmRiskLegend(
                                 riskMask = riskMask,
                                 modifier = Modifier
-                                    .align(Alignment.TopStart)
-                                    .padding(10.dp),
+                                    .align(Alignment.TopCenter)
+                                    .padding(top = 10.dp),
                             )
                         }
                     }
@@ -539,29 +539,32 @@ private fun FilmPreviewWorkspace(
 
                 Surface(
                     color = Color.Black.copy(alpha = 0.68f),
-                    shape = RoundedCornerShape(24.dp),
+                    shape = RoundedCornerShape(18.dp),
                     border = BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)),
                     modifier = Modifier
                         .align(Alignment.TopStart)
                         .padding(10.dp),
                 ) {
                     Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
                             .clickable(onClick = onBack)
-                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                            .padding(
+                                horizontal = (14 * PREVIEW_CHROME_SCALE).dp,
+                                vertical = (10 * PREVIEW_CHROME_SCALE).dp,
+                            ),
                     ) {
                         Icon(
                             imageVector = Icons.Outlined.GridView,
                             contentDescription = null,
                             tint = Color(0xFFD3AA5F),
-                            modifier = Modifier.size(22.dp),
+                            modifier = Modifier.size((22 * PREVIEW_CHROME_SCALE).dp),
                         )
                         Text(
                             text = "模式",
                             color = Color(0xFFD3AA5F),
-                            style = MaterialTheme.typography.titleMedium,
+                            style = MaterialTheme.typography.labelLarge,
                         )
                     }
                 }
@@ -1028,6 +1031,7 @@ private const val PREVIEW_ASPECT_RATIO = 2f / 3f
 private const val PREVIEW_ZOOM_TOLERANCE = 0.02f
 private const val PREVIEW_CENTER_AREA_PERCENT = 30
 private const val PREVIEW_CENTER_WEIGHT_PERCENT = 70
+private const val PREVIEW_CHROME_SCALE = 0.75f
 
 private fun Context.hasCameraPermission(): Boolean {
     return ContextCompat.checkSelfPermission(
