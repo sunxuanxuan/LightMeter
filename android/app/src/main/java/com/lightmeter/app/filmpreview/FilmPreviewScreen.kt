@@ -17,6 +17,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -48,6 +49,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -68,6 +70,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -105,7 +108,13 @@ fun FilmPreviewRoute(
     onThemeStyleChanged: (AppThemeStyle) -> Unit = {},
 ) {
     val context = LocalContext.current
-    val viewModel: FilmPreviewViewModel = viewModel()
+    val settingsStore = remember(context) {
+        SharedPreferencesFilmPreviewSettingsStore(context.applicationContext)
+    }
+    val viewModelFactory = remember(settingsStore) {
+        FilmPreviewViewModelFactory(settingsStore)
+    }
+    val viewModel: FilmPreviewViewModel = viewModel(factory = viewModelFactory)
     val state by viewModel.state.collectAsStateWithLifecycle()
     val activity = remember(context) { context.findHostActivity() }
     var permissionState by remember {
@@ -154,7 +163,7 @@ fun FilmPreviewRoute(
         state = state,
         permissionState = permissionState,
         onBack = onExit,
-        onPresetSelected = viewModel::selectPreset,
+        onPresetSettingsSaved = viewModel::savePresetSettings,
         onRequestPermission = {
             hasRequestedPermission = true
             permissionLauncher.launch(Manifest.permission.CAMERA)
@@ -256,7 +265,7 @@ private fun FilmPreviewWorkspace(
     state: FilmPreviewUiState,
     permissionState: CameraPermissionState,
     onBack: () -> Unit,
-    onPresetSelected: (String) -> Unit,
+    onPresetSettingsSaved: (String, ManualCameraConfig) -> Boolean,
     onRequestPermission: () -> Unit,
     onOpenSettings: () -> Unit,
     onCameraReady: () -> Unit,
@@ -525,8 +534,8 @@ private fun FilmPreviewWorkspace(
                             FilmRiskLegend(
                                 riskMask = riskMask,
                                 modifier = Modifier
-                                    .align(Alignment.TopStart)
-                                    .padding(10.dp),
+                                    .align(Alignment.TopCenter)
+                                    .padding(top = 10.dp),
                             )
                         }
                     }
@@ -539,29 +548,32 @@ private fun FilmPreviewWorkspace(
 
                 Surface(
                     color = Color.Black.copy(alpha = 0.68f),
-                    shape = RoundedCornerShape(24.dp),
+                    shape = RoundedCornerShape(18.dp),
                     border = BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)),
                     modifier = Modifier
                         .align(Alignment.TopStart)
                         .padding(10.dp),
                 ) {
                     Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
                             .clickable(onClick = onBack)
-                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                            .padding(
+                                horizontal = (14 * PREVIEW_CHROME_SCALE).dp,
+                                vertical = (10 * PREVIEW_CHROME_SCALE).dp,
+                            ),
                     ) {
                         Icon(
                             imageVector = Icons.Outlined.GridView,
                             contentDescription = null,
                             tint = Color(0xFFD3AA5F),
-                            modifier = Modifier.size(22.dp),
+                            modifier = Modifier.size((22 * PREVIEW_CHROME_SCALE).dp),
                         )
                         Text(
                             text = "模式",
                             color = Color(0xFFD3AA5F),
-                            style = MaterialTheme.typography.titleMedium,
+                            style = MaterialTheme.typography.labelLarge,
                         )
                     }
                 }
@@ -612,11 +624,13 @@ private fun FilmPreviewWorkspace(
         PresetSettingsDialog(
             presets = state.presets,
             selectedPreset = preset,
+            manualConfig = state.manualConfig,
             themeStyle = themeStyle,
             onThemeStyleChanged = onThemeStyleChanged,
-            onSave = {
-                onPresetSelected(it)
-                showsSettings = false
+            onSave = { presetId, config ->
+                onPresetSettingsSaved(presetId, config).also { saved ->
+                    if (saved) showsSettings = false
+                }
             },
             onDismiss = { showsSettings = false },
         )
@@ -876,13 +890,40 @@ private fun ReadOnlyParameter(
 private fun PresetSettingsDialog(
     presets: List<DisposableCameraPreset>,
     selectedPreset: DisposableCameraPreset,
+    manualConfig: ManualCameraConfig,
     themeStyle: AppThemeStyle,
     onThemeStyleChanged: (AppThemeStyle) -> Unit,
-    onSave: (String) -> Unit,
+    onSave: (String, ManualCameraConfig) -> Unit,
     onDismiss: () -> Unit,
 ) {
     var pendingPresetId by rememberSaveable(selectedPreset.id) {
         mutableStateOf(selectedPreset.id)
+    }
+    var manualIso by rememberSaveable(manualConfig) {
+        mutableStateOf(manualConfig.iso.toString())
+    }
+    var manualShutter by rememberSaveable(manualConfig) {
+        mutableStateOf(manualConfig.shutterDenominator.toString())
+    }
+    var manualAperture by rememberSaveable(manualConfig) {
+        mutableStateOf(formatDecimal(manualConfig.aperture))
+    }
+    var manualFocalLength by rememberSaveable(manualConfig) {
+        mutableStateOf(formatDecimal(manualConfig.focalLengthMm))
+    }
+    val pendingManualConfig = ManualCameraConfig(
+        iso = manualIso.toIntOrNull() ?: 0,
+        shutterDenominator = manualShutter.toIntOrNull() ?: 0,
+        aperture = manualAperture.toDoubleOrNull() ?: Double.NaN,
+        focalLengthMm = manualFocalLength.toDoubleOrNull() ?: Double.NaN,
+    )
+    val manualConfigValid = pendingManualConfig.isValid()
+    val selectedManualPreset =
+        pendingPresetId == ManualCameraConfig.MANUAL_PRESET_ID
+    val manualConfigToSave = if (manualConfigValid) {
+        pendingManualConfig
+    } else {
+        manualConfig
     }
 
     AlertDialog(
@@ -932,11 +973,30 @@ private fun PresetSettingsDialog(
                         selected = preset.id == pendingPresetId,
                         onClick = { pendingPresetId = preset.id },
                     )
+                    if (
+                        preset.id == ManualCameraConfig.MANUAL_PRESET_ID &&
+                        pendingPresetId == ManualCameraConfig.MANUAL_PRESET_ID
+                    ) {
+                        ManualCameraConfigEditor(
+                            iso = manualIso,
+                            shutterDenominator = manualShutter,
+                            aperture = manualAperture,
+                            focalLengthMm = manualFocalLength,
+                            isValid = manualConfigValid,
+                            onIsoChanged = { manualIso = it },
+                            onShutterChanged = { manualShutter = it },
+                            onApertureChanged = { manualAperture = it },
+                            onFocalLengthChanged = { manualFocalLength = it },
+                        )
+                    }
                 }
             }
         },
         confirmButton = {
-            TextButton(onClick = { onSave(pendingPresetId) }) {
+            TextButton(
+                onClick = { onSave(pendingPresetId, manualConfigToSave) },
+                enabled = !selectedManualPreset || manualConfigValid,
+            ) {
                 Text("保存")
             }
         },
@@ -948,6 +1008,110 @@ private fun PresetSettingsDialog(
         containerColor = MaterialTheme.colorScheme.surface,
         titleContentColor = MaterialTheme.colorScheme.onSurface,
         textContentColor = MaterialTheme.colorScheme.onSurface,
+    )
+}
+
+@Composable
+private fun ManualCameraConfigEditor(
+    iso: String,
+    shutterDenominator: String,
+    aperture: String,
+    focalLengthMm: String,
+    isValid: Boolean,
+    onIsoChanged: (String) -> Unit,
+    onShutterChanged: (String) -> Unit,
+    onApertureChanged: (String) -> Unit,
+    onFocalLengthChanged: (String) -> Unit,
+) {
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+        shape = RoundedCornerShape(8.dp),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                text = "手动参数",
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                ManualParameterField(
+                    value = iso,
+                    label = "ISO",
+                    onValueChanged = onIsoChanged,
+                    modifier = Modifier.weight(1f),
+                )
+                ManualParameterField(
+                    value = shutterDenominator,
+                    label = "快门 1/x 秒",
+                    onValueChanged = onShutterChanged,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                ManualParameterField(
+                    value = aperture,
+                    label = "光圈 f/",
+                    onValueChanged = onApertureChanged,
+                    decimal = true,
+                    modifier = Modifier.weight(1f),
+                )
+                ManualParameterField(
+                    value = focalLengthMm,
+                    label = "焦段 mm",
+                    onValueChanged = onFocalLengthChanged,
+                    decimal = true,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+            Text(
+                text = if (isValid) {
+                    "支持 ISO 25-6400、快门 1-1/8000 秒、f/1-f/64、20-150mm"
+                } else {
+                    "请检查参数范围和数字格式"
+                },
+                style = MaterialTheme.typography.labelSmall,
+                color = if (isValid) {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                } else {
+                    MaterialTheme.colorScheme.error
+                },
+            )
+        }
+    }
+}
+
+@Composable
+private fun ManualParameterField(
+    value: String,
+    label: String,
+    onValueChanged: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    decimal: Boolean = false,
+) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = { input ->
+            val filtered = input.filterIndexed { index, character ->
+                character.isDigit() || (decimal && character == '.' && index > 0)
+            }
+            if (filtered.count { it == '.' } <= 1) {
+                onValueChanged(filtered)
+            }
+        },
+        label = { Text(label) },
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(
+            keyboardType = if (decimal) {
+                KeyboardType.Decimal
+            } else {
+                KeyboardType.Number
+            },
+        ),
+        modifier = modifier,
     )
 }
 
@@ -1028,6 +1192,7 @@ private const val PREVIEW_ASPECT_RATIO = 2f / 3f
 private const val PREVIEW_ZOOM_TOLERANCE = 0.02f
 private const val PREVIEW_CENTER_AREA_PERCENT = 30
 private const val PREVIEW_CENTER_WEIGHT_PERCENT = 70
+private const val PREVIEW_CHROME_SCALE = 0.75f
 
 private fun Context.hasCameraPermission(): Boolean {
     return ContextCompat.checkSelfPermission(
