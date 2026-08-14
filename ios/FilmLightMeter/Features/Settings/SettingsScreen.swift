@@ -3,16 +3,34 @@ import SwiftUI
 struct SettingsScreen: View {
     @Environment(\.dismiss) private var dismiss
     @State private var settings: AppSettings
+    let themeStyle: AppThemeStyle
+    let onThemeStyleChanged: (AppThemeStyle) -> Void
     let onSave: (AppSettings) -> Void
 
-    init(initialSettings: AppSettings, onSave: @escaping (AppSettings) -> Void) {
+    init(
+        initialSettings: AppSettings,
+        themeStyle: AppThemeStyle,
+        onThemeStyleChanged: @escaping (AppThemeStyle) -> Void,
+        onSave: @escaping (AppSettings) -> Void
+    ) {
         _settings = State(initialValue: initialSettings)
+        self.themeStyle = themeStyle
+        self.onThemeStyleChanged = onThemeStyleChanged
         self.onSave = onSave
     }
 
     var body: some View {
         NavigationStack {
             Form {
+                Section("外观") {
+                    Picker("主题", selection: themeStyleBinding) {
+                        ForEach(AppThemeStyle.allCases) { style in
+                            Text(style.displayName).tag(style)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                }
+
                 Section("画幅与测光") {
                     Picker("画幅", selection: $settings.frameFormat) {
                         ForEach(FrameFormat.allCases, id: \.self) {
@@ -100,6 +118,13 @@ struct SettingsScreen: View {
                 }
             }
         }
+    }
+
+    private var themeStyleBinding: Binding<AppThemeStyle> {
+        Binding(
+            get: { themeStyle },
+            set: onThemeStyleChanged
+        )
     }
 
     private var meteringMode: Binding<MeteringMode> {

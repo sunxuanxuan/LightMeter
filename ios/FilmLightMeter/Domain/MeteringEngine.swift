@@ -180,42 +180,66 @@ public final class MeteringEngine: @unchecked Sendable {
         let mapWidth: Int
         let mapHeight: Int
         if configuration.previewAspectRatio <= 1 {
-            mapHeight = 240
+            mapHeight = Self.exposureMapLongEdge
             mapWidth = max(Int(Double(mapHeight) * configuration.previewAspectRatio), 1)
         } else {
-            mapWidth = 240
+            mapWidth = Self.exposureMapLongEdge
             mapHeight = max(Int(Double(mapWidth) / configuration.previewAspectRatio), 1)
         }
 
         var evValues = [Float](repeating: .nan, count: mapWidth * mapHeight)
         var rawValues = [UInt8](repeating: 0, count: mapWidth * mapHeight)
         var clipped = [Bool](repeating: false, count: mapWidth * mapHeight)
+        let sampleOffsets = [0.25, 0.75]
         for mapY in 0..<mapHeight {
             for mapX in 0..<mapWidth {
-                let displayX = (Double(mapX) + 0.5) / Double(mapWidth)
-                let displayY = (Double(mapY) + 0.5) / Double(mapHeight)
                 let index = mapY * mapWidth + mapX
-                guard configuration.viewfinder.contains(x: displayX, y: displayY) else {
+                let centerX = (Double(mapX) + 0.5) / Double(mapWidth)
+                let centerY = (Double(mapY) + 0.5) / Double(mapHeight)
+                guard configuration.viewfinder.contains(x: centerX, y: centerY) else {
                     continue
                 }
-                let buffer = Self.displayPointToBuffer(
-                    x: displayX,
-                    y: displayY,
-                    width: plane.width,
-                    height: plane.height,
-                    previewAspectRatio: configuration.previewAspectRatio
-                )
-                let raw = plane.values[buffer.y * plane.width + buffer.x]
-                rawValues[index] = raw
-                clipped[index] = Self.isHighlightClipped(
-                    raw,
-                    isVideoRange: plane.isVideoRange
-                )
-                let normalized = Self.normalizedLuminance(
-                    raw,
-                    isVideoRange: plane.isVideoRange
-                )
-                let linear = max(pow(normalized, 2.2), Self.minimumLuminance)
+
+                var linearSum = 0.0
+                var rawSum = 0
+                var clippedCount = 0
+                var sampleCount = 0
+                for offsetY in sampleOffsets {
+                    let displayY = (Double(mapY) + offsetY) / Double(mapHeight)
+                    for offsetX in sampleOffsets {
+                        let displayX = (Double(mapX) + offsetX) / Double(mapWidth)
+                        guard configuration.viewfinder.contains(
+                            x: displayX,
+                            y: displayY
+                        ) else {
+                            continue
+                        }
+                        let buffer = Self.displayPointToBuffer(
+                            x: displayX,
+                            y: displayY,
+                            width: plane.width,
+                            height: plane.height,
+                            previewAspectRatio: configuration.previewAspectRatio
+                        )
+                        let raw = plane.values[buffer.y * plane.width + buffer.x]
+                        let normalized = Self.normalizedLuminance(
+                            raw,
+                            isVideoRange: plane.isVideoRange
+                        )
+                        linearSum += pow(normalized, 2.2)
+                        rawSum += Int(raw)
+                        if Self.isHighlightClipped(raw, isVideoRange: plane.isVideoRange) {
+                            clippedCount += 1
+                        }
+                        sampleCount += 1
+                    }
+                }
+                guard sampleCount > 0 else { continue }
+
+                rawValues[index] = UInt8(rawSum / sampleCount)
+                clipped[index] = Double(clippedCount) / Double(sampleCount)
+                    >= Self.clippedSampleRatio
+                let linear = max(linearSum / Double(sampleCount), Self.minimumLuminance)
                 evValues[index] = Float(
                     settingEV + log2(linear / Self.targetLuminance)
                         + configuration.calibrationOffset
@@ -303,4 +327,6 @@ public final class MeteringEngine: @unchecked Sendable {
 
     private static let targetLuminance = 0.18
     private static let minimumLuminance = 1e-6
+    private static let exposureMapLongEdge = 480
+    private static let clippedSampleRatio = 0.25
 }
