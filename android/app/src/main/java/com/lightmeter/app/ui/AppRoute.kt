@@ -26,6 +26,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.lightmeter.app.filmpreview.FilmPreviewRoute
 
@@ -98,40 +99,39 @@ private fun ModeSelectionScreen(
         ) {
             Text(
                 text = "FilmLightMeter",
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.SemiBold,
+                style = MaterialTheme.typography.displaySmall,
+                fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.primary,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
             )
             Text(
-                text = "今天想怎么测光？",
-                style = MaterialTheme.typography.headlineLarge,
+                text = "体验胶片摄影魅力",
+                style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onBackground,
-                modifier = Modifier.padding(top = 8.dp),
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 10.dp, bottom = 32.dp),
             )
-            Text(
-                text = "两个模式使用同一套测光基础，选择更适合当前任务的方式。",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 8.dp, bottom = 28.dp),
-            )
-            Row(
+            Column(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
                 ModeCard(
                     symbol = "▣",
                     title = "胶片预览",
                     description = "固定参数下的曝光效果与宽容度风险",
                     onClick = onFilmPreviewSelected,
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.fillMaxWidth(),
                 )
                 ModeCard(
                     symbol = "◎",
                     title = "专业测光",
                     description = "完整测光、曝光组合与画幅控制",
                     onClick = onProfessionalSelected,
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.fillMaxWidth(),
                 )
             }
         }
@@ -148,40 +148,30 @@ private fun ModeCard(
 ) {
     Surface(
         modifier = modifier
-            .heightIn(min = 190.dp)
+            .heightIn(min = 116.dp)
             .clickable(onClick = onClick),
         color = MaterialTheme.colorScheme.surface,
         shape = RoundedCornerShape(12.dp),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         shadowElevation = 1.dp,
     ) {
-        Column(
-            modifier = Modifier.padding(18.dp),
-            verticalArrangement = Arrangement.SpaceBetween,
+        Row(
+            modifier = Modifier.padding(horizontal = 18.dp, vertical = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Top,
+            Surface(
+                color = MaterialTheme.colorScheme.primaryContainer,
+                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                shape = RoundedCornerShape(8.dp),
             ) {
-                Surface(
-                    color = MaterialTheme.colorScheme.primaryContainer,
-                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                    shape = RoundedCornerShape(8.dp),
-                ) {
-                    Text(
-                        text = symbol,
-                        style = MaterialTheme.typography.titleMedium,
-                        modifier = Modifier.padding(horizontal = 11.dp, vertical = 7.dp),
-                    )
-                }
                 Text(
-                    text = "进入  →",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.primary,
+                    text = symbol,
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.padding(horizontal = 13.dp, vertical = 10.dp),
                 )
             }
-            Column(modifier = Modifier.padding(top = 16.dp)) {
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = title,
                     style = MaterialTheme.typography.titleLarge,
@@ -195,6 +185,11 @@ private fun ModeCard(
                     modifier = Modifier.padding(top = 5.dp),
                 )
             }
+            Text(
+                text = "进入  →",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary,
+            )
         }
     }
 }
