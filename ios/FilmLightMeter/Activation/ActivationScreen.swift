@@ -13,7 +13,7 @@ struct ActivationScreen: View {
                 .foregroundStyle(.orange)
             Text("激活 FilmLightMeter")
                 .font(.largeTitle.bold())
-            Text("将设备 ID 发送给开发者，然后输入返回的签名激活凭证。")
+            Text("在官网购买时填写设备 ID，然后粘贴付款后生成的签名激活凭证。")
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
 

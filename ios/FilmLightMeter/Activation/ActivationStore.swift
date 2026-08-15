@@ -39,23 +39,14 @@ final class ActivationStore: ObservableObject {
     }
 
     private static func verify(credential: String, deviceID: String) -> Bool {
-        let parts = credential.split(separator: ".", omittingEmptySubsequences: false)
-        guard parts.count == 2,
-              let payload = Data(base64URLEncoded: String(parts[0])),
-              let signature = Data(base64URLEncoded: String(parts[1])),
-              let claims = try? JSONDecoder().decode(ActivationClaims.self, from: payload),
-              claims.version == 1,
-              claims.deviceID == deviceID,
-              let publicKeyData = Data(base64Encoded: releasePublicKeyBase64),
-              let publicKey = try? Curve25519.Signing.PublicKey(
-                rawRepresentation: publicKeyData
-              ) else {
+        guard let publicKeyData = Data(base64Encoded: releasePublicKeyBase64) else {
             return false
         }
-        if let expiresAt = claims.expiresAt, expiresAt < Date().timeIntervalSince1970 {
-            return false
-        }
-        return publicKey.isValidSignature(signature, for: payload)
+        return ActivationCredentialVerifier.verify(
+            credential: credential,
+            expectedDeviceID: deviceID,
+            publicKeyData: publicKeyData
+        )
     }
 
     private static func makeDeviceID() -> String {
@@ -72,11 +63,56 @@ final class ActivationStore: ObservableObject {
         "81C0KEAE1R38JV0E5LI5x3tuZgzwUK8FGQv4w62dcBQ="
 }
 
-private struct ActivationClaims: Codable {
+struct ActivationClaims: Codable {
     let version: Int
     let deviceID: String
     let issuedAt: TimeInterval
     let expiresAt: TimeInterval?
+}
+
+enum ActivationCredentialVerifier {
+    private static let credentialVersion = 1
+    private static let maximumCredentialLength = 2_048
+    private static let maximumPayloadLength = 1_024
+
+    static func verify(
+        credential: String,
+        expectedDeviceID: String,
+        publicKeyData: Data,
+        now: TimeInterval = Date().timeIntervalSince1970
+    ) -> Bool {
+        guard !credential.isEmpty,
+              credential.utf8.count <= maximumCredentialLength,
+              expectedDeviceID.count == 16,
+              expectedDeviceID.allSatisfy(\.isHexDigit),
+              publicKeyData.count == 32 else {
+            return false
+        }
+
+        let parts = credential.split(separator: ".", omittingEmptySubsequences: false)
+        guard parts.count == 2,
+              let payload = Data(base64URLEncoded: String(parts[0])),
+              !payload.isEmpty,
+              payload.count <= maximumPayloadLength,
+              let signature = Data(base64URLEncoded: String(parts[1])),
+              signature.count == 64,
+              let publicKey = try? Curve25519.Signing.PublicKey(
+                rawRepresentation: publicKeyData
+              ),
+              publicKey.isValidSignature(signature, for: payload),
+              let claims = try? JSONDecoder().decode(ActivationClaims.self, from: payload),
+              claims.version == credentialVersion,
+              claims.deviceID == expectedDeviceID,
+              claims.issuedAt.isFinite,
+              claims.issuedAt >= 0 else {
+            return false
+        }
+
+        guard let expiresAt = claims.expiresAt else {
+            return true
+        }
+        return expiresAt.isFinite && expiresAt >= now
+    }
 }
 
 private struct KeychainStore {

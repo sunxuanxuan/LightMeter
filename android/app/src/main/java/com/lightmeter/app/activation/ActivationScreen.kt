@@ -48,7 +48,7 @@ fun ActivationScreen(
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
     val deviceId = remember { ActivationManager.getDeviceId(context) }
-    var inputCode by remember { mutableStateOf("") }
+    var credential by remember { mutableStateOf("") }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var successMessage by remember { mutableStateOf<String?>(null) }
     var copied by remember { mutableStateOf(false) }
@@ -74,7 +74,7 @@ fun ActivationScreen(
             Spacer(modifier = Modifier.height(8.dp))
 
             Text(
-                text = "请输入激活码以继续使用",
+                text = "请输入激活凭证以继续使用",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
             )
@@ -132,25 +132,23 @@ fun ActivationScreen(
 
             Spacer(modifier = Modifier.height(32.dp))
 
-            // Activation code input
             Text(
-                text = "激活码",
+                text = "激活凭证",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f),
             )
 
             Spacer(modifier = Modifier.height(4.dp))
 
-            ActivationCodeInput(
-                value = inputCode,
+            ActivationCredentialInput(
+                value = credential,
                 onValueChange = { newValue ->
-                    val filtered = newValue.filter { it in "0123456789ABCDEFabcdef" }
-                    if (filtered.length <= 16) {
-                        inputCode = filtered.uppercase()
+                    if (newValue.length <= 2_048) {
+                        credential = newValue
                         errorMessage = null
                     }
                 },
-                modifier = Modifier.fillMaxWidth(0.8f),
+                modifier = Modifier.fillMaxWidth(0.9f),
             )
 
             Spacer(modifier = Modifier.height(8.dp))
@@ -175,21 +173,18 @@ fun ActivationScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // Activate button
             Button(
                 onClick = {
-                    if (inputCode.length != 16) {
-                        errorMessage = "请输入完整的 16 位激活码"
+                    if (credential.isBlank()) {
+                        errorMessage = "请粘贴激活凭证"
                         return@Button
                     }
-                    val formatted = formatCode(inputCode)
-                    if (ActivationManager.verifyActivationCode(context, formatted)) {
-                        ActivationManager.setActivated(context)
+                    if (ActivationManager.activate(context, credential)) {
                         successMessage = "激活成功！"
                         errorMessage = null
                         onActivated()
                     } else {
-                        errorMessage = "激活码无效，请检查是否与设备 ID 匹配"
+                        errorMessage = "激活凭证无效、已过期或不属于此设备"
                         successMessage = null
                     }
                 },
@@ -211,7 +206,7 @@ fun ActivationScreen(
             Spacer(modifier = Modifier.height(48.dp))
 
             Text(
-                text = "将设备 ID 发送给开发者以获取激活码",
+                text = "在官网购买时填写设备 ID，付款后复制签名凭证到此处",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.4f),
                 textAlign = TextAlign.Center,
@@ -221,7 +216,7 @@ fun ActivationScreen(
 }
 
 @Composable
-private fun ActivationCodeInput(
+private fun ActivationCredentialInput(
     value: String,
     onValueChange: (String) -> Unit,
     modifier: Modifier = Modifier,
@@ -242,24 +237,23 @@ private fun ActivationCodeInput(
                 .padding(horizontal = 16.dp, vertical = 14.dp),
             textStyle = TextStyle(
                 fontFamily = FontFamily.Monospace,
-                fontSize = 22.sp,
+                fontSize = 13.sp,
                 fontWeight = FontWeight.Medium,
                 color = MaterialTheme.colorScheme.onSurface,
-                textAlign = TextAlign.Center,
-                letterSpacing = 4.sp,
+                letterSpacing = 0.sp,
             ),
-            singleLine = true,
+            minLines = 3,
+            maxLines = 6,
             decorationBox = { innerTextField ->
-                Box(contentAlignment = Alignment.Center) {
+                Box(contentAlignment = Alignment.TopStart) {
                     if (value.isEmpty()) {
                         Text(
-                            text = "XXXX-XXXX-XXXX-XXXX",
+                            text = "粘贴官网生成的签名凭证",
                             style = TextStyle(
                                 fontFamily = FontFamily.Monospace,
-                                fontSize = 22.sp,
+                                fontSize = 13.sp,
                                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.25f),
-                                textAlign = TextAlign.Center,
-                                letterSpacing = 4.sp,
+                                letterSpacing = 0.sp,
                             ),
                         )
                     }
@@ -272,8 +266,4 @@ private fun ActivationCodeInput(
 
 private fun formatDeviceId(id: String): String {
     return id.chunked(4).joinToString(" ")
-}
-
-private fun formatCode(code: String): String {
-    return code.chunked(4).joinToString("-")
 }

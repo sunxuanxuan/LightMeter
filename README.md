@@ -8,6 +8,7 @@
 ```text
 android/       Android 工程、构建脚本和平台工具
 ios/           iOS 工程目录，当前包含实施入口说明
+website/       官网、安装包分发和离线凭证签发服务
 docs/android/  Android 专属架构、算法实现和用户文档
 docs/ios/      iOS 产品设计、技术架构和迁移计划
 docs/shared/   不依赖 Android/iOS API 的公共资料
@@ -49,11 +50,26 @@ iOS 版本采用 SwiftUI、AVFoundation 和原生 Swift 实现。开始编码前
 - [iOS 实施状态](docs/ios/implementation-status.md)
 - [iOS 本地构建环境](docs/ios/local-build-environment.md)
 
+## Website
+
+官网采用 Next.js，默认使用本地 SQLite 和开发支付通道运行预览：
+
+```bash
+cd website
+npm install
+npm run dev
+```
+
+打开 `http://127.0.0.1:3000`。运行与生产配置见
+[Website README](website/README.md)。
+
 ## 公共资料
 
 - [双模式产品方案](docs/shared/dual-mode-product-design.md)
 - [胶片预览模式技术方案](docs/shared/film-preview-technical-design.md)
 - [胶片曝光宽容度参考](docs/shared/film-exposure-latitude-reference.md)
+- [官网产品方案](docs/website/product-design.md)
+- [官网技术方案](docs/website/technical-architecture.md)
 
 ## License
 

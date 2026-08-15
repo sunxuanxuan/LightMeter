@@ -8,30 +8,31 @@
 
 /* Begin PBXBuildFile section */
 		0EE6D8837D8615EDC98E3E5C /* SettingsScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3EA6CB2641360ABB8CE605D /* SettingsScreen.swift */; };
-		12A8C56B9FE742A9ACFD0001 /* AppRoute.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12A8C56B9FE742A9ACFD0002 /* AppRoute.swift */; };
 		1943A00E132B025BA02A45A5 /* ExposureRiskEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54FB5AB8A4030AE3003DC1CA /* ExposureRiskEngine.swift */; };
 		3207887C581E2E2688C888CF /* CameraService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE486EF7815D51E6007A9EE4 /* CameraService.swift */; };
+		3B646B64EB0F750C9AE611F1 /* ActivationCredentialVerifierTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1AF8FDF2FD0FFAC60FD9C103 /* ActivationCredentialVerifierTests.swift */; };
 		4407DA5DB0345A3EA00E2F5B /* MeteringModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0EE6E29FB6F5CF716D34101A /* MeteringModels.swift */; };
 		45C6A937DE2A67F038B142D6 /* ActivationStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 57082285A9345A1FADEF4FEF /* ActivationStore.swift */; };
+		4F2A8F469824DEBBF82F2B8F /* FilmExposureRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6529DBEEA4DDAA0F37F3D509 /* FilmExposureRenderer.swift */; };
 		4F833135BE10E6FB5BDEFB1C /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 1D1F2D31B1B0540BAAB12368 /* Assets.xcassets */; };
+		501C51ED9144A0C9E2711E10 /* FilmPreviewEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 791884E94ED4AA0C75C75F10 /* FilmPreviewEngine.swift */; };
 		5CAE466733B07B056341E68A /* ExposureEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA18E494DC1047496B8DBEA5 /* ExposureEngine.swift */; };
 		5DBC56DD467AEE2E5CB9960C /* SettingsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB173AFED1BD0246B5E90799 /* SettingsStore.swift */; };
 		5F4D558A46D7F702B8E9CB15 /* MeteringScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 19F09894D5F314AD40A7EA1B /* MeteringScreen.swift */; };
+		6E531800430D78C6B11076E5 /* FilmPreviewViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8171822E378D0E1759149098 /* FilmPreviewViewModel.swift */; };
+		6E635365C6482A0455C637A9 /* DisposableCameraPreset.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A8E1FA04B1D25ED5FED5EED /* DisposableCameraPreset.swift */; };
+		7B6B6E338559E42DEB783006 /* FilmPreviewSettingsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6EB131135E64BB193780B501 /* FilmPreviewSettingsStore.swift */; };
 		828711FAFE5BB1C7EAD0F34B /* ActivationScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 491A1EE45F2B222E316DA9CB /* ActivationScreen.swift */; };
+		82D06A2FE0C20BD27685646C /* FilmPreviewSettingsScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 233A5DF990F2D1651133A9AD /* FilmPreviewSettingsScreen.swift */; };
 		90270F952049E0320D2D1121 /* ViewfinderEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1151647B0BC8739AAF07B339 /* ViewfinderEngine.swift */; };
 		9B8315B011F81BC139B91858 /* FilmLatitudePreset.swift in Sources */ = {isa = PBXBuildFile; fileRef = E480E57E97069D09805DEC72 /* FilmLatitudePreset.swift */; };
 		A10C86678D555FEC8A4A21CC /* DomainTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5BC6B6E188F039161F2CEE55 /* DomainTests.swift */; };
 		A9D7476AF08C22E38A3944F3 /* CameraPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = BAAD01F8565425CA6D4C9057 /* CameraPreview.swift */; };
 		B2612D3C0830000CEA49DB17 /* MeteringEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A94AC5AF936B7D6A1971C81 /* MeteringEngine.swift */; };
 		C1155ABE462699B794091A09 /* MeteringViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52C0A47DB5E5D0E67B7A4248 /* MeteringViewModel.swift */; };
+		CA0D2542190BE60ADC7DCA96 /* FilmPreviewScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78ABB2B0ECECFD40041C9312 /* FilmPreviewScreen.swift */; };
 		D750F0949CBD9744EEF5290F /* FilmLightMeterApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = F493BA18DA269A754F0FAC85 /* FilmLightMeterApp.swift */; };
-		D10000000000000000000001 /* DisposableCameraPreset.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10000000000000000000001 /* DisposableCameraPreset.swift */; };
-		D10000000000000000000002 /* FilmPreviewEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10000000000000000000002 /* FilmPreviewEngine.swift */; };
-		D10000000000000000000003 /* FilmPreviewSettingsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10000000000000000000003 /* FilmPreviewSettingsStore.swift */; };
-		D10000000000000000000004 /* FilmExposureRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10000000000000000000004 /* FilmExposureRenderer.swift */; };
-		D10000000000000000000005 /* FilmPreviewViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10000000000000000000005 /* FilmPreviewViewModel.swift */; };
-		D10000000000000000000006 /* FilmPreviewScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10000000000000000000006 /* FilmPreviewScreen.swift */; };
-		D10000000000000000000007 /* FilmPreviewSettingsScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10000000000000000000007 /* FilmPreviewSettingsScreen.swift */; };
+		DCD806D28263DBB70B2EDB26 /* AppRoute.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4326896FB21824E89EFFB966 /* AppRoute.swift */; };
 		EBB12526C1A4D1663A01B7E5 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = F2BF5CBB6118AC7E4355899E /* PrivacyInfo.xcprivacy */; };
 /* End PBXBuildFile section */
 
@@ -47,29 +48,30 @@
 
 /* Begin PBXFileReference section */
 		0EE6E29FB6F5CF716D34101A /* MeteringModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeteringModels.swift; sourceTree = "<group>"; };
-		12A8C56B9FE742A9ACFD0002 /* AppRoute.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppRoute.swift; sourceTree = "<group>"; };
 		1151647B0BC8739AAF07B339 /* ViewfinderEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewfinderEngine.swift; sourceTree = "<group>"; };
 		19F09894D5F314AD40A7EA1B /* MeteringScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeteringScreen.swift; sourceTree = "<group>"; };
+		1AF8FDF2FD0FFAC60FD9C103 /* ActivationCredentialVerifierTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivationCredentialVerifierTests.swift; sourceTree = "<group>"; };
 		1D1F2D31B1B0540BAAB12368 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		233A5DF990F2D1651133A9AD /* FilmPreviewSettingsScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilmPreviewSettingsScreen.swift; sourceTree = "<group>"; };
 		378B05CC9FF226480A638BAE /* FilmLightMeterTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = FilmLightMeterTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		4326896FB21824E89EFFB966 /* AppRoute.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppRoute.swift; sourceTree = "<group>"; };
 		491A1EE45F2B222E316DA9CB /* ActivationScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivationScreen.swift; sourceTree = "<group>"; };
 		52C0A47DB5E5D0E67B7A4248 /* MeteringViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeteringViewModel.swift; sourceTree = "<group>"; };
 		54FB5AB8A4030AE3003DC1CA /* ExposureRiskEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExposureRiskEngine.swift; sourceTree = "<group>"; };
 		57082285A9345A1FADEF4FEF /* ActivationStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivationStore.swift; sourceTree = "<group>"; };
 		5BC6B6E188F039161F2CEE55 /* DomainTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DomainTests.swift; sourceTree = "<group>"; };
+		6529DBEEA4DDAA0F37F3D509 /* FilmExposureRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilmExposureRenderer.swift; sourceTree = "<group>"; };
+		6EB131135E64BB193780B501 /* FilmPreviewSettingsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilmPreviewSettingsStore.swift; sourceTree = "<group>"; };
+		78ABB2B0ECECFD40041C9312 /* FilmPreviewScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilmPreviewScreen.swift; sourceTree = "<group>"; };
+		791884E94ED4AA0C75C75F10 /* FilmPreviewEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilmPreviewEngine.swift; sourceTree = "<group>"; };
 		7A94AC5AF936B7D6A1971C81 /* MeteringEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeteringEngine.swift; sourceTree = "<group>"; };
+		8171822E378D0E1759149098 /* FilmPreviewViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilmPreviewViewModel.swift; sourceTree = "<group>"; };
+		8A8E1FA04B1D25ED5FED5EED /* DisposableCameraPreset.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DisposableCameraPreset.swift; sourceTree = "<group>"; };
 		A3EA6CB2641360ABB8CE605D /* SettingsScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsScreen.swift; sourceTree = "<group>"; };
 		AAC720A060E027B5BB4D4184 /* FilmLightMeter.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = FilmLightMeter.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		BAAD01F8565425CA6D4C9057 /* CameraPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraPreview.swift; sourceTree = "<group>"; };
 		BE486EF7815D51E6007A9EE4 /* CameraService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraService.swift; sourceTree = "<group>"; };
 		DB173AFED1BD0246B5E90799 /* SettingsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsStore.swift; sourceTree = "<group>"; };
-		E10000000000000000000001 /* DisposableCameraPreset.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DisposableCameraPreset.swift; sourceTree = "<group>"; };
-		E10000000000000000000002 /* FilmPreviewEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilmPreviewEngine.swift; sourceTree = "<group>"; };
-		E10000000000000000000003 /* FilmPreviewSettingsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilmPreviewSettingsStore.swift; sourceTree = "<group>"; };
-		E10000000000000000000004 /* FilmExposureRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilmExposureRenderer.swift; sourceTree = "<group>"; };
-		E10000000000000000000005 /* FilmPreviewViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilmPreviewViewModel.swift; sourceTree = "<group>"; };
-		E10000000000000000000006 /* FilmPreviewScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilmPreviewScreen.swift; sourceTree = "<group>"; };
-		E10000000000000000000007 /* FilmPreviewSettingsScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilmPreviewSettingsScreen.swift; sourceTree = "<group>"; };
 		E480E57E97069D09805DEC72 /* FilmLatitudePreset.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilmLatitudePreset.swift; sourceTree = "<group>"; };
 		F2BF5CBB6118AC7E4355899E /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		F493BA18DA269A754F0FAC85 /* FilmLightMeterApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilmLightMeterApp.swift; sourceTree = "<group>"; };
@@ -80,6 +82,7 @@
 		1EB564AF0921D0885D8E6E3A /* FilmLightMeterTests */ = {
 			isa = PBXGroup;
 			children = (
+				FE1B6A9B57851A47EEDDA95B /* Activation */,
 				D854686BADD1D7FCFDD6DAF9 /* Domain */,
 			);
 			path = FilmLightMeterTests;
@@ -88,7 +91,7 @@
 		3EC8EB467CE94BE54D6AA510 /* Persistence */ = {
 			isa = PBXGroup;
 			children = (
-				E10000000000000000000003 /* FilmPreviewSettingsStore.swift */,
+				6EB131135E64BB193780B501 /* FilmPreviewSettingsStore.swift */,
 				DB173AFED1BD0246B5E90799 /* SettingsStore.swift */,
 			);
 			path = Persistence;
@@ -146,11 +149,11 @@
 		6D58F62E493A8A0883D1AC8D /* Domain */ = {
 			isa = PBXGroup;
 			children = (
-				E10000000000000000000001 /* DisposableCameraPreset.swift */,
+				8A8E1FA04B1D25ED5FED5EED /* DisposableCameraPreset.swift */,
 				FA18E494DC1047496B8DBEA5 /* ExposureEngine.swift */,
 				54FB5AB8A4030AE3003DC1CA /* ExposureRiskEngine.swift */,
 				E480E57E97069D09805DEC72 /* FilmLatitudePreset.swift */,
-				E10000000000000000000002 /* FilmPreviewEngine.swift */,
+				791884E94ED4AA0C75C75F10 /* FilmPreviewEngine.swift */,
 				7A94AC5AF936B7D6A1971C81 /* MeteringEngine.swift */,
 				0EE6E29FB6F5CF716D34101A /* MeteringModels.swift */,
 				1151647B0BC8739AAF07B339 /* ViewfinderEngine.swift */,
@@ -158,10 +161,21 @@
 			path = Domain;
 			sourceTree = "<group>";
 		};
+		B05D606253793DC2840D77EA /* FilmPreview */ = {
+			isa = PBXGroup;
+			children = (
+				6529DBEEA4DDAA0F37F3D509 /* FilmExposureRenderer.swift */,
+				78ABB2B0ECECFD40041C9312 /* FilmPreviewScreen.swift */,
+				233A5DF990F2D1651133A9AD /* FilmPreviewSettingsScreen.swift */,
+				8171822E378D0E1759149098 /* FilmPreviewViewModel.swift */,
+			);
+			path = FilmPreview;
+			sourceTree = "<group>";
+		};
 		B38F4391E3145C74E0394593 /* App */ = {
 			isa = PBXGroup;
 			children = (
-				12A8C56B9FE742A9ACFD0002 /* AppRoute.swift */,
+				4326896FB21824E89EFFB966 /* AppRoute.swift */,
 				F493BA18DA269A754F0FAC85 /* FilmLightMeterApp.swift */,
 			);
 			path = App;
@@ -202,25 +216,22 @@
 			path = Metering;
 			sourceTree = "<group>";
 		};
-		F10000000000000000000001 /* FilmPreview */ = {
-			isa = PBXGroup;
-			children = (
-				E10000000000000000000004 /* FilmExposureRenderer.swift */,
-				E10000000000000000000006 /* FilmPreviewScreen.swift */,
-				E10000000000000000000007 /* FilmPreviewSettingsScreen.swift */,
-				E10000000000000000000005 /* FilmPreviewViewModel.swift */,
-			);
-			path = FilmPreview;
-			sourceTree = "<group>";
-		};
 		F9861867D3A30CEAC016E177 /* Features */ = {
 			isa = PBXGroup;
 			children = (
-				F10000000000000000000001 /* FilmPreview */,
+				B05D606253793DC2840D77EA /* FilmPreview */,
 				F4D823928F4E6899DBD2775E /* Metering */,
 				47569B97D2CA13027F201993 /* Settings */,
 			);
 			path = Features;
+			sourceTree = "<group>";
+		};
+		FE1B6A9B57851A47EEDDA95B /* Activation */ = {
+			isa = PBXGroup;
+			children = (
+				1AF8FDF2FD0FFAC60FD9C103 /* ActivationCredentialVerifierTests.swift */,
+			);
+			path = Activation;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -318,22 +329,22 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				12A8C56B9FE742A9ACFD0001 /* AppRoute.swift in Sources */,
 				828711FAFE5BB1C7EAD0F34B /* ActivationScreen.swift in Sources */,
 				45C6A937DE2A67F038B142D6 /* ActivationStore.swift in Sources */,
+				DCD806D28263DBB70B2EDB26 /* AppRoute.swift in Sources */,
 				A9D7476AF08C22E38A3944F3 /* CameraPreview.swift in Sources */,
 				3207887C581E2E2688C888CF /* CameraService.swift in Sources */,
+				6E635365C6482A0455C637A9 /* DisposableCameraPreset.swift in Sources */,
 				5CAE466733B07B056341E68A /* ExposureEngine.swift in Sources */,
 				1943A00E132B025BA02A45A5 /* ExposureRiskEngine.swift in Sources */,
-				D10000000000000000000001 /* DisposableCameraPreset.swift in Sources */,
-				D10000000000000000000002 /* FilmPreviewEngine.swift in Sources */,
-				D10000000000000000000004 /* FilmExposureRenderer.swift in Sources */,
-				D10000000000000000000006 /* FilmPreviewScreen.swift in Sources */,
-				D10000000000000000000007 /* FilmPreviewSettingsScreen.swift in Sources */,
-				D10000000000000000000003 /* FilmPreviewSettingsStore.swift in Sources */,
-				D10000000000000000000005 /* FilmPreviewViewModel.swift in Sources */,
+				4F2A8F469824DEBBF82F2B8F /* FilmExposureRenderer.swift in Sources */,
 				9B8315B011F81BC139B91858 /* FilmLatitudePreset.swift in Sources */,
 				D750F0949CBD9744EEF5290F /* FilmLightMeterApp.swift in Sources */,
+				501C51ED9144A0C9E2711E10 /* FilmPreviewEngine.swift in Sources */,
+				CA0D2542190BE60ADC7DCA96 /* FilmPreviewScreen.swift in Sources */,
+				82D06A2FE0C20BD27685646C /* FilmPreviewSettingsScreen.swift in Sources */,
+				7B6B6E338559E42DEB783006 /* FilmPreviewSettingsStore.swift in Sources */,
+				6E531800430D78C6B11076E5 /* FilmPreviewViewModel.swift in Sources */,
 				B2612D3C0830000CEA49DB17 /* MeteringEngine.swift in Sources */,
 				4407DA5DB0345A3EA00E2F5B /* MeteringModels.swift in Sources */,
 				5F4D558A46D7F702B8E9CB15 /* MeteringScreen.swift in Sources */,
@@ -348,6 +359,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				3B646B64EB0F750C9AE611F1 /* ActivationCredentialVerifierTests.swift in Sources */,
 				A10C86678D555FEC8A4A21CC /* DomainTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

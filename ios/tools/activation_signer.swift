@@ -27,6 +27,7 @@ guard arguments.count >= 3 else {
     fail("""
     用法：
       activation_signer.swift generate-key <private-key-path>
+      activation_signer.swift public-key <private-key-path>
       activation_signer.swift sign <private-key-path> <device-id> [有效天数]
     """)
 }
@@ -41,7 +42,12 @@ case "generate-key":
         ofItemAtPath: url.path
     )
     print("私钥已写入：\(url.path)")
-    print("iOS 公钥：\(key.publicKey.rawRepresentation.base64EncodedString())")
+    print("App 公钥：\(key.publicKey.rawRepresentation.base64EncodedString())")
+
+case "public-key":
+    let keyData = try Data(contentsOf: URL(fileURLWithPath: arguments[2]))
+    let key = try Curve25519.Signing.PrivateKey(rawRepresentation: keyData)
+    print(key.publicKey.rawRepresentation.base64EncodedString())
 
 case "sign":
     guard arguments.count >= 4 else { fail("缺少设备 ID") }
@@ -56,6 +62,10 @@ case "sign":
     let keyData = try Data(contentsOf: URL(fileURLWithPath: arguments[2]))
     let key = try Curve25519.Signing.PrivateKey(rawRepresentation: keyData)
     let validDays = arguments.count >= 5 ? Double(arguments[4]) : nil
+    if arguments.count >= 5,
+       validDays == nil || !validDays!.isFinite || validDays! <= 0 {
+        fail("有效天数必须是正数")
+    }
     let now = Date().timeIntervalSince1970
     let claims = Claims(
         version: 1,

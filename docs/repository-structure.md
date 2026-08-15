@@ -13,15 +13,17 @@ FilmLightMeter/
 ├── android/
 │   ├── app/                 Android 应用源码和资源
 │   ├── gradle/              Gradle Wrapper 与版本目录
-│   ├── scripts/             Android 环境脚本
-│   └── tools/               Android 激活和发布工具
+│   └── scripts/             Android 环境脚本
 ├── ios/
 │   ├── FilmLightMeter/      iOS App Target，实施阶段创建
 │   ├── FilmLightMeterTests/ iOS 单元测试，实施阶段创建
+│   ├── tools/               跨平台激活凭证签发工具
 │   └── README.md
+├── website/                 Next.js 官网、订单与离线凭证服务
 ├── docs/
 │   ├── android/             Android 专属文档和截图
 │   ├── ios/                 iOS 专属文档和截图
+│   ├── website/             官网产品与技术方案
 │   └── shared/              平台无关的领域资料
 ├── README.md
 └── LICENSE
@@ -42,6 +44,11 @@ FilmLightMeter/
 - Xcode 工程、Asset Catalog、Entitlements 和 Info.plist 配置。
 - iOS 权限、生命周期、Keychain、签名和 TestFlight 说明。
 - iOS 截图、IPA/TestFlight 使用指南及平台校准结果。
+
+放入 `website/` 或 `docs/website/` 的内容：
+
+- Next.js 页面、服务端接口、支付适配器和运营后台。
+- 官网产品方案、技术架构、部署、发布和支付说明。
 
 只有满足以下条件的内容才能放入 `docs/shared/`：
 
