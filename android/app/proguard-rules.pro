@@ -35,7 +35,6 @@
 -keep class com.lightmeter.app.metering.** { *; }
 -keep class com.lightmeter.app.exposure.** { *; }
 -keep class com.lightmeter.app.camera.** { *; }
--keep class com.lightmeter.app.activation.** { *; }
 
 # ---- Keep entry points ----
 -keep class com.lightmeter.app.MainActivity { *; }

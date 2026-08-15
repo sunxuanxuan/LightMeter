@@ -1,7 +1,19 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
+}
+
+val releaseSigningPropertiesFile =
+    rootProject.file("signing/filmlightmeter-release.properties")
+val releaseSigningKeyFile =
+    rootProject.file("signing/filmlightmeter-release.jks")
+val releaseSigningProperties = Properties().apply {
+    if (releaseSigningPropertiesFile.exists()) {
+        releaseSigningPropertiesFile.inputStream().use(::load)
+    }
 }
 
 android {
@@ -21,10 +33,24 @@ android {
         }
     }
 
+    signingConfigs {
+        if (releaseSigningPropertiesFile.exists() && releaseSigningKeyFile.exists()) {
+            create("release") {
+                storeFile = releaseSigningKeyFile
+                storePassword = releaseSigningProperties.getProperty("storePassword")
+                keyAlias = releaseSigningProperties.getProperty("keyAlias")
+                keyPassword = releaseSigningProperties.getProperty("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
+            if (releaseSigningPropertiesFile.exists() && releaseSigningKeyFile.exists()) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
@@ -72,7 +98,10 @@ dependencies {
     implementation(libs.androidx.camera.lifecycle)
     implementation(libs.androidx.camera.view)
 
+    implementation(libs.bouncycastle.provider)
+
     testImplementation(libs.junit)
+    testImplementation(libs.json)
 
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

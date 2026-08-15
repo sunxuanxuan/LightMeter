@@ -376,8 +376,7 @@ ExposureRiskEngine actor
 
 ## 11. 激活设计
 
-当前 Android HMAC 方案把生成密钥嵌入客户端，逆向后可生成任意激活码。iOS
-发布版改用非对称签名：
+Android 和 iOS 发布版统一使用 Ed25519 非对称签名：
 
 ```text
 离线签发工具持有 Ed25519 私钥
@@ -385,9 +384,10 @@ App 只内置公钥
 凭证 = version + deviceID + issuedAt + optionalExpiry + signature
 ```
 
-设备 ID 首次启动时由 `SecRandomCopyBytes` 生成并保存到 Keychain。显示给用户
-时使用分组后的短指纹。App 使用 CryptoKit `Curve25519.Signing.PublicKey`
-验证凭证，并校验设备 ID。
+iOS 设备 ID 首次启动时由 `SecRandomCopyBytes` 生成并保存到 Keychain；
+Android 设备 ID 根据应用作用域内的 `ANDROID_ID`、机型和包名生成。显示给用户
+时均使用分组后的短指纹。iOS 使用 CryptoKit，Android 使用 Bouncy Castle
+验证同一格式的凭证，并校验设备 ID。
 
 私钥、未签名的万能凭证和发布证书不得进入仓库。Debug 构建可通过编译条件跳过
 激活，但 Release 不允许包含凭证生成代码。

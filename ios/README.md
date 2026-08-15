@@ -72,6 +72,7 @@ swift run --disable-index-store DomainValidation
 
 私钥位于本机 `ios/.secrets/activation-private-key`，目录已被 Git 忽略。请将它
 备份到安全的离线位置；丢失后无法继续签发与当前 App 公钥匹配的凭证。
+该工具签发的 Ed25519 凭证同时适用于 Android 和 iOS。
 
 为设备签发 30 天凭证：
 
