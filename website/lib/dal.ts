@@ -42,6 +42,9 @@ type OrderRow = {
   device_id_suffix: string;
   amount_minor: number;
   currency: string;
+  payment_provider: string;
+  payment_trade_no: string | null;
+  payment_qr_code: string | null;
   status: string;
   paid_at: string | null;
   created_at: string;
@@ -78,6 +81,7 @@ export type OrderDTO = {
   currency: string;
   createdAt: string;
   paidAt: string | null;
+  paymentQrCode: string | null;
   credential: string | null;
   signingKeyId: string | null;
   isDevelopmentCredential: boolean;
@@ -192,7 +196,7 @@ export function createOrder(
       input.deviceID.slice(-4),
       siteConfig.priceMinor,
       siteConfig.currency,
-      "local_preview",
+      "alipay",
       "pending",
       "2026-08-15",
       now,
@@ -221,6 +225,7 @@ export function getOrder(
     currency: order.currency,
     createdAt: order.created_at,
     paidAt: order.paid_at,
+    paymentQrCode: order.payment_qr_code,
     credential: license ? decrypt(license.credential_ciphertext) : null,
     signingKeyId: license?.signing_key_id ?? null,
     isDevelopmentCredential: license?.is_development === 1,
@@ -228,28 +233,55 @@ export function getOrder(
   };
 }
 
-export function simulatePayment(
-  orderNo: string,
-  sessionToken: string,
-): OrderDTO {
+export function getPaymentQrCode(orderNo: string): string | null {
+  const order = orderByNumber(orderNo);
+  if (!order || order.payment_provider !== "alipay") {
+    throw new Error("ORDER_NOT_FOUND");
+  }
+  return order.payment_qr_code;
+}
+
+export function savePaymentQrCode(orderNo: string, qrCode: string): void {
+  const result = db
+    .prepare(
+      `UPDATE orders SET payment_qr_code = ?, updated_at = ?
+       WHERE order_no = ? AND payment_provider = 'alipay'
+         AND status = 'pending'`,
+    )
+    .run(qrCode, new Date().toISOString(), orderNo);
+  if (result.changes !== 1) {
+    throw new Error("ORDER_NOT_PAYABLE");
+  }
+}
+
+export function fulfillAlipayPayment(input: {
+  orderNo: string;
+  tradeNo: string;
+  amountMinor: number;
+}): void {
   return transaction(() => {
-    const order = orderByNumber(orderNo);
-    if (!order || !sessionCanRead(order, sessionToken)) {
+    const order = orderByNumber(input.orderNo);
+    if (!order || order.payment_provider !== "alipay") {
       throw new Error("ORDER_NOT_FOUND");
     }
     if (order.status === "fulfilled") {
-      return getOrder(orderNo, sessionToken)!;
+      if (order.payment_trade_no !== input.tradeNo) {
+        throw new Error("ORDER_ALREADY_PAID");
+      }
+      return;
     }
     if (order.status !== "pending") {
       throw new Error("ORDER_NOT_PAYABLE");
     }
+    if (order.amount_minor !== input.amountMinor || order.currency !== "CNY") {
+      throw new Error("ORDER_AMOUNT_MISMATCH");
+    }
 
     const now = new Date().toISOString();
-    const paymentTradeNo = `LOCAL-${randomBytes(6).toString("hex").toUpperCase()}`;
     db.prepare(
       `UPDATE orders SET status = 'issuing', payment_trade_no = ?,
        paid_at = ?, updated_at = ? WHERE id = ?`,
-    ).run(paymentTradeNo, now, now, order.id);
+    ).run(input.tradeNo, now, now, order.id);
     db.prepare(
       `INSERT INTO payment_events (
         id, provider, provider_event_id, order_id, signature_verified,
@@ -257,8 +289,8 @@ export function simulatePayment(
       ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       randomUUID(),
-      "local_preview",
-      `evt_${paymentTradeNo}`,
+      "alipay",
+      `alipay:${input.tradeNo}`,
       order.id,
       1,
       "processed",
@@ -287,7 +319,6 @@ export function simulatePayment(
     db.prepare(
       "UPDATE orders SET status = 'fulfilled', updated_at = ? WHERE id = ?",
     ).run(now, order.id);
-    return getOrder(orderNo, sessionToken)!;
   });
 }
 

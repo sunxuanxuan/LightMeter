@@ -45,7 +45,15 @@ export function ActivationForm() {
         const fieldMessage = result.fieldErrors
           ? Object.values(result.fieldErrors).flat()[0]
           : null;
-        throw new Error(fieldMessage ?? "订单创建失败，请检查输入后重试");
+        const paymentMessage =
+          result.errorCode === "PAYMENT_NOT_CONFIGURED"
+            ? "支付宝付款暂未开放"
+            : result.errorCode === "PAYMENT_CREATION_FAILED"
+              ? "付款码生成失败，请稍后重试"
+              : null;
+        throw new Error(
+          fieldMessage ?? paymentMessage ?? "订单创建失败，请检查输入后重试",
+        );
       }
       router.push(result.resultUrl);
     } catch (submissionError) {
@@ -138,7 +146,7 @@ export function ActivationForm() {
             ) : (
               <KeyRound size={18} />
             )}
-            {submitting ? "正在创建订单" : "确认设备并继续"}
+            {submitting ? "正在生成付款码" : "生成支付宝付款码"}
           </button>
         </div>
       </form>
