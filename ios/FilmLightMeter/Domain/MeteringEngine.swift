@@ -77,8 +77,11 @@ public final class MeteringEngine: @unchecked Sendable {
             ?? NormalizedPoint(x: viewfinder.centerX, y: viewfinder.centerY)
         let virtualArea = viewfinder.width * configuration.previewAspectRatio
             * viewfinder.height
+        let circularAreaPercent = configuration.mode == .centerAverage
+            ? configuration.centerAverageAreaPercent
+            : configuration.spotAreaPercent
         let spotRadiusSquared = virtualArea
-            * Double(configuration.spotAreaPercent) / 100 / .pi
+            * Double(circularAreaPercent) / 100 / .pi
         let centerScale = sqrt(Double(configuration.centerAreaPercent) / 100)
         let centerHalfWidth = viewfinder.width * centerScale / 2
         let centerHalfHeight = viewfinder.height * centerScale / 2

@@ -26,10 +26,9 @@ public enum CameraMeteringPreset: String, Codable, CaseIterable, Sendable, Ident
 
     public var displayName: String {
         switch self {
-        case .canonNewF1: "Canon New F-1"
-        case .canonAL1: "Canon AL-1"
-        case .olympus35SPAverage: "Olympus 35 SP 平均（20°）"
-        case .olympus35SPSpot: "Olympus 35 SP 点测（6°）"
+        case .canonNewF1: "佳能 New F-1"
+        case .canonAL1: "佳能 AL-1"
+        case .olympus35SPAverage, .olympus35SPSpot: "奥林巴斯 35 SP"
         }
     }
 
@@ -41,9 +40,9 @@ public enum CameraMeteringPreset: String, Codable, CaseIterable, Sendable, Ident
         }
     }
 
-    public var spotAreaPercent: Int {
+    public var meteringAreaPercent: Int? {
         switch self {
-        case .canonNewF1, .canonAL1: 5
+        case .canonNewF1, .canonAL1: nil
         case .olympus35SPAverage: 20
         case .olympus35SPSpot: 2
         }
@@ -65,12 +64,6 @@ public enum CameraMeteringPreset: String, Codable, CaseIterable, Sendable, Ident
         }
     }
 
-    public var focalLengthMillimeters: Double? {
-        switch self {
-        case .canonNewF1, .canonAL1: nil
-        case .olympus35SPAverage, .olympus35SPSpot: 42
-        }
-    }
 }
 
 public enum FrameFormat: String, Codable, CaseIterable, Sendable {
@@ -138,6 +131,7 @@ public struct MeteringConfiguration: Equatable, Sendable {
     public var mode: MeteringMode = .centerWeighted
     public var spotPoint: NormalizedPoint?
     public var spotAreaPercent = 5
+    public var centerAverageAreaPercent = 20
     public var centerAreaPercent = 25
     public var centerWeightPercent = 70
     public var viewfinder = NormalizedRect.full
