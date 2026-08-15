@@ -45,15 +45,18 @@ presetSettings.normalize()
 check(presetSettings.meteringMode == .centerWeighted, "camera preset selects center weighted")
 check(presetSettings.centerAreaPercent == 40, "camera preset center area")
 check(presetSettings.centerWeightPercent == 65, "camera preset center weight")
+presetSettings.focalLengthMillimeters = 85
 presetSettings.cameraMeteringPreset = .olympus35SPAverage
 presetSettings.normalize()
 check(presetSettings.meteringMode == .centerAverage, "35 SP average metering mode")
-check(presetSettings.spotAreaPercent == 20, "35 SP average metering area")
-check(presetSettings.focalLengthMillimeters == 42, "35 SP focal length")
+check(presetSettings.centerAverageAreaPercent == 20, "35 SP average metering area")
+check(presetSettings.spotAreaPercent == 5, "35 SP average keeps spot area")
+check(presetSettings.focalLengthMillimeters == 85, "35 SP keeps focal length")
 presetSettings.cameraMeteringPreset = .olympus35SPSpot
 presetSettings.normalize()
 check(presetSettings.meteringMode == .spot, "35 SP spot metering mode")
 check(presetSettings.spotAreaPercent == 2, "35 SP spot metering area")
+check(presetSettings.focalLengthMillimeters == 85, "35 SP spot keeps focal length")
 presetSettings.focalLengthMillimeters = 180
 presetSettings.cameraMeteringPreset = nil
 presetSettings.normalize()

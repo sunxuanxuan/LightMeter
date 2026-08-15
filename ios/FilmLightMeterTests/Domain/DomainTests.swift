@@ -145,11 +145,9 @@ final class DomainTests: XCTestCase {
         XCTAssertEqual(CameraMeteringPreset.canonAL1.centerAreaPercent, 40)
         XCTAssertEqual(CameraMeteringPreset.canonAL1.centerWeightPercent, 65)
         XCTAssertEqual(CameraMeteringPreset.olympus35SPAverage.meteringMode, .centerAverage)
-        XCTAssertEqual(CameraMeteringPreset.olympus35SPAverage.spotAreaPercent, 20)
-        XCTAssertEqual(CameraMeteringPreset.olympus35SPAverage.focalLengthMillimeters, 42)
+        XCTAssertEqual(CameraMeteringPreset.olympus35SPAverage.meteringAreaPercent, 20)
         XCTAssertEqual(CameraMeteringPreset.olympus35SPSpot.meteringMode, .spot)
-        XCTAssertEqual(CameraMeteringPreset.olympus35SPSpot.spotAreaPercent, 2)
-        XCTAssertEqual(CameraMeteringPreset.olympus35SPSpot.focalLengthMillimeters, 42)
+        XCTAssertEqual(CameraMeteringPreset.olympus35SPSpot.meteringAreaPercent, 2)
     }
 
     func testCameraMeteringPresetNormalizesModeAndWeights() {
@@ -165,21 +163,24 @@ final class DomainTests: XCTestCase {
         XCTAssertEqual(settings.centerWeightPercent, 65)
     }
 
-    func testOlympus35SPPresetNormalizesModeAreaAndFocalLength() {
+    func testOlympus35SPPresetNormalizesIndependentAreasWithoutChangingFocalLength() {
         var settings = AppSettings()
+        settings.focalLengthMillimeters = 85
         settings.cameraMeteringPreset = .olympus35SPAverage
         settings.normalize()
 
         XCTAssertEqual(settings.meteringMode, .centerAverage)
-        XCTAssertEqual(settings.spotAreaPercent, 20)
-        XCTAssertEqual(settings.focalLengthMillimeters, 42)
+        XCTAssertEqual(settings.centerAverageAreaPercent, 20)
+        XCTAssertEqual(settings.spotAreaPercent, 5)
+        XCTAssertEqual(settings.focalLengthMillimeters, 85)
 
         settings.cameraMeteringPreset = .olympus35SPSpot
         settings.normalize()
 
         XCTAssertEqual(settings.meteringMode, .spot)
         XCTAssertEqual(settings.spotAreaPercent, 2)
-        XCTAssertEqual(settings.focalLengthMillimeters, 42)
+        XCTAssertEqual(settings.centerAverageAreaPercent, 20)
+        XCTAssertEqual(settings.focalLengthMillimeters, 85)
     }
 
     func testFocalLengthNormalizesToAndroidRange() {
@@ -199,10 +200,14 @@ final class DomainTests: XCTestCase {
             JSONSerialization.jsonObject(with: encoded) as? [String: Any]
         )
         object.removeValue(forKey: "cameraMeteringPreset")
+        object.removeValue(forKey: "centerAverageAreaPercent")
         let legacyData = try JSONSerialization.data(withJSONObject: object)
 
-        let decoded = try JSONDecoder().decode(AppSettings.self, from: legacyData)
+        var decoded = try JSONDecoder().decode(AppSettings.self, from: legacyData)
         XCTAssertNil(decoded.cameraMeteringPreset)
+        XCTAssertNil(decoded.centerAverageAreaPercent)
+        decoded.normalize()
+        XCTAssertEqual(decoded.centerAverageAreaPercent, 20)
     }
 
     func testVideoRangeLuminanceUsesLegalRange() {
@@ -254,7 +259,7 @@ final class DomainTests: XCTestCase {
         )
         var centerConfiguration = MeteringConfiguration()
         centerConfiguration.mode = .centerAverage
-        centerConfiguration.spotAreaPercent = 20
+        centerConfiguration.centerAverageAreaPercent = 20
         centerConfiguration.previewAspectRatio = 1
         let centerResult = try XCTUnwrap(MeteringEngine().analyze(
             plane: plane,

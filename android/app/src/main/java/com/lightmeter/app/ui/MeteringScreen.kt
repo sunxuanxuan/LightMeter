@@ -200,6 +200,7 @@ fun MeteringRoute(
         onMeteringPresetSelected = viewModel::selectMeteringPreset,
         onCameraMeteringPresetSelected = viewModel::selectCameraMeteringPreset,
         onSpotAreaChanged = viewModel::adjustSpotAreaPercent,
+        onCenterAverageAreaChanged = viewModel::adjustCenterAverageAreaPercent,
         onCenterAreaChanged = viewModel::adjustCenterAreaPercent,
         onCenterWeightChanged = viewModel::adjustCenterWeightPercent,
         onExposureRiskEnabledChanged = viewModel::setExposureRiskEnabled,
@@ -238,6 +239,7 @@ private fun MeteringScreen(
     onMeteringPresetSelected: (MeteringMode) -> Unit,
     onCameraMeteringPresetSelected: (CameraMeteringPreset?) -> Unit,
     onSpotAreaChanged: (Int) -> Unit,
+    onCenterAverageAreaChanged: (Int) -> Unit,
     onCenterAreaChanged: (Int) -> Unit,
     onCenterWeightChanged: (Int) -> Unit,
     onExposureRiskEnabledChanged: (Boolean) -> Unit,
@@ -277,6 +279,7 @@ private fun MeteringScreen(
                 onMeteringPresetSelected = onMeteringPresetSelected,
                 onCameraMeteringPresetSelected = onCameraMeteringPresetSelected,
                 onSpotAreaChanged = onSpotAreaChanged,
+                onCenterAverageAreaChanged = onCenterAverageAreaChanged,
                 onCenterAreaChanged = onCenterAreaChanged,
                 onCenterWeightChanged = onCenterWeightChanged,
                 onExposureRiskEnabledChanged = onExposureRiskEnabledChanged,
@@ -327,6 +330,7 @@ private fun CameraContent(
     onMeteringPresetSelected: (MeteringMode) -> Unit,
     onCameraMeteringPresetSelected: (CameraMeteringPreset?) -> Unit,
     onSpotAreaChanged: (Int) -> Unit,
+    onCenterAverageAreaChanged: (Int) -> Unit,
     onCenterAreaChanged: (Int) -> Unit,
     onCenterWeightChanged: (Int) -> Unit,
     onExposureRiskEnabledChanged: (Boolean) -> Unit,
@@ -560,6 +564,7 @@ private fun CameraContent(
                             mode = state.meteringMode,
                             spotPoint = state.spotMeteringPoint,
                             spotAreaPercent = state.spotAreaPercent,
+                            centerAverageAreaPercent = state.centerAverageAreaPercent,
                             centerAreaPercent = state.centerAreaPercent,
                             centerWeightPercent = state.centerWeightPercent,
                             viewfinderRect = normalizedViewfinder,
@@ -736,6 +741,7 @@ private fun CameraContent(
             onMeteringPresetSelected = onMeteringPresetSelected,
             onCameraMeteringPresetSelected = onCameraMeteringPresetSelected,
             onSpotAreaChanged = onSpotAreaChanged,
+            onCenterAverageAreaChanged = onCenterAverageAreaChanged,
             onCenterAreaChanged = onCenterAreaChanged,
             onCenterWeightChanged = onCenterWeightChanged,
             onExposureRiskEnabledChanged = onExposureRiskEnabledChanged,
@@ -793,33 +799,21 @@ private fun ViewfinderOverlay(
     Canvas(
         modifier = modifier.then(interactionModifier),
     ) {
-        val frame = viewfinder.toComposeRect(size.width, size.height)
-        when (state.meteringMode) {
-            MeteringMode.SPOT,
-            MeteringMode.CENTER_AVERAGE -> {
-                val point = state.spotMeteringPoint
-                val center = if (point == null) {
-                    frame.center
-                } else {
-                    Offset(
-                        x = size.width * point.x.toFloat(),
-                        y = size.height * point.y.toFloat(),
-                    )
-                }
-                drawCircle(
-                    color = Color.White,
-                    radius = meteringRadius(
-                        width = frame.width,
-                        height = frame.height,
-                        areaPercent = state.spotAreaPercent,
-                    ) * if (state.meteringMode == MeteringMode.CENTER_AVERAGE) 1f else 0.25f,
-                    center = center,
-                    style = Stroke(width = 2.dp.toPx()),
-                )
-            }
-
-            MeteringMode.CENTER_WEIGHTED,
-            MeteringMode.AVERAGE -> Unit
+        state.spotMeteringPoint?.let { point ->
+            val frame = viewfinder.toComposeRect(size.width, size.height)
+            drawCircle(
+                color = Color.White,
+                radius = meteringRadius(
+                    width = frame.width,
+                    height = frame.height,
+                    areaPercent = state.spotAreaPercent,
+                ) * 0.25f,
+                center = Offset(
+                    x = size.width * point.x.toFloat(),
+                    y = size.height * point.y.toFloat(),
+                ),
+                style = Stroke(width = 2.dp.toPx()),
+            )
         }
     }
 }
@@ -1588,6 +1582,7 @@ private fun ExposurePanel(
     onMeteringPresetSelected: (MeteringMode) -> Unit,
     onCameraMeteringPresetSelected: (CameraMeteringPreset?) -> Unit,
     onSpotAreaChanged: (Int) -> Unit,
+    onCenterAverageAreaChanged: (Int) -> Unit,
     onCenterAreaChanged: (Int) -> Unit,
     onCenterWeightChanged: (Int) -> Unit,
     onExposureRiskEnabledChanged: (Boolean) -> Unit,
@@ -1720,6 +1715,7 @@ private fun ExposurePanel(
             selectedMeteringPreset = state.meteringPreset,
             selectedCameraMeteringPreset = state.cameraMeteringPreset,
             spotAreaPercent = state.spotAreaPercent,
+            centerAverageAreaPercent = state.centerAverageAreaPercent,
             centerAreaPercent = state.centerAreaPercent,
             centerWeightPercent = state.centerWeightPercent,
             exposureRiskEnabled = state.exposureRiskEnabled,
@@ -1731,6 +1727,7 @@ private fun ExposurePanel(
             onMeteringPresetSelected = onMeteringPresetSelected,
             onCameraMeteringPresetSelected = onCameraMeteringPresetSelected,
             onSpotAreaChanged = onSpotAreaChanged,
+            onCenterAverageAreaChanged = onCenterAverageAreaChanged,
             onCenterAreaChanged = onCenterAreaChanged,
             onCenterWeightChanged = onCenterWeightChanged,
             onExposureRiskEnabledChanged = onExposureRiskEnabledChanged,
@@ -1767,6 +1764,7 @@ private fun AppSettingsDialog(
     selectedMeteringPreset: MeteringMode,
     selectedCameraMeteringPreset: CameraMeteringPreset?,
     spotAreaPercent: Int,
+    centerAverageAreaPercent: Int,
     centerAreaPercent: Int,
     centerWeightPercent: Int,
     exposureRiskEnabled: Boolean,
@@ -1778,6 +1776,7 @@ private fun AppSettingsDialog(
     onMeteringPresetSelected: (MeteringMode) -> Unit,
     onCameraMeteringPresetSelected: (CameraMeteringPreset?) -> Unit,
     onSpotAreaChanged: (Int) -> Unit,
+    onCenterAverageAreaChanged: (Int) -> Unit,
     onCenterAreaChanged: (Int) -> Unit,
     onCenterWeightChanged: (Int) -> Unit,
     onExposureRiskEnabledChanged: (Boolean) -> Unit,
@@ -1792,6 +1791,9 @@ private fun AppSettingsDialog(
     var meteringExpanded by rememberSaveable { mutableStateOf(false) }
     var exposureRiskExpanded by rememberSaveable { mutableStateOf(false) }
     var appearanceExpanded by rememberSaveable { mutableStateOf(false) }
+    val compatibleCameraPresets = remember(selectedMeteringPreset) {
+        CameraMeteringPreset.entries.filter { it.meteringMode == selectedMeteringPreset }
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1853,67 +1855,75 @@ private fun AppSettingsDialog(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(14.dp))
-                    ControlLabel(text = "机型预设")
-                    OptionRow {
-                        ChoiceButton(
-                            text = "自定义",
-                            selected = selectedCameraMeteringPreset == null,
-                            onClick = { onCameraMeteringPresetSelected(null) },
-                        )
-                        CameraMeteringPreset.entries.forEach { preset ->
+                    if (compatibleCameraPresets.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(14.dp))
+                        ControlLabel(text = "机型预设")
+                        OptionRow {
                             ChoiceButton(
-                                text = preset.displayName,
-                                selected = selectedCameraMeteringPreset == preset,
-                                onClick = { onCameraMeteringPresetSelected(preset) },
+                                text = "自定义",
+                                selected = selectedCameraMeteringPreset == null,
+                                onClick = { onCameraMeteringPresetSelected(null) },
                             )
+                            compatibleCameraPresets.forEach { preset ->
+                                ChoiceButton(
+                                    text = preset.displayName,
+                                    selected = selectedCameraMeteringPreset == preset,
+                                    onClick = { onCameraMeteringPresetSelected(preset) },
+                                )
+                            }
                         }
                     }
 
                     Spacer(modifier = Modifier.height(14.dp))
-                    when (selectedMeteringPreset) {
-                        MeteringMode.SPOT -> {
-                            PercentageControl(
-                                label = "点测光面积",
-                                value = spotAreaPercent,
-                                onDecrease = { onSpotAreaChanged(-1) },
-                                onIncrease = { onSpotAreaChanged(1) },
-                            )
-                            SettingHint("读取画面中心区域；点击画面后，测光中心移动到点击位置。")
-                        }
+                    if (selectedCameraMeteringPreset != null) {
+                        PresetMeteringSummary(selectedCameraMeteringPreset)
+                    } else {
+                        when (selectedMeteringPreset) {
+                            MeteringMode.SPOT -> {
+                                PercentageControl(
+                                    label = "点测光面积",
+                                    value = spotAreaPercent,
+                                    onDecrease = { onSpotAreaChanged(-1) },
+                                    onIncrease = { onSpotAreaChanged(1) },
+                                )
+                                SettingHint(
+                                    "读取画面中心区域；点击画面后，测光中心移动到点击位置。",
+                                )
+                            }
 
-                        MeteringMode.CENTER_AVERAGE -> {
-                            PercentageControl(
-                                label = "中央平均区域",
-                                value = spotAreaPercent,
-                                onDecrease = { onSpotAreaChanged(-1) },
-                                onIncrease = { onSpotAreaChanged(1) },
-                            )
-                            SettingHint("读取画面中央圆形区域的平均亮度，不计入外围区域。")
-                        }
+                            MeteringMode.CENTER_AVERAGE -> {
+                                PercentageControl(
+                                    label = "中央平均区域",
+                                    value = centerAverageAreaPercent,
+                                    onDecrease = { onCenterAverageAreaChanged(-1) },
+                                    onIncrease = { onCenterAverageAreaChanged(1) },
+                                )
+                                SettingHint("读取画面中央圆形区域的平均亮度，不计入外围区域。")
+                            }
 
-                        MeteringMode.CENTER_WEIGHTED -> {
-                            PercentageControl(
-                                label = "中央区域面积",
-                                value = centerAreaPercent,
-                                onDecrease = { onCenterAreaChanged(-5) },
-                                onIncrease = { onCenterAreaChanged(5) },
-                            )
-                            Spacer(modifier = Modifier.height(10.dp))
-                            PercentageControl(
-                                label = "中央测光权重",
-                                value = centerWeightPercent,
-                                onDecrease = { onCenterWeightChanged(-5) },
-                                onIncrease = { onCenterWeightChanged(5) },
-                            )
-                            SettingHint(
-                                "外围区域自动使用剩余 ${100 - centerAreaPercent}% 面积和 " +
-                                    "${100 - centerWeightPercent}% 权重。",
-                            )
-                        }
+                            MeteringMode.CENTER_WEIGHTED -> {
+                                PercentageControl(
+                                    label = "中央区域面积",
+                                    value = centerAreaPercent,
+                                    onDecrease = { onCenterAreaChanged(-5) },
+                                    onIncrease = { onCenterAreaChanged(5) },
+                                )
+                                Spacer(modifier = Modifier.height(10.dp))
+                                PercentageControl(
+                                    label = "中央测光权重",
+                                    value = centerWeightPercent,
+                                    onDecrease = { onCenterWeightChanged(-5) },
+                                    onIncrease = { onCenterWeightChanged(5) },
+                                )
+                                SettingHint(
+                                    "外围区域自动使用剩余 ${100 - centerAreaPercent}% 面积和 " +
+                                        "${100 - centerWeightPercent}% 权重。",
+                                )
+                            }
 
-                        MeteringMode.AVERAGE -> {
-                            SettingHint("读取整个画面的平均亮度，不使用额外权重。")
+                            MeteringMode.AVERAGE -> {
+                                SettingHint("读取整个画面的平均亮度，不使用额外权重。")
+                            }
                         }
                     }
                 }
@@ -2149,6 +2159,22 @@ private fun StopControl(
             }
         }
     }
+}
+
+@Composable
+private fun PresetMeteringSummary(preset: CameraMeteringPreset) {
+    val summary = when (preset) {
+        CameraMeteringPreset.OLYMPUS_35_SP_SPOT ->
+            "测光范围 6° · 区域约 2%"
+
+        CameraMeteringPreset.OLYMPUS_35_SP_AVERAGE ->
+            "测光范围 20° · 区域约 20%"
+
+        CameraMeteringPreset.CANON_NEW_F1,
+        CameraMeteringPreset.CANON_AL1 ->
+            "中央区域 ${preset.centerAreaPercent}% · 中央权重 ${preset.centerWeightPercent}%"
+    }
+    SettingHint(summary)
 }
 
 @Composable

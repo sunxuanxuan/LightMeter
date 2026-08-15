@@ -10,40 +10,37 @@ enum class MeteringMode {
 enum class CameraMeteringPreset(
     val displayName: String,
     val meteringMode: MeteringMode,
-    val spotAreaPercent: Int,
+    val meteringAreaPercent: Int?,
     val centerAreaPercent: Int,
     val centerWeightPercent: Int,
-    val focalLengthMm: Double? = null,
 ) {
     CANON_NEW_F1(
-        displayName = "Canon New F-1",
+        displayName = "佳能 New F-1",
         meteringMode = MeteringMode.CENTER_WEIGHTED,
-        spotAreaPercent = 5,
+        meteringAreaPercent = null,
         centerAreaPercent = 60,
         centerWeightPercent = 70,
     ),
     CANON_AL1(
-        displayName = "Canon AL-1",
+        displayName = "佳能 AL-1",
         meteringMode = MeteringMode.CENTER_WEIGHTED,
-        spotAreaPercent = 5,
+        meteringAreaPercent = null,
         centerAreaPercent = 40,
         centerWeightPercent = 65,
     ),
     OLYMPUS_35_SP_AVERAGE(
-        displayName = "Olympus 35 SP 平均（20°）",
+        displayName = "奥林巴斯 35 SP",
         meteringMode = MeteringMode.CENTER_AVERAGE,
-        spotAreaPercent = 20,
+        meteringAreaPercent = 20,
         centerAreaPercent = 20,
         centerWeightPercent = 95,
-        focalLengthMm = 42.0,
     ),
     OLYMPUS_35_SP_SPOT(
-        displayName = "Olympus 35 SP 点测（6°）",
+        displayName = "奥林巴斯 35 SP",
         meteringMode = MeteringMode.SPOT,
-        spotAreaPercent = 2,
+        meteringAreaPercent = 2,
         centerAreaPercent = 20,
         centerWeightPercent = 95,
-        focalLengthMm = 42.0,
     ),
 }
 
@@ -90,6 +87,7 @@ data class MeteringConfig(
     val mode: MeteringMode = MeteringMode.CENTER_WEIGHTED,
     val spotPoint: NormalizedPoint? = null,
     val spotAreaPercent: Int = 5,
+    val centerAverageAreaPercent: Int = 20,
     val centerAreaPercent: Int = 25,
     val centerWeightPercent: Int = 70,
     val viewfinderRect: NormalizedMeteringRect = NormalizedMeteringRect.Full,
@@ -100,7 +98,8 @@ data class MeteringConfig(
     val calibrationOffset: Double = 0.0,
 ) {
     init {
-        require(spotAreaPercent in 1..20)
+        require(spotAreaPercent in 1..10)
+        require(centerAverageAreaPercent in 1..20)
         require(centerAreaPercent in 5..80)
         require(centerWeightPercent in 50..95)
         require(previewAspectRatio > 0.0)

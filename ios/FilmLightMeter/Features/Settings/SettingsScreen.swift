@@ -42,39 +42,46 @@ struct SettingsScreen: View {
                             Text($0.displayName).tag($0)
                         }
                     }
-                    Picker("机型预设", selection: cameraMeteringPresetID) {
-                        Text("自定义").tag("")
-                        ForEach(CameraMeteringPreset.allCases) { preset in
-                            Text(preset.displayName).tag(preset.rawValue)
+                    if !compatibleCameraMeteringPresets.isEmpty {
+                        Picker("机型预设", selection: cameraMeteringPresetID) {
+                            Text("自定义").tag("")
+                            ForEach(compatibleCameraMeteringPresets) { preset in
+                                Text(preset.displayName).tag(preset.rawValue)
+                            }
                         }
                     }
-                    if settings.meteringMode == .spot {
-                        Stepper(
-                            "点测光面积 \(settings.spotAreaPercent)%",
-                            value: spotAreaPercent,
-                            in: 1...10
-                        )
-                    }
-                    if settings.meteringMode == .centerAverage {
-                        Stepper(
-                            "中央平均区域 \(settings.spotAreaPercent)%",
-                            value: spotAreaPercent,
-                            in: 1...20
-                        )
-                    }
-                    if settings.meteringMode == .centerWeighted {
-                        Stepper(
-                            "中央区域 \(settings.centerAreaPercent)%",
-                            value: centerAreaPercent,
-                            in: 5...80,
-                            step: 5
-                        )
-                        Stepper(
-                            "中央权重 \(settings.centerWeightPercent)%",
-                            value: centerWeightPercent,
-                            in: 50...95,
-                            step: 5
-                        )
+                    if let preset = settings.cameraMeteringPreset {
+                        Text(meteringSummary(for: preset))
+                            .foregroundStyle(.secondary)
+                    } else {
+                        if settings.meteringMode == .spot {
+                            Stepper(
+                                "点测光面积 \(settings.spotAreaPercent)%",
+                                value: spotAreaPercent,
+                                in: 1...10
+                            )
+                        }
+                        if settings.meteringMode == .centerAverage {
+                            Stepper(
+                                "中央平均区域 \(settings.centerAverageAreaPercent ?? 20)%",
+                                value: centerAverageAreaPercent,
+                                in: 1...20
+                            )
+                        }
+                        if settings.meteringMode == .centerWeighted {
+                            Stepper(
+                                "中央区域 \(settings.centerAreaPercent)%",
+                                value: centerAreaPercent,
+                                in: 5...80,
+                                step: 5
+                            )
+                            Stepper(
+                                "中央权重 \(settings.centerWeightPercent)%",
+                                value: centerWeightPercent,
+                                in: 50...95,
+                                step: 5
+                            )
+                        }
                     }
                 }
 
@@ -127,6 +134,12 @@ struct SettingsScreen: View {
         }
     }
 
+    private var compatibleCameraMeteringPresets: [CameraMeteringPreset] {
+        CameraMeteringPreset.allCases.filter {
+            $0.meteringMode == settings.meteringMode
+        }
+    }
+
     private var themeStyleBinding: Binding<AppThemeStyle> {
         Binding(
             get: { themeStyle },
@@ -168,6 +181,16 @@ struct SettingsScreen: View {
             get: { settings.spotAreaPercent },
             set: {
                 settings.spotAreaPercent = $0
+                settings.cameraMeteringPreset = nil
+            }
+        )
+    }
+
+    private var centerAverageAreaPercent: Binding<Int> {
+        Binding(
+            get: { settings.centerAverageAreaPercent ?? 20 },
+            set: {
+                settings.centerAverageAreaPercent = $0
                 settings.cameraMeteringPreset = nil
             }
         )
@@ -224,11 +247,28 @@ struct SettingsScreen: View {
         settings.cameraMeteringPreset = preset
         guard let preset else { return }
         settings.meteringMode = preset.meteringMode
-        settings.spotAreaPercent = preset.spotAreaPercent
+        if let area = preset.meteringAreaPercent {
+            switch preset.meteringMode {
+            case .spot:
+                settings.spotAreaPercent = area
+            case .centerAverage:
+                settings.centerAverageAreaPercent = area
+            case .centerWeighted, .average:
+                break
+            }
+        }
         settings.centerAreaPercent = preset.centerAreaPercent
         settings.centerWeightPercent = preset.centerWeightPercent
-        if let focalLength = preset.focalLengthMillimeters {
-            settings.focalLengthMillimeters = focalLength
+    }
+
+    private func meteringSummary(for preset: CameraMeteringPreset) -> String {
+        switch preset {
+        case .olympus35SPSpot:
+            "测光范围 6° · 区域约 2%"
+        case .olympus35SPAverage:
+            "测光范围 20° · 区域约 20%"
+        case .canonNewF1, .canonAL1:
+            "中央区域 \(preset.centerAreaPercent)% · 中央权重 \(preset.centerWeightPercent)%"
         }
     }
 

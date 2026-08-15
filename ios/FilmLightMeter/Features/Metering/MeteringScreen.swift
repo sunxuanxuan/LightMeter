@@ -105,15 +105,13 @@ struct MeteringScreen: View {
                 }
                 ViewfinderOverlay(rect: viewModel.viewfinder)
                 if chromeVisible {
-                    SpotMeteringOverlay(
-                        viewfinder: viewModel.viewfinder,
-                        point: viewModel.spotMeteringPoint,
-                        areaPercent: viewModel.settings.spotAreaPercent,
-                        radiusScale: viewModel.settings.meteringMode == .centerAverage ? 1 : 0.25,
-                        isVisible: viewModel.settings.meteringMode == .spot
-                            || viewModel.settings.meteringMode == .centerAverage
-                            || viewModel.spotMeteringPoint != nil
-                    )
+                    if let spotMeteringPoint = viewModel.spotMeteringPoint {
+                        SpotMeteringOverlay(
+                            viewfinder: viewModel.viewfinder,
+                            point: spotMeteringPoint,
+                            areaPercent: viewModel.settings.spotAreaPercent
+                        )
+                    }
                     if let pair = viewModel.recommendation?.primary {
                         ExposureScaleOverlay(
                             apertureLabels: ExposureEngine.apertureLabels,
@@ -472,28 +470,24 @@ private struct ExposureSideScale: View {
 
 private struct SpotMeteringOverlay: View {
     let viewfinder: NormalizedRect
-    let point: NormalizedPoint?
+    let point: NormalizedPoint
     let areaPercent: Int
-    let radiusScale: CGFloat
-    let isVisible: Bool
 
     var body: some View {
         GeometryReader { geometry in
-            if isVisible {
-                let frameWidth = viewfinder.width * geometry.size.width
-                let frameHeight = viewfinder.height * geometry.size.height
-                let center = CGPoint(
-                    x: (point?.x ?? viewfinder.centerX) * geometry.size.width,
-                    y: (point?.y ?? viewfinder.centerY) * geometry.size.height
-                )
-                let radius = sqrt(
-                    frameWidth * frameHeight * CGFloat(areaPercent) / 100 / .pi
-                ) * radiusScale
-                Circle()
-                    .stroke(.white, lineWidth: 2)
-                    .frame(width: radius * 2, height: radius * 2)
-                    .position(center)
-            }
+            let frameWidth = viewfinder.width * geometry.size.width
+            let frameHeight = viewfinder.height * geometry.size.height
+            let center = CGPoint(
+                x: point.x * geometry.size.width,
+                y: point.y * geometry.size.height
+            )
+            let radius = sqrt(
+                frameWidth * frameHeight * CGFloat(areaPercent) / 100 / .pi
+            ) * 0.25
+            Circle()
+                .stroke(.white, lineWidth: 2)
+                .frame(width: radius * 2, height: radius * 2)
+                .position(center)
         }
         .allowsHitTesting(false)
     }

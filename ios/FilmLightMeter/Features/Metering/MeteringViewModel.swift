@@ -400,6 +400,7 @@ final class MeteringViewModel: ObservableObject {
         configuration.spotPoint = nil
         spotMeteringPoint = nil
         configuration.spotAreaPercent = settings.spotAreaPercent
+        configuration.centerAverageAreaPercent = settings.centerAverageAreaPercent ?? 20
         configuration.centerAreaPercent = settings.centerAreaPercent
         configuration.centerWeightPercent = settings.centerWeightPercent
         configuration.previewAspectRatio = previewAspectRatio

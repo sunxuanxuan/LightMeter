@@ -13,6 +13,7 @@ data class AppSettings(
     val exposureCompensation: Double = 0.0,
     val meteringPreset: MeteringMode = MeteringMode.CENTER_WEIGHTED,
     val spotAreaPercent: Int = 5,
+    val centerAverageAreaPercent: Int = 20,
     val centerAreaPercent: Int = 25,
     val centerWeightPercent: Int = 70,
     val cameraMeteringPreset: CameraMeteringPreset? = null,
@@ -62,6 +63,10 @@ class SharedPreferencesAppSettingsStore(context: Context) : AppSettingsStore {
             spotAreaPercent = preferences.getInt(
                 KEY_SPOT_AREA_PERCENT,
                 defaults.spotAreaPercent,
+            ),
+            centerAverageAreaPercent = preferences.getInt(
+                KEY_CENTER_AVERAGE_AREA_PERCENT,
+                defaults.centerAverageAreaPercent,
             ),
             centerAreaPercent = preferences.getInt(
                 KEY_CENTER_AREA_PERCENT,
@@ -121,6 +126,7 @@ class SharedPreferencesAppSettingsStore(context: Context) : AppSettingsStore {
             )
             .putString(KEY_METERING_PRESET, settings.meteringPreset.name)
             .putInt(KEY_SPOT_AREA_PERCENT, settings.spotAreaPercent)
+            .putInt(KEY_CENTER_AVERAGE_AREA_PERCENT, settings.centerAverageAreaPercent)
             .putInt(KEY_CENTER_AREA_PERCENT, settings.centerAreaPercent)
             .putInt(KEY_CENTER_WEIGHT_PERCENT, settings.centerWeightPercent)
             .putNullableEnum(KEY_CAMERA_METERING_PRESET, settings.cameraMeteringPreset)
@@ -159,6 +165,7 @@ class SharedPreferencesAppSettingsStore(context: Context) : AppSettingsStore {
         const val KEY_EXPOSURE_COMPENSATION = "exposure_compensation"
         const val KEY_METERING_PRESET = "metering_preset"
         const val KEY_SPOT_AREA_PERCENT = "spot_area_percent"
+        private const val KEY_CENTER_AVERAGE_AREA_PERCENT = "center_average_area_percent"
         const val KEY_CENTER_AREA_PERCENT = "center_area_percent"
         const val KEY_CENTER_WEIGHT_PERCENT = "center_weight_percent"
         const val KEY_CAMERA_METERING_PRESET = "camera_metering_preset"

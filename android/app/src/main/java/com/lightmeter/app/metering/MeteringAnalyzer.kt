@@ -300,8 +300,13 @@ class MeteringAnalyzer(
             ?: Pair(viewfinder.centerX, viewfinder.centerY)
         val virtualViewfinderArea =
             viewfinder.width * previewAspectRatio * viewfinder.height
+        val circularAreaPercent = if (meteringConfig.mode == MeteringMode.CENTER_AVERAGE) {
+            meteringConfig.centerAverageAreaPercent
+        } else {
+            meteringConfig.spotAreaPercent
+        }
         val spotRadiusSquared = sqrt(
-            virtualViewfinderArea * meteringConfig.spotAreaPercent / 100.0 / PI,
+            virtualViewfinderArea * circularAreaPercent / 100.0 / PI,
         ).let { it * it }
         val centerScale = sqrt(meteringConfig.centerAreaPercent / 100.0)
         val centerHalfWidth = viewfinder.width * centerScale / 2.0
