@@ -2,17 +2,49 @@ package com.lightmeter.app.metering
 
 enum class MeteringMode {
     SPOT,
+    CENTER_AVERAGE,
     CENTER_WEIGHTED,
     AVERAGE,
 }
 
 enum class CameraMeteringPreset(
     val displayName: String,
+    val meteringMode: MeteringMode,
+    val spotAreaPercent: Int,
     val centerAreaPercent: Int,
     val centerWeightPercent: Int,
+    val focalLengthMm: Double? = null,
 ) {
-    CANON_NEW_F1("Canon New F-1", 60, 70),
-    CANON_AL1("Canon AL-1", 40, 65),
+    CANON_NEW_F1(
+        displayName = "Canon New F-1",
+        meteringMode = MeteringMode.CENTER_WEIGHTED,
+        spotAreaPercent = 5,
+        centerAreaPercent = 60,
+        centerWeightPercent = 70,
+    ),
+    CANON_AL1(
+        displayName = "Canon AL-1",
+        meteringMode = MeteringMode.CENTER_WEIGHTED,
+        spotAreaPercent = 5,
+        centerAreaPercent = 40,
+        centerWeightPercent = 65,
+    ),
+    OLYMPUS_35_SP_AVERAGE(
+        displayName = "Olympus 35 SP 平均（20°）",
+        meteringMode = MeteringMode.CENTER_AVERAGE,
+        spotAreaPercent = 20,
+        centerAreaPercent = 20,
+        centerWeightPercent = 95,
+        focalLengthMm = 42.0,
+    ),
+    OLYMPUS_35_SP_SPOT(
+        displayName = "Olympus 35 SP 点测（6°）",
+        meteringMode = MeteringMode.SPOT,
+        spotAreaPercent = 2,
+        centerAreaPercent = 20,
+        centerWeightPercent = 95,
+        focalLengthMm = 42.0,
+    ),
 }
 
 data class NormalizedPoint(
@@ -68,7 +100,7 @@ data class MeteringConfig(
     val calibrationOffset: Double = 0.0,
 ) {
     init {
-        require(spotAreaPercent in 1..10)
+        require(spotAreaPercent in 1..20)
         require(centerAreaPercent in 5..80)
         require(centerWeightPercent in 50..95)
         require(previewAspectRatio > 0.0)

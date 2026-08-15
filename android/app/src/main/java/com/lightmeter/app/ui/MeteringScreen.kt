@@ -795,7 +795,8 @@ private fun ViewfinderOverlay(
     ) {
         val frame = viewfinder.toComposeRect(size.width, size.height)
         when (state.meteringMode) {
-            MeteringMode.SPOT -> {
+            MeteringMode.SPOT,
+            MeteringMode.CENTER_AVERAGE -> {
                 val point = state.spotMeteringPoint
                 val center = if (point == null) {
                     frame.center
@@ -811,7 +812,7 @@ private fun ViewfinderOverlay(
                         width = frame.width,
                         height = frame.height,
                         areaPercent = state.spotAreaPercent,
-                    ) * 0.25f,
+                    ) * if (state.meteringMode == MeteringMode.CENTER_AVERAGE) 1f else 0.25f,
                     center = center,
                     style = Stroke(width = 2.dp.toPx()),
                 )
@@ -1881,6 +1882,16 @@ private fun AppSettingsDialog(
                             SettingHint("读取画面中心区域；点击画面后，测光中心移动到点击位置。")
                         }
 
+                        MeteringMode.CENTER_AVERAGE -> {
+                            PercentageControl(
+                                label = "中央平均区域",
+                                value = spotAreaPercent,
+                                onDecrease = { onSpotAreaChanged(-1) },
+                                onIncrease = { onSpotAreaChanged(1) },
+                            )
+                            SettingHint("读取画面中央圆形区域的平均亮度，不计入外围区域。")
+                        }
+
                         MeteringMode.CENTER_WEIGHTED -> {
                             PercentageControl(
                                 label = "中央区域面积",
@@ -2153,6 +2164,7 @@ private fun SettingHint(text: String) {
 private fun MeteringMode.displayName(): String {
     return when (this) {
         MeteringMode.SPOT -> "点测光"
+        MeteringMode.CENTER_AVERAGE -> "中央区域平均"
         MeteringMode.CENTER_WEIGHTED -> "中央重点"
         MeteringMode.AVERAGE -> "平均测光"
     }

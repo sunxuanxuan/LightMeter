@@ -338,7 +338,8 @@ class MeteringAnalyzer(
                             primarySampleCount++
                         }
 
-                        MeteringMode.SPOT -> {
+                        MeteringMode.SPOT,
+                        MeteringMode.CENTER_AVERAGE -> {
                             val deltaX =
                                 (previewPoint.first - spotCenter.first) * previewAspectRatio
                             val deltaY = previewPoint.second - spotCenter.second

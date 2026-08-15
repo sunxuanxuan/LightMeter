@@ -2,6 +2,7 @@ package com.lightmeter.app.ui
 
 import com.lightmeter.app.camera.CameraOptics
 import com.lightmeter.app.exposure.FrameFormat
+import com.lightmeter.app.metering.CameraMeteringPreset
 import com.lightmeter.app.metering.ExposureMap
 import com.lightmeter.app.metering.ExposureSnapshot
 import com.lightmeter.app.metering.FilmLatitudePreset
@@ -108,6 +109,25 @@ class MeteringViewModelTest {
     @Test
     fun appThemeDefaultsToDark() {
         assertEquals(AppThemeStyle.DARK, AppSettings().themeStyle)
+    }
+
+    @Test
+    fun olympus35SPPresetsApplyMeteringAreaAndFocalLength() {
+        val viewModel = MeteringViewModel()
+
+        viewModel.selectCameraMeteringPreset(CameraMeteringPreset.OLYMPUS_35_SP_AVERAGE)
+        var state = viewModel.state.value
+        assertEquals(MeteringMode.CENTER_AVERAGE, state.meteringPreset)
+        assertEquals(MeteringMode.CENTER_AVERAGE, state.meteringMode)
+        assertEquals(20, state.spotAreaPercent)
+        assertEquals(42.0, state.focalLengthMm, 0.0)
+
+        viewModel.selectCameraMeteringPreset(CameraMeteringPreset.OLYMPUS_35_SP_SPOT)
+        state = viewModel.state.value
+        assertEquals(MeteringMode.SPOT, state.meteringPreset)
+        assertEquals(MeteringMode.SPOT, state.meteringMode)
+        assertEquals(2, state.spotAreaPercent)
+        assertEquals(42.0, state.focalLengthMm, 0.0)
     }
 
     @Test

@@ -170,11 +170,13 @@ class MeteringViewModel(
                 it.copy(cameraMeteringPreset = null)
             } else {
                 it.copy(
-                    meteringPreset = MeteringMode.CENTER_WEIGHTED,
-                    meteringMode = MeteringMode.CENTER_WEIGHTED,
+                    meteringPreset = preset.meteringMode,
+                    meteringMode = preset.meteringMode,
                     spotMeteringPoint = null,
+                    spotAreaPercent = preset.spotAreaPercent,
                     centerAreaPercent = preset.centerAreaPercent,
                     centerWeightPercent = preset.centerWeightPercent,
+                    focalLengthMm = preset.focalLengthMm ?: it.focalLengthMm,
                     cameraMeteringPreset = preset,
                 ).withoutMeteringResult()
             }
@@ -183,8 +185,10 @@ class MeteringViewModel(
 
     fun adjustSpotAreaPercent(delta: Int) {
         mutableState.update {
+            val maximum = if (it.meteringPreset == MeteringMode.CENTER_AVERAGE) 20 else 10
             it.copy(
-                spotAreaPercent = (it.spotAreaPercent + delta).coerceIn(1, 10),
+                spotAreaPercent = (it.spotAreaPercent + delta).coerceIn(1, maximum),
+                cameraMeteringPreset = null,
             ).withoutMeteringResult()
         }
     }
@@ -441,7 +445,7 @@ class MeteringViewModel(
                 ),
                 meteringPreset = settings.meteringPreset,
                 meteringMode = settings.meteringPreset,
-                spotAreaPercent = settings.spotAreaPercent.coerceIn(1, 10),
+                spotAreaPercent = settings.spotAreaPercent.coerceIn(1, 20),
                 centerAreaPercent = settings.centerAreaPercent.coerceIn(5, 80),
                 centerWeightPercent = settings.centerWeightPercent.coerceIn(50, 95),
                 cameraMeteringPreset = settings.cameraMeteringPreset,

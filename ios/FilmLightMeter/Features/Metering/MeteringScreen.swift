@@ -109,7 +109,9 @@ struct MeteringScreen: View {
                         viewfinder: viewModel.viewfinder,
                         point: viewModel.spotMeteringPoint,
                         areaPercent: viewModel.settings.spotAreaPercent,
+                        radiusScale: viewModel.settings.meteringMode == .centerAverage ? 1 : 0.25,
                         isVisible: viewModel.settings.meteringMode == .spot
+                            || viewModel.settings.meteringMode == .centerAverage
                             || viewModel.spotMeteringPoint != nil
                     )
                     if let pair = viewModel.recommendation?.primary {
@@ -472,6 +474,7 @@ private struct SpotMeteringOverlay: View {
     let viewfinder: NormalizedRect
     let point: NormalizedPoint?
     let areaPercent: Int
+    let radiusScale: CGFloat
     let isVisible: Bool
 
     var body: some View {
@@ -485,7 +488,7 @@ private struct SpotMeteringOverlay: View {
                 )
                 let radius = sqrt(
                     frameWidth * frameHeight * CGFloat(areaPercent) / 100 / .pi
-                ) * 0.25
+                ) * radiusScale
                 Circle()
                     .stroke(.white, lineWidth: 2)
                     .frame(width: radius * 2, height: radius * 2)

@@ -53,13 +53,17 @@ public struct AppSettings: Codable, Equatable, Sendable {
     public mutating func normalize() {
         selectedISO = min(max(Int((Double(selectedISO) / 50).rounded()) * 50, 100), 1600)
         exposureCompensation = Self.thirdStop(exposureCompensation, range: -3...3)
-        spotAreaPercent = min(max(spotAreaPercent, 1), 10)
+        spotAreaPercent = min(max(spotAreaPercent, 1), 20)
         centerAreaPercent = min(max(centerAreaPercent, 5), 80)
         centerWeightPercent = min(max(centerWeightPercent, 50), 95)
         if let cameraMeteringPreset {
-            meteringMode = .centerWeighted
+            meteringMode = cameraMeteringPreset.meteringMode
+            spotAreaPercent = cameraMeteringPreset.spotAreaPercent
             centerAreaPercent = cameraMeteringPreset.centerAreaPercent
             centerWeightPercent = cameraMeteringPreset.centerWeightPercent
+            if let focalLength = cameraMeteringPreset.focalLengthMillimeters {
+                focalLengthMillimeters = focalLength
+            }
         }
         focalLengthMillimeters = min(max(focalLengthMillimeters, 20), 150)
         highlightLatitude = Self.thirdStop(highlightLatitude, range: 1.0 / 3...8)

@@ -1,11 +1,18 @@
 import FilmLightMeterDomain
 import Foundation
 
+final class CheckCounter: @unchecked Sendable {
+    var value = 0
+}
+
+let checkCounter = CheckCounter()
+
 func check(_ condition: @autoclosure () -> Bool, _ message: String) {
     guard condition() else {
         FileHandle.standardError.write(Data("FAILED: \(message)\n".utf8))
         exit(1)
     }
+    checkCounter.value += 1
 }
 
 let target = ExposureEngine.targetEV(
@@ -38,7 +45,17 @@ presetSettings.normalize()
 check(presetSettings.meteringMode == .centerWeighted, "camera preset selects center weighted")
 check(presetSettings.centerAreaPercent == 40, "camera preset center area")
 check(presetSettings.centerWeightPercent == 65, "camera preset center weight")
+presetSettings.cameraMeteringPreset = .olympus35SPAverage
+presetSettings.normalize()
+check(presetSettings.meteringMode == .centerAverage, "35 SP average metering mode")
+check(presetSettings.spotAreaPercent == 20, "35 SP average metering area")
+check(presetSettings.focalLengthMillimeters == 42, "35 SP focal length")
+presetSettings.cameraMeteringPreset = .olympus35SPSpot
+presetSettings.normalize()
+check(presetSettings.meteringMode == .spot, "35 SP spot metering mode")
+check(presetSettings.spotAreaPercent == 2, "35 SP spot metering area")
 presetSettings.focalLengthMillimeters = 180
+presetSettings.cameraMeteringPreset = nil
 presetSettings.normalize()
 check(presetSettings.focalLengthMillimeters == 150, "focal length maximum")
 
@@ -184,4 +201,4 @@ let zoomingResult = MeteringEngine().analyze(
 )
 check(zoomingResult == nil, "metering waits for zoom readiness")
 
-print("Domain validation passed: 34 checks")
+print("Domain validation passed: \(checkCounter.value) checks")
