@@ -51,8 +51,15 @@ struct SettingsScreen: View {
                     if settings.meteringMode == .spot {
                         Stepper(
                             "点测光面积 \(settings.spotAreaPercent)%",
-                            value: $settings.spotAreaPercent,
+                            value: spotAreaPercent,
                             in: 1...10
+                        )
+                    }
+                    if settings.meteringMode == .centerAverage {
+                        Stepper(
+                            "中央平均区域 \(settings.spotAreaPercent)%",
+                            value: spotAreaPercent,
+                            in: 1...20
                         )
                     }
                     if settings.meteringMode == .centerWeighted {
@@ -156,6 +163,16 @@ struct SettingsScreen: View {
         )
     }
 
+    private var spotAreaPercent: Binding<Int> {
+        Binding(
+            get: { settings.spotAreaPercent },
+            set: {
+                settings.spotAreaPercent = $0
+                settings.cameraMeteringPreset = nil
+            }
+        )
+    }
+
     private var centerWeightPercent: Binding<Int> {
         Binding(
             get: { settings.centerWeightPercent },
@@ -206,9 +223,13 @@ struct SettingsScreen: View {
     private func applyCameraMeteringPreset(_ preset: CameraMeteringPreset?) {
         settings.cameraMeteringPreset = preset
         guard let preset else { return }
-        settings.meteringMode = .centerWeighted
+        settings.meteringMode = preset.meteringMode
+        settings.spotAreaPercent = preset.spotAreaPercent
         settings.centerAreaPercent = preset.centerAreaPercent
         settings.centerWeightPercent = preset.centerWeightPercent
+        if let focalLength = preset.focalLengthMillimeters {
+            settings.focalLengthMillimeters = focalLength
+        }
     }
 
     private func stopText(_ value: Double) -> String {

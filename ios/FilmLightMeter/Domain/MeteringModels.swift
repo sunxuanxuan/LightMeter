@@ -2,12 +2,14 @@ import Foundation
 
 public enum MeteringMode: String, Codable, CaseIterable, Sendable {
     case spot
+    case centerAverage
     case centerWeighted
     case average
 
     public var displayName: String {
         switch self {
         case .spot: "点测光"
+        case .centerAverage: "中央区域平均"
         case .centerWeighted: "中央重点"
         case .average: "平均测光"
         }
@@ -17,6 +19,8 @@ public enum MeteringMode: String, Codable, CaseIterable, Sendable {
 public enum CameraMeteringPreset: String, Codable, CaseIterable, Sendable, Identifiable {
     case canonNewF1
     case canonAL1
+    case olympus35SPAverage
+    case olympus35SPSpot
 
     public var id: String { rawValue }
 
@@ -24,6 +28,24 @@ public enum CameraMeteringPreset: String, Codable, CaseIterable, Sendable, Ident
         switch self {
         case .canonNewF1: "Canon New F-1"
         case .canonAL1: "Canon AL-1"
+        case .olympus35SPAverage: "Olympus 35 SP 平均（20°）"
+        case .olympus35SPSpot: "Olympus 35 SP 点测（6°）"
+        }
+    }
+
+    public var meteringMode: MeteringMode {
+        switch self {
+        case .canonNewF1, .canonAL1: .centerWeighted
+        case .olympus35SPAverage: .centerAverage
+        case .olympus35SPSpot: .spot
+        }
+    }
+
+    public var spotAreaPercent: Int {
+        switch self {
+        case .canonNewF1, .canonAL1: 5
+        case .olympus35SPAverage: 20
+        case .olympus35SPSpot: 2
         }
     }
 
@@ -31,6 +53,7 @@ public enum CameraMeteringPreset: String, Codable, CaseIterable, Sendable, Ident
         switch self {
         case .canonNewF1: 60
         case .canonAL1: 40
+        case .olympus35SPAverage, .olympus35SPSpot: 20
         }
     }
 
@@ -38,6 +61,14 @@ public enum CameraMeteringPreset: String, Codable, CaseIterable, Sendable, Ident
         switch self {
         case .canonNewF1: 70
         case .canonAL1: 65
+        case .olympus35SPAverage, .olympus35SPSpot: 95
+        }
+    }
+
+    public var focalLengthMillimeters: Double? {
+        switch self {
+        case .canonNewF1, .canonAL1: nil
+        case .olympus35SPAverage, .olympus35SPSpot: 42
         }
     }
 }

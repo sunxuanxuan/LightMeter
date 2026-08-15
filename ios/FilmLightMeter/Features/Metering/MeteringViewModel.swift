@@ -77,6 +77,7 @@ final class MeteringViewModel: ObservableObject {
     func stop() {
         zoomRequestID = UUID()
         isZoomReady = false
+        previousDisplayedEV = nil
         riskTask?.cancel()
         simulationTask?.cancel()
         if isFreezing {

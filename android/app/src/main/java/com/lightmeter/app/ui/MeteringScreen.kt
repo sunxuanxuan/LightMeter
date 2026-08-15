@@ -118,7 +118,6 @@ import com.lightmeter.app.BuildConfig
 import com.lightmeter.app.activation.DebugToolsDialog
 import com.lightmeter.app.ui.theme.AppThemeStyle
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlin.math.PI
 import kotlin.math.abs
@@ -134,7 +133,6 @@ private val DEFAULT_CAMERA_OPTICS = CameraOptics(
 )
 
 private val PreviewAccent = Color(0xFFD3AA5F)
-private const val ZOOM_SETTLE_TIMEOUT_MS = 800L
 private const val ZOOM_RATIO_TOLERANCE = 0.02f
 private const val VIEWFINDER_CHROME_SCALE = 0.75f
 
@@ -216,6 +214,7 @@ fun MeteringRoute(
         onApertureStep = viewModel::stepAperture,
         onShutterStep = viewModel::stepShutter,
         onFreezePreview = viewModel::freezePreview,
+        onFrozenSnapshot = viewModel::onFrozenSnapshot,
         onResumeLive = viewModel::resumeLivePreview,
         onFreezeCaptureFailed = viewModel::onFreezeCaptureFailed,
         onExit = onExit,
@@ -253,6 +252,7 @@ private fun MeteringScreen(
     onApertureStep: (Int) -> Unit,
     onShutterStep: (Int) -> Unit,
     onFreezePreview: () -> Unit,
+    onFrozenSnapshot: (Int, ExposureSnapshot) -> Unit,
     onResumeLive: () -> Unit,
     onFreezeCaptureFailed: () -> Unit,
     onExit: () -> Unit,
@@ -291,6 +291,7 @@ private fun MeteringScreen(
                 onApertureStep = onApertureStep,
                 onShutterStep = onShutterStep,
                 onFreezePreview = onFreezePreview,
+                onFrozenSnapshot = onFrozenSnapshot,
                 onResumeLive = onResumeLive,
                 onFreezeCaptureFailed = onFreezeCaptureFailed,
                 onExit = onExit,
@@ -340,6 +341,7 @@ private fun CameraContent(
     onApertureStep: (Int) -> Unit,
     onShutterStep: (Int) -> Unit,
     onFreezePreview: () -> Unit,
+    onFrozenSnapshot: (Int, ExposureSnapshot) -> Unit,
     onResumeLive: () -> Unit,
     onFreezeCaptureFailed: () -> Unit,
     onExit: () -> Unit,
@@ -354,7 +356,6 @@ private fun CameraContent(
     var exposureRiskMask by remember { mutableStateOf<ExposureRiskMask?>(null) }
     var previewSize by remember { mutableStateOf(IntSize.Zero) }
     var cameraZoomState by remember { mutableStateOf(CameraZoomState()) }
-    var zoomSettleTimedOut by remember { mutableStateOf(false) }
     var frozenChromeVisible by rememberSaveable { mutableStateOf(true) }
     var showSettings by rememberSaveable { mutableStateOf(false) }
     val selectedFrameAspectRatio = remember(state.frameFormat) {
@@ -435,21 +436,8 @@ private fun CameraContent(
         cameraZoomState.minZoomRatio,
         cameraZoomState.maxZoomRatio,
     )
-    LaunchedEffect(
-        state.frameFormat,
-        targetZoomRatio,
-        cameraZoomState.minZoomRatio,
-        cameraZoomState.maxZoomRatio,
-    ) {
-        zoomSettleTimedOut = false
-        delay(ZOOM_SETTLE_TIMEOUT_MS)
-        zoomSettleTimedOut = true
-    }
     val isZoomReady = cameraZoomState.isInitialized &&
-        (
-            abs(cameraZoomState.zoomRatio - effectiveZoomRatio) <= ZOOM_RATIO_TOLERANCE ||
-                zoomSettleTimedOut
-            )
+        abs(cameraZoomState.zoomRatio - effectiveZoomRatio) <= ZOOM_RATIO_TOLERANCE
     val normalizedViewfinder = remember(projection, effectiveZoomRatio) {
         projection.viewfinderAt(effectiveZoomRatio.toDouble())
     }
@@ -594,15 +582,19 @@ private fun CameraContent(
                         shouldCaptureFrame = state.isFrozen,
                         onMeteringResult = onMeteringResult,
                         onFrameCaptured = { capturedFrame ->
+                            val requestId = capturedFrame?.requestId
                             val bitmap = capturedFrame?.bitmap
                             val snapshot = capturedFrame?.snapshot
                             if (
+                                requestId == null ||
+                                requestId != state.freezeRequestId ||
                                 bitmap == null ||
                                 snapshot == null ||
                                 snapshot.revision != state.meteringRevision
                             ) {
                                 onFreezeCaptureFailed()
                             } else {
+                                onFrozenSnapshot(requestId, snapshot)
                                 frozenFrame = bitmap
                                 simulatedFrame = null
                                 frozenExposureSnapshot = snapshot
@@ -803,7 +795,8 @@ private fun ViewfinderOverlay(
     ) {
         val frame = viewfinder.toComposeRect(size.width, size.height)
         when (state.meteringMode) {
-            MeteringMode.SPOT -> {
+            MeteringMode.SPOT,
+            MeteringMode.CENTER_AVERAGE -> {
                 val point = state.spotMeteringPoint
                 val center = if (point == null) {
                     frame.center
@@ -819,7 +812,7 @@ private fun ViewfinderOverlay(
                         width = frame.width,
                         height = frame.height,
                         areaPercent = state.spotAreaPercent,
-                    ) * 0.25f,
+                    ) * if (state.meteringMode == MeteringMode.CENTER_AVERAGE) 1f else 0.25f,
                     center = center,
                     style = Stroke(width = 2.dp.toPx()),
                 )
@@ -1889,6 +1882,16 @@ private fun AppSettingsDialog(
                             SettingHint("读取画面中心区域；点击画面后，测光中心移动到点击位置。")
                         }
 
+                        MeteringMode.CENTER_AVERAGE -> {
+                            PercentageControl(
+                                label = "中央平均区域",
+                                value = spotAreaPercent,
+                                onDecrease = { onSpotAreaChanged(-1) },
+                                onIncrease = { onSpotAreaChanged(1) },
+                            )
+                            SettingHint("读取画面中央圆形区域的平均亮度，不计入外围区域。")
+                        }
+
                         MeteringMode.CENTER_WEIGHTED -> {
                             PercentageControl(
                                 label = "中央区域面积",
@@ -2161,6 +2164,7 @@ private fun SettingHint(text: String) {
 private fun MeteringMode.displayName(): String {
     return when (this) {
         MeteringMode.SPOT -> "点测光"
+        MeteringMode.CENTER_AVERAGE -> "中央区域平均"
         MeteringMode.CENTER_WEIGHTED -> "中央重点"
         MeteringMode.AVERAGE -> "平均测光"
     }

@@ -102,7 +102,7 @@ public final class MeteringEngine: @unchecked Sendable {
                 case .average:
                     primary[value] += 1
                     primaryCount += 1
-                case .spot:
+                case .spot, .centerAverage:
                     let dx = (point.x - spot.x) * configuration.previewAspectRatio
                     let dy = point.y - spot.y
                     if dx * dx + dy * dy <= spotRadiusSquared {

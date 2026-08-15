@@ -144,6 +144,12 @@ final class DomainTests: XCTestCase {
         XCTAssertEqual(CameraMeteringPreset.canonNewF1.centerWeightPercent, 70)
         XCTAssertEqual(CameraMeteringPreset.canonAL1.centerAreaPercent, 40)
         XCTAssertEqual(CameraMeteringPreset.canonAL1.centerWeightPercent, 65)
+        XCTAssertEqual(CameraMeteringPreset.olympus35SPAverage.meteringMode, .centerAverage)
+        XCTAssertEqual(CameraMeteringPreset.olympus35SPAverage.spotAreaPercent, 20)
+        XCTAssertEqual(CameraMeteringPreset.olympus35SPAverage.focalLengthMillimeters, 42)
+        XCTAssertEqual(CameraMeteringPreset.olympus35SPSpot.meteringMode, .spot)
+        XCTAssertEqual(CameraMeteringPreset.olympus35SPSpot.spotAreaPercent, 2)
+        XCTAssertEqual(CameraMeteringPreset.olympus35SPSpot.focalLengthMillimeters, 42)
     }
 
     func testCameraMeteringPresetNormalizesModeAndWeights() {
@@ -157,6 +163,23 @@ final class DomainTests: XCTestCase {
         XCTAssertEqual(settings.meteringMode, .centerWeighted)
         XCTAssertEqual(settings.centerAreaPercent, 40)
         XCTAssertEqual(settings.centerWeightPercent, 65)
+    }
+
+    func testOlympus35SPPresetNormalizesModeAreaAndFocalLength() {
+        var settings = AppSettings()
+        settings.cameraMeteringPreset = .olympus35SPAverage
+        settings.normalize()
+
+        XCTAssertEqual(settings.meteringMode, .centerAverage)
+        XCTAssertEqual(settings.spotAreaPercent, 20)
+        XCTAssertEqual(settings.focalLengthMillimeters, 42)
+
+        settings.cameraMeteringPreset = .olympus35SPSpot
+        settings.normalize()
+
+        XCTAssertEqual(settings.meteringMode, .spot)
+        XCTAssertEqual(settings.spotAreaPercent, 2)
+        XCTAssertEqual(settings.focalLengthMillimeters, 42)
     }
 
     func testFocalLengthNormalizesToAndroidRange() {
@@ -207,6 +230,48 @@ final class DomainTests: XCTestCase {
         )
 
         XCTAssertNil(result)
+    }
+
+    func testCenterAverageMeteringExcludesBrightOuterArea() throws {
+        let size = 80
+        let values = (0..<(size * size)).map { index -> UInt8 in
+            let x = index % size
+            let y = index / size
+            let dx = Double(x) + 0.5 - Double(size) / 2
+            let dy = Double(y) + 0.5 - Double(size) / 2
+            return dx * dx + dy * dy <= 20 * 20 ? 64 : 235
+        }
+        let plane = LuminancePlane(
+            width: size,
+            height: size,
+            values: values,
+            isVideoRange: true
+        )
+        let metadata = CameraExposureMetadata(
+            exposureSeconds: 1.0 / 125,
+            sensitivityISO: 100,
+            aperture: 2.8
+        )
+        var centerConfiguration = MeteringConfiguration()
+        centerConfiguration.mode = .centerAverage
+        centerConfiguration.spotAreaPercent = 20
+        centerConfiguration.previewAspectRatio = 1
+        let centerResult = try XCTUnwrap(MeteringEngine().analyze(
+            plane: plane,
+            metadata: metadata,
+            timestampNanoseconds: 1,
+            configuration: centerConfiguration
+        ))
+        var averageConfiguration = centerConfiguration
+        averageConfiguration.mode = .average
+        let averageResult = try XCTUnwrap(MeteringEngine().analyze(
+            plane: plane,
+            metadata: metadata,
+            timestampNanoseconds: 1,
+            configuration: averageConfiguration
+        ))
+
+        XCTAssertLessThan(centerResult.measuredLuminance, averageResult.measuredLuminance)
     }
 
     func testHighlightClippingUsesPixelRangeSpecificThresholds() {

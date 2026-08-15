@@ -2,6 +2,9 @@ package com.lightmeter.app.ui
 
 import com.lightmeter.app.camera.CameraOptics
 import com.lightmeter.app.exposure.FrameFormat
+import com.lightmeter.app.metering.CameraMeteringPreset
+import com.lightmeter.app.metering.ExposureMap
+import com.lightmeter.app.metering.ExposureSnapshot
 import com.lightmeter.app.metering.FilmLatitudePreset
 import com.lightmeter.app.metering.MeteringMode
 import com.lightmeter.app.metering.MeteringResult
@@ -109,6 +112,25 @@ class MeteringViewModelTest {
     }
 
     @Test
+    fun olympus35SPPresetsApplyMeteringAreaAndFocalLength() {
+        val viewModel = MeteringViewModel()
+
+        viewModel.selectCameraMeteringPreset(CameraMeteringPreset.OLYMPUS_35_SP_AVERAGE)
+        var state = viewModel.state.value
+        assertEquals(MeteringMode.CENTER_AVERAGE, state.meteringPreset)
+        assertEquals(MeteringMode.CENTER_AVERAGE, state.meteringMode)
+        assertEquals(20, state.spotAreaPercent)
+        assertEquals(42.0, state.focalLengthMm, 0.0)
+
+        viewModel.selectCameraMeteringPreset(CameraMeteringPreset.OLYMPUS_35_SP_SPOT)
+        state = viewModel.state.value
+        assertEquals(MeteringMode.SPOT, state.meteringPreset)
+        assertEquals(MeteringMode.SPOT, state.meteringMode)
+        assertEquals(2, state.spotAreaPercent)
+        assertEquals(42.0, state.focalLengthMm, 0.0)
+    }
+
+    @Test
     fun calibrationOffsetIsRestoredAndApplied() {
         val store = InMemoryAppSettingsStore(
             AppSettings(
@@ -208,6 +230,39 @@ class MeteringViewModelTest {
             ),
         )
         assertEquals(11.0, viewModel.state.value.ev100Metered!!, 0.0)
+        assertNotNull(viewModel.state.value.primaryExposure)
+    }
+
+    @Test
+    fun freezeUsesCapturedSnapshotForDisplayedEvAndRecommendation() {
+        val viewModel = MeteringViewModel()
+        viewModel.onCameraReady()
+        viewModel.onMeteringResult(
+            MeteringResult(
+                ev100 = 10.0,
+                measuredLuminance = 0.18,
+                timestampNs = 1L,
+            ),
+        )
+        viewModel.freezePreview()
+        val frozenState = viewModel.state.value
+        val snapshot = ExposureSnapshot(
+            exposureMap = ExposureMap(
+                width = 1,
+                height = 1,
+                pixelEv100 = floatArrayOf(12.0f),
+                timestampNs = 2L,
+                revision = frozenState.meteringRevision,
+            ),
+            meteredEv100 = 12.0,
+            timestampNs = 2L,
+            revision = frozenState.meteringRevision,
+        )
+
+        viewModel.onFrozenSnapshot(frozenState.freezeRequestId, snapshot)
+
+        assertEquals(12.0, viewModel.state.value.ev100Metered!!, 0.0)
+        assertEquals(12.0, viewModel.state.value.evTarget!!, 0.0)
         assertNotNull(viewModel.state.value.primaryExposure)
     }
 
