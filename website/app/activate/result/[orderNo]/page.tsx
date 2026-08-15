@@ -1,18 +1,19 @@
 import {
-  ArrowLeft,
-  Clock3,
-  KeyRound,
-  LockKeyhole,
-  ReceiptText,
-  ShieldCheck,
+    ArrowLeft,
+    Clock3,
+    KeyRound,
+    LockKeyhole,
+    ScanLine,
+    ShieldCheck,
 } from "lucide-react";
 import type { Metadata } from "next";
 import { cookies } from "next/headers";
+import Image from "next/image";
 import Link from "next/link";
 
 import { CopyButton } from "@/components/copy-button";
 import { PageHeader } from "@/components/page-header";
-import { SimulatePaymentButton } from "@/components/simulate-payment-button";
+import { PaymentStatusPoller } from "@/components/payment-status-poller";
 import { formatPrice, siteConfig } from "@/lib/config";
 import { getOrder } from "@/lib/dal";
 import { formatDeviceId } from "@/lib/validation";
@@ -62,16 +63,21 @@ export default async function ActivationResultPage({
   }
 
   const fulfilled = order.status === "fulfilled" && order.credential;
+  const waitingForPayment = order.status === "pending";
 
   return (
     <div className="page-shell">
+      <PaymentStatusPoller
+        active={waitingForPayment}
+        orderNo={order.orderNo}
+      />
       <PageHeader
         eyebrow="Order result"
-        title={fulfilled ? "激活凭证已签发" : "订单等待付款确认"}
+        title={fulfilled ? "激活凭证已签发" : "请使用支付宝扫码付款"}
         description={
           fulfilled
             ? "复制完整凭证回到 App。凭证只属于当前设备，不需要 App 联网。"
-            : "当前是本地演示订单。点击模拟付款后，服务端会记录支付事件并签发开发凭证。"
+            : "付款成功后页面会自动更新，请不要关闭当前页面。"
         }
         action={
           <Link className="button button--secondary" href="/activate">
@@ -88,11 +94,11 @@ export default async function ActivationResultPage({
               {fulfilled ? <ShieldCheck size={21} /> : <Clock3 size={21} />}
             </span>
             <div>
-              <h2>{fulfilled ? "签名验证材料已生成" : "等待支付服务回调"}</h2>
+              <h2>{fulfilled ? "激活凭证已生成" : "等待付款"}</h2>
               <p>
                 {fulfilled
                   ? `签名密钥：${order.signingKeyId}`
-                  : "浏览器跳转不会直接改变付款状态"}
+                  : `订单金额：${formatPrice(order.amountMinor, order.currency)}`}
               </p>
             </div>
           </div>
@@ -116,15 +122,31 @@ export default async function ActivationResultPage({
               </div>
             </>
           ) : (
-            <>
-              <div className="notice notice--warning" style={{ marginBottom: 18 }}>
-                <ReceiptText size={18} />
-                <span>
-                  本地预览不会连接真实支付平台，也不会产生扣款。此按钮模拟已经验签的支付服务端回调。
-                </span>
+            <div className="payment-box">
+              {order.paymentQrCode ? (
+                <Image
+                  className="payment-qr"
+                  src={`/api/orders/${encodeURIComponent(order.orderNo)}/payment-qr`}
+                  alt="支付宝付款二维码"
+                  width={320}
+                  height={320}
+                  unoptimized
+                  priority
+                />
+              ) : (
+                <div className="payment-qr payment-qr--empty">
+                  <Clock3 size={28} />
+                  <span>正在准备付款码</span>
+                </div>
+              )}
+              <div className="payment-instruction">
+                <ScanLine size={20} />
+                <div>
+                  <strong>打开支付宝扫一扫</strong>
+                  <span>付款完成后，请留在此页面等待结果。</span>
+                </div>
               </div>
-              <SimulatePaymentButton orderNo={order.orderNo} />
-            </>
+            </div>
           )}
 
           <dl className="result-details">
@@ -155,18 +177,30 @@ export default async function ActivationResultPage({
           </dl>
         </section>
 
-        <aside className="next-steps">
-          <h2>下一步</h2>
-          <ol>
-            <li>复制完整签名凭证，不要删改字符。</li>
-            <li>回到 FilmLightMeter 激活页。</li>
-            <li>粘贴凭证并点击“激活”。</li>
-            <li>App 离线验签成功后即可长期使用。</li>
-          </ol>
-          <p className="aside-note">
-            更换设备后设备 ID 会变化，需要提供订单号申请重新签发。
-          </p>
-        </aside>
+        {fulfilled ? (
+          <aside className="next-steps">
+            <h2>下一步</h2>
+            <ol>
+              <li>复制完整签名凭证，不要删改字符。</li>
+              <li>回到 FilmLightMeter 激活页。</li>
+              <li>粘贴凭证并点击“激活”。</li>
+              <li>App 离线验签成功后即可长期使用。</li>
+            </ol>
+            <p className="aside-note">
+              更换设备后设备 ID 会变化，需要提供订单号申请重新签发。
+            </p>
+          </aside>
+        ) : (
+          <aside className="next-steps">
+            <h2>付款提示</h2>
+            <ol>
+              <li>使用支付宝扫描页面中的付款码。</li>
+              <li>确认金额为 ¥9.90 后完成付款。</li>
+              <li>付款后无需手动操作，等待页面自动更新。</li>
+            </ol>
+            <p className="aside-note">付款码将在订单创建 30 分钟后失效。</p>
+          </aside>
+        )}
       </div>
     </div>
   );

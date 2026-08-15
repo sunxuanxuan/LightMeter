@@ -57,6 +57,7 @@ function initializeDatabase(): DatabaseSync {
       currency TEXT NOT NULL,
       payment_provider TEXT NOT NULL,
       payment_trade_no TEXT UNIQUE,
+      payment_qr_code TEXT,
       status TEXT NOT NULL,
       terms_version TEXT NOT NULL,
       paid_at TEXT,
@@ -94,6 +95,12 @@ function initializeDatabase(): DatabaseSync {
       FOREIGN KEY(order_id) REFERENCES orders(id)
     );
   `);
+  const orderColumns = database
+    .prepare("PRAGMA table_info(orders)")
+    .all() as Array<{ name: string }>;
+  if (!orderColumns.some((column) => column.name === "payment_qr_code")) {
+    database.exec("ALTER TABLE orders ADD COLUMN payment_qr_code TEXT");
+  }
   seedLocalReleases(database);
   return database;
 }

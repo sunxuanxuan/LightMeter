@@ -2,7 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
 import { siteConfig } from "@/lib/config";
-import { createOrder } from "@/lib/dal";
+import {
+  createOrder,
+  getPaymentQrCode,
+  savePaymentQrCode,
+} from "@/lib/dal";
+import { createAlipayPayment } from "@/lib/payments/alipay";
 import { hasSameOrigin } from "@/lib/request-security";
 import { createOrderSchema } from "@/lib/validation";
 
@@ -30,6 +35,24 @@ export async function POST(request: NextRequest) {
   }
 
   const order = createOrder(parsed.data, idempotencyKey);
+  try {
+    if (!getPaymentQrCode(order.orderNo)) {
+      const qrCode = await createAlipayPayment(order.orderNo);
+      savePaymentQrCode(order.orderNo, qrCode);
+    }
+  } catch (error) {
+    const errorCode =
+      error instanceof Error && error.message === "ALIPAY_NOT_CONFIGURED"
+        ? "PAYMENT_NOT_CONFIGURED"
+        : "PAYMENT_CREATION_FAILED";
+    console.error("Unable to create Alipay payment", {
+      errorCode,
+      orderNo: order.orderNo,
+      cause: error instanceof Error ? error.message : "unknown",
+    });
+    return NextResponse.json({ errorCode }, { status: 503 });
+  }
+
   const response = NextResponse.json({
     orderNo: order.orderNo,
     resultUrl: `/activate/result/${order.orderNo}`,
