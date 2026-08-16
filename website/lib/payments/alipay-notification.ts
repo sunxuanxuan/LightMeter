@@ -19,7 +19,7 @@ export function validateAlipayPayment(
   expected: {
     appId: string;
     sellerId: string;
-    amountMinor: number;
+    amountMinor?: number;
   },
 ): ValidatedAlipayPayment {
   if (
@@ -36,7 +36,11 @@ export function validateAlipayPayment(
   }
 
   const amountMinor = amountToMinor(notification.total_amount ?? "");
-  if (amountMinor === null || amountMinor !== expected.amountMinor) {
+  if (
+    amountMinor === null ||
+    (expected.amountMinor !== undefined &&
+      amountMinor !== expected.amountMinor)
+  ) {
     throw new Error("ALIPAY_AMOUNT_MISMATCH");
   }
   if (!notification.out_trade_no || !notification.trade_no) {

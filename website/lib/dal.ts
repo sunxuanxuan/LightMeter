@@ -5,12 +5,12 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { signDeviceCredential } from "@/lib/activation/signer";
 import { siteConfig, type PaymentProvider } from "@/lib/config";
 import {
-    createSessionToken,
-    decrypt,
-    encrypt,
-    hashesMatch,
-    lookupHash,
-    tokenHash,
+  createSessionToken,
+  decrypt,
+  encrypt,
+  hashesMatch,
+  lookupHash,
+  tokenHash,
 } from "@/lib/crypto";
 import { db } from "@/lib/db";
 import type { MonitorPaymentEvent } from "@/lib/payments/monitor-event";
@@ -98,6 +98,15 @@ export type OrderDTO = {
   issuedAt: number | null;
 };
 
+export type PricingDTO = {
+  priceMinor: number;
+  currency: string;
+  discountMaxMinor: number;
+  minimumPaymentMinor: number;
+};
+
+const PRODUCT_PRICE_SETTING_KEY = "product_price_minor";
+
 function transaction<T>(work: () => T): T {
   db.exec("BEGIN IMMEDIATE");
   try {
@@ -108,6 +117,74 @@ function transaction<T>(work: () => T): T {
     db.exec("ROLLBACK");
     throw error;
   }
+}
+
+function currentPriceMinor(): number {
+  const setting = db
+    .prepare("SELECT value FROM site_settings WHERE key = ?")
+    .get(PRODUCT_PRICE_SETTING_KEY) as { value: string } | undefined;
+  const configuredPrice = setting ? Number(setting.value) : siteConfig.priceMinor;
+  if (!Number.isSafeInteger(configuredPrice) || configuredPrice < 1) {
+    throw new Error("INVALID_PRODUCT_PRICE");
+  }
+  return configuredPrice;
+}
+
+export function getCurrentPricing(): PricingDTO {
+  return {
+    priceMinor: currentPriceMinor(),
+    currency: siteConfig.currency,
+    discountMaxMinor: siteConfig.personalPaymentDiscountMaxMinor,
+    minimumPaymentMinor: 1,
+  };
+}
+
+export function updateProductPricing(input: {
+  priceMinor: number;
+  monitorId: string;
+  nonce: string;
+  monitorVersion: string;
+  receivedAt?: Date;
+}): PricingDTO {
+  if (
+    !Number.isSafeInteger(input.priceMinor) ||
+    input.priceMinor < 1 ||
+    input.priceMinor > 100_000_000
+  ) {
+    throw new Error("INVALID_PRODUCT_PRICE");
+  }
+  const now = (input.receivedAt ?? new Date()).toISOString();
+  return transaction(() => {
+    db.prepare(
+      `INSERT INTO monitor_admin_commands (
+        id, monitor_id, nonce, command_type, command_payload, received_at
+      ) VALUES (?, ?, ?, ?, ?, ?)`,
+    ).run(
+      randomUUID(),
+      input.monitorId,
+      input.nonce,
+      "update_product_pricing",
+      JSON.stringify({
+        priceMinor: input.priceMinor,
+        monitorVersion: input.monitorVersion,
+      }),
+      now,
+    );
+    db.prepare(
+      `INSERT INTO site_settings (key, value, updated_at, updated_by)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT(key) DO UPDATE SET
+         value = excluded.value,
+         updated_at = excluded.updated_at,
+         updated_by = excluded.updated_by`,
+    ).run(
+      PRODUCT_PRICE_SETTING_KEY,
+      String(input.priceMinor),
+      now,
+      `monitor:${input.monitorId}`,
+    );
+    return getCurrentPricing();
+  });
 }
 
 function makeOrderNo(): string {
@@ -146,7 +223,7 @@ function availablePersonalPaymentAmount(createdAt: string): number {
     )
     .all(createdAt) as Array<{ amount_minor: number }>;
   const amountMinor = selectPaymentAmount(
-    siteConfig.priceMinor,
+    currentPriceMinor(),
     siteConfig.personalPaymentDiscountMaxMinor,
     new Set(occupiedRows.map((row) => row.amount_minor)),
   );
@@ -221,7 +298,11 @@ export function getAndroidArtifactPath(): string | null {
 export function createOrder(
   input: CreateOrderInput,
   idempotencyKey: string,
-): { orderNo: string; sessionToken: string } {
+): {
+  orderNo: string;
+  sessionToken: string;
+  amountMinor: number;
+} {
   const sessionToken = createSessionToken();
   const nowDate = new Date();
   const now = nowDate.toISOString();
@@ -235,7 +316,13 @@ export function createOrder(
       db.prepare(
         "UPDATE orders SET result_session_hash = ?, updated_at = ? WHERE order_no = ?",
       ).run(tokenHash(sessionToken), now, existing.order_no);
-      return { orderNo: existing.order_no, sessionToken };
+      const existingOrder = orderByNumber(existing.order_no);
+      if (!existingOrder) throw new Error("ORDER_NOT_FOUND");
+      return {
+        orderNo: existing.order_no,
+        sessionToken,
+        amountMinor: existingOrder.amount_minor,
+      };
     }
 
     const paymentProvider = siteConfig.paymentProvider;
@@ -278,6 +365,7 @@ export function createOrder(
 
     const orderId = randomUUID();
     const orderNo = makeOrderNo();
+    const listAmountMinor = currentPriceMinor();
     const expiresAt =
       paymentProvider === "personal_alipay_monitor"
         ? new Date(
@@ -296,7 +384,7 @@ export function createOrder(
       paymentProvider === "personal_alipay_monitor" &&
       reservationExpiresAt !== null
         ? availablePersonalPaymentAmount(now)
-        : siteConfig.priceMinor;
+        : listAmountMinor;
 
     db.prepare(
       `INSERT INTO orders (
@@ -320,7 +408,7 @@ export function createOrder(
       encrypt(input.deviceID),
       deviceIdHash,
       input.deviceID.slice(-4),
-      siteConfig.priceMinor,
+      listAmountMinor,
       amountMinor,
       siteConfig.currency,
       paymentProvider,
@@ -345,7 +433,7 @@ export function createOrder(
         reservationExpiresAt,
       );
     }
-    return { orderNo, sessionToken };
+    return { orderNo, sessionToken, amountMinor };
   });
 }
 

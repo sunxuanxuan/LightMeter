@@ -137,6 +137,22 @@ function initializeDatabase(): DatabaseSync {
 
     CREATE INDEX IF NOT EXISTS idx_monitor_events_match
       ON monitor_payment_events(channel, amount_minor, observed_at);
+
+    CREATE TABLE IF NOT EXISTS site_settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      updated_by TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS monitor_admin_commands (
+      id TEXT PRIMARY KEY,
+      monitor_id TEXT NOT NULL,
+      nonce TEXT NOT NULL UNIQUE,
+      command_type TEXT NOT NULL,
+      command_payload TEXT NOT NULL,
+      received_at TEXT NOT NULL
+    );
   `);
     const orderColumns = database
       .prepare("PRAGMA table_info(orders)")

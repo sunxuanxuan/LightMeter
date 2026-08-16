@@ -2,10 +2,9 @@ import "server-only";
 
 import { AlipaySdk } from "alipay-sdk";
 
-import { siteConfig } from "@/lib/config";
 import {
-  type AlipayNotification,
-  validateAlipayPayment,
+    type AlipayNotification,
+    validateAlipayPayment,
 } from "@/lib/payments/alipay-notification";
 
 type AlipaySettings = {
@@ -56,13 +55,16 @@ function settings(): AlipaySettings {
   };
 }
 
-export async function createAlipayPayment(orderNo: string): Promise<string> {
+export async function createAlipayPayment(
+  orderNo: string,
+  amountMinor: number,
+): Promise<string> {
   const config = settings();
   const result = (await config.sdk.exec("alipay.trade.precreate", {
     notify_url: config.notifyUrl,
     bizContent: {
       out_trade_no: orderNo,
-      total_amount: (siteConfig.priceMinor / 100).toFixed(2),
+      total_amount: (amountMinor / 100).toFixed(2),
       subject: "FilmLightMeter 单设备永久授权",
       timeout_express: "30m",
     },
@@ -95,6 +97,5 @@ export function verifyAlipayNotification(notification: AlipayNotification) {
   return validateAlipayPayment(notification, {
     appId: config.appId,
     sellerId: config.sellerId,
-    amountMinor: siteConfig.priceMinor,
   });
 }

@@ -5,6 +5,7 @@ import {
   verifyMonitorRequest,
 } from "@/lib/payments/monitor-auth";
 import { monitorPaymentEventSchema } from "@/lib/payments/monitor-event";
+import { monitorPricingUpdateSchema } from "@/lib/payments/monitor-pricing";
 import {
   availablePaymentAmounts,
   selectPaymentAmount,
@@ -27,6 +28,32 @@ describe("personal payment amount pool", () => {
     expect(() => selectPaymentAmount(990, 1, new Set([989, 990]))).toThrow(
       "PAYMENT_AMOUNT_POOL_EXHAUSTED",
     );
+  });
+
+  it("keeps the minimum payable amount at one cent", () => {
+    const available = availablePaymentAmounts(50, 100, new Set());
+    expect(available[0]).toBe(1);
+    expect(available.at(-1)).toBe(50);
+  });
+});
+
+describe("monitor pricing update validation", () => {
+  it("accepts a 99.90 yuan price in minor units", () => {
+    expect(
+      monitorPricingUpdateSchema.safeParse({
+        priceMinor: 9_990,
+        monitorVersion: "0.1.0-debug",
+      }).success,
+    ).toBe(true);
+  });
+
+  it("rejects a zero price", () => {
+    expect(
+      monitorPricingUpdateSchema.safeParse({
+        priceMinor: 0,
+        monitorVersion: "0.1.0-debug",
+      }).success,
+    ).toBe(false);
   });
 });
 

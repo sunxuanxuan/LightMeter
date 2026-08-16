@@ -315,13 +315,12 @@ Debug Manifest 独占：
 
 ```text
 android.permission.INTERNET
-android.permission.POST_NOTIFICATIONS
 NotificationListenerService
 PaymentMonitorActivity
 ```
 
-监听工具作为 Debug 包中的第二个 Launcher Activity 提供独立入口。这样无需修改
-`src/main/MainActivity.kt`，Release 的用户界面和代码路径保持不变。
+桌面只保留 FilmLightMeter Debug 主图标。监听工具入口位于专业模式的设置页，
+`PaymentMonitorActivity` 不导出且不注册 Launcher intent-filter。
 
 Release Manifest 必须继续只有相机相关权限，不允许通过 `src/main` 引入
 `INTERNET`、通知访问或监控 Service。
@@ -359,34 +358,58 @@ event_id
 amount_minor
 observed_at
 notification_hash
-state                    pending | sending | acknowledged | failed
-attempts
-next_attempt_at
+monitor_version
 ```
 
-- `eventId` 基于随机 UUID，不使用通知时间戳；
-- 对 Android 通知 key、postTime、金额和内容哈希做本地去重；
+- `eventId` 基于 Android 通知 key、postTime、金额和内容哈希生成；
+- 事件先写入私有 SharedPreferences 队列，持久化成功后才安排上传；
 - 使用 WorkManager 指数退避重试；
-- 服务端确认持久化后才标记 `acknowledged`；
+- 每次请求生成独立 nonce，并按官网协议计算 HMAC-SHA256；
+- 服务端返回 `matched`、`duplicate`、`unmatched` 或 `manual_review`
+  后才移出队列；
 - 网络中断或进程重启不得丢失事件；
-- 本地只保留有限时间和数量，避免存储无限增长。
+- 队列最多 100 条，队列已满时拒绝覆盖旧事件。
 
 ### 5.5 配置与安全存储
 
 Debug 监听页提供：
 
-- 扫描配对二维码；
-- 当前监控设备 ID；
+- 官网 Base URL，可包含端口；
+- 监听器 ID；
+- 共享密钥；
+- 官网商品标价修改；
 - 通知访问权限状态；
-- 最近心跳时间；
-- 最近一次成功上传时间；
+- 最近一次回传时间和状态；
 - 待上传事件数量；
-- 暂停/恢复监听；
-- 清除配对信息。
+- 手动重试入口。
+
+公网部署填写：
+
+```text
+https://meter.example.com
+```
+
+本地联调时手机不能使用 `localhost`，应填写电脑的局域网地址：
+
+```text
+http://192.168.1.10:3000
+```
+
+App 自动拼接固定接口路径：
+
+```text
+/api/internal/payment-monitor/events
+/api/internal/payment-monitor/pricing
+```
+
+定价更新使用与到账事件相同的 HMAC-SHA256 请求协议。官网将新标价持久化到
+`site_settings`，新订单在创建事务中读取并保存价格快照。随机立减范围固定为
+100 分、步长 1 分，实付金额下限固定为 1 分；修改标价不得改变已有订单金额。
 
 监控密钥使用 Android Keystore 保护，日志不得输出密钥、签名、完整通知内容或完整
-请求体。Debug APK 可以被反编译，因此安全边界依赖“密钥安装后生成/下发并可撤销”，
-不能依赖隐藏在 APK 中的常量。
+请求体。Base URL 和监听器 ID 写入私有 SharedPreferences，共享密钥使用
+Android Keystore AES-GCM 加密后写入。Debug APK 可以被反编译，因此密钥不作为
+编译常量嵌入 APK，并应支持服务端轮换。
 
 ### 5.6 心跳
 

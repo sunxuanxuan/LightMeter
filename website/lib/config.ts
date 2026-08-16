@@ -12,9 +12,7 @@ export const siteConfig = {
   priceMinor: Number(process.env.PRODUCT_PRICE_MINOR ?? 990),
   currency: process.env.PRODUCT_CURRENCY ?? "CNY",
   paymentProvider: paymentProvider(),
-  personalPaymentDiscountMaxMinor: Number(
-    process.env.PERSONAL_PAYMENT_DISCOUNT_MAX_MINOR ?? 100,
-  ),
+  personalPaymentDiscountMaxMinor: 100,
   personalPaymentLifetimeSeconds: Number(
     process.env.PERSONAL_PAYMENT_LIFETIME_SECONDS ?? 15 * 60,
   ),
