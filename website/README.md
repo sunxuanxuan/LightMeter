@@ -23,16 +23,17 @@ npm run dev
 
 ## 配置
 
-复制 `.env.example` 为 `.env.local` 后按需修改。Production 至少必须配置：
+复制 `.env.example` 为 `.env.local` 后按需修改。Production 必须提供：
 
 ```text
-DATA_ENCRYPTION_KEY_BASE64
-LOOKUP_HMAC_PEPPER
 ACTIVATION_PRIVATE_KEY_BASE64
 ACTIVATION_SIGNING_KEY_ID
-PAYMENT_MONITOR_ID
-PAYMENT_MONITOR_SECRET
 ```
+
+部署脚本会在首次安装时自动生成 `DATA_ENCRYPTION_KEY_BASE64`、
+`LOOKUP_HMAC_PEPPER`、`PAYMENT_MONITOR_ID` 和 `PAYMENT_MONITOR_SECRET`。升级时会
+复用 `/etc/filmlightmeter-website.env` 中的现有值；也可以在输入环境文件中显式
+设置这些变量来覆盖。
 
 默认支付 Provider 为：
 
@@ -49,8 +50,9 @@ POST /api/internal/payment-monitor/events
 ```
 
 接收 Android Debug 监听端的 HMAC-SHA256 签名事件。生产环境的
-`PAYMENT_MONITOR_SECRET` 至少 32 个字符，只能保存在部署 Secret 和监听设备的安全
-存储中，不得提交 Git。
+`PAYMENT_MONITOR_ID` 和 `PAYMENT_MONITOR_SECRET` 安装后可从
+`/etc/filmlightmeter-website.env` 读取，并需原样配置到监听设备。Secret 至少 32 个
+字符，只能保存在服务器和监听设备的安全存储中，不得提交 Git。
 
 Debug 监听端可通过同一组 Monitor 凭据调用：
 
@@ -87,6 +89,7 @@ chmod 600 /root/filmlightmeter.env
 
 其中 `ACTIVATION_PRIVATE_KEY_BASE64` 必须是 `ios/.secrets/activation-private-key`
 原始 32 字节内容的 Base64，不能重新生成。检查脚本会验证它与 App 内置公钥一致。
+其余可自动生成的变量保持为空即可。
 
 执行检查和安装：
 

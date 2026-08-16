@@ -11,6 +11,71 @@ ENV_TARGET="/etc/$SERVICE_NAME.env"
 PORT="3000"
 ENV_SOURCE=""
 
+read_env_value() {
+  local file_path="$1"
+  local key="$2"
+
+  if [[ ! -f "$file_path" ]]; then
+    return
+  fi
+
+  awk -v expected_key="$key" '
+    /^[[:space:]]*#/ { next }
+    {
+      separator = index($0, "=")
+      if (separator < 2) next
+      key = substr($0, 1, separator - 1)
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", key)
+      if (key != expected_key) next
+
+      value = substr($0, separator + 1)
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", value)
+      first = substr(value, 1, 1)
+      last = substr(value, length(value), 1)
+      if (length(value) >= 2 &&
+          ((first == "\"" && last == "\"") ||
+           (first == "\047" && last == "\047"))) {
+        value = substr(value, 2, length(value) - 2)
+      }
+      print value
+      exit
+    }
+  ' "$file_path"
+}
+
+generated_or_existing_value() {
+  local key="$1"
+  local value
+
+  value="$(read_env_value "$ENV_SOURCE" "$key")"
+  if [[ -n "$value" ]]; then
+    printf '%s' "$value"
+    return
+  fi
+
+  value="$(read_env_value "$ENV_TARGET" "$key")"
+  if [[ -n "$value" ]]; then
+    printf '%s' "$value"
+    return
+  fi
+
+  case "$key" in
+    DATA_ENCRYPTION_KEY_BASE64)
+      openssl rand -base64 32 | tr -d '\n'
+      ;;
+    LOOKUP_HMAC_PEPPER|PAYMENT_MONITOR_SECRET)
+      openssl rand -base64 48 | tr -d '\n'
+      ;;
+    PAYMENT_MONITOR_ID)
+      printf 'monitor-%s' "$(openssl rand -hex 12)"
+      ;;
+    *)
+      printf '不支持自动生成变量：%s\n' "$key" >&2
+      return 1
+      ;;
+  esac
+}
+
 usage() {
   cat <<'EOF'
 用法：
@@ -109,8 +174,18 @@ done
 runtime_env="$(mktemp)"
 trap 'rm -f "$runtime_env"' EXIT
 awk '
-  !/^(NODE_ENV|SITE_DATA_DIR|ANDROID_APK_PATH|PORT|HOSTNAME)=/
+  !/^(NODE_ENV|SITE_DATA_DIR|ANDROID_APK_PATH|PORT|HOSTNAME|DATA_ENCRYPTION_KEY_BASE64|LOOKUP_HMAC_PEPPER|PAYMENT_MONITOR_ID|PAYMENT_MONITOR_SECRET)=/
 ' "$ENV_SOURCE" > "$runtime_env"
+
+for generated_key in \
+  DATA_ENCRYPTION_KEY_BASE64 \
+  LOOKUP_HMAC_PEPPER \
+  PAYMENT_MONITOR_ID \
+  PAYMENT_MONITOR_SECRET; do
+  generated_value="$(generated_or_existing_value "$generated_key")"
+  printf '%s=%s\n' "$generated_key" "$generated_value" >> "$runtime_env"
+done
+
 cat >> "$runtime_env" <<EOF
 NODE_ENV=production
 SITE_DATA_DIR=$STATE_DIR
