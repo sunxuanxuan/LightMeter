@@ -46,6 +46,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.GridView
+import androidx.compose.material.icons.outlined.NotificationsActive
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
@@ -100,6 +101,7 @@ import com.lightmeter.app.camera.CameraOptics
 import com.lightmeter.app.camera.CameraZoomState
 import com.lightmeter.app.camera.ViewfinderProjection
 import com.lightmeter.app.camera.ViewfinderProjectionCalculator
+import com.lightmeter.app.debugtools.PaymentMonitorEntry
 import com.lightmeter.app.exposure.ExposurePair
 import com.lightmeter.app.exposure.FrameFormat
 import com.lightmeter.app.filmpreview.FilmExposureSimulator
@@ -1765,6 +1767,7 @@ private fun AppSettingsDialog(
     var meteringExpanded by rememberSaveable { mutableStateOf(false) }
     var exposureRiskExpanded by rememberSaveable { mutableStateOf(false) }
     var appearanceExpanded by rememberSaveable { mutableStateOf(false) }
+    val context = LocalContext.current
     val compatibleCameraPresets = remember(selectedMeteringPreset) {
         CameraMeteringPreset.entries.filter { it.meteringMode == selectedMeteringPreset }
     }
@@ -1794,6 +1797,24 @@ private fun AppSettingsDialog(
                                     onClick = { onThemeStyleChanged(style) },
                                 )
                             }
+                    }
+                }
+
+                if (PaymentMonitorEntry.available) {
+                    OutlinedButton(
+                        onClick = {
+                            onDismiss()
+                            PaymentMonitorEntry.open(context)
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(8.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.NotificationsActive,
+                            contentDescription = null,
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("订单监听")
                     }
                 }
 

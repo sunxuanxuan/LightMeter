@@ -48,9 +48,13 @@ export function ActivationForm() {
         const paymentMessage =
           result.errorCode === "PAYMENT_NOT_CONFIGURED"
             ? "支付宝付款暂未开放"
-            : result.errorCode === "PAYMENT_CREATION_FAILED"
-              ? "付款码生成失败，请稍后重试"
-              : null;
+            : result.errorCode === "PAYMENT_CAPACITY_REACHED"
+              ? "当前付款订单较多，请稍后重试"
+              : result.errorCode === "ORDER_RATE_LIMITED"
+                ? "订单创建过于频繁，请稍后重试"
+              : result.errorCode === "PAYMENT_CREATION_FAILED"
+                ? "付款码生成失败，请稍后重试"
+                : null;
         throw new Error(
           fieldMessage ?? paymentMessage ?? "订单创建失败，请检查输入后重试",
         );

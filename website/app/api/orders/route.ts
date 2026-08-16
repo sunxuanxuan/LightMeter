@@ -3,11 +3,12 @@ import { z } from "zod";
 
 import { siteConfig } from "@/lib/config";
 import {
-  createOrder,
-  getPaymentQrCode,
-  savePaymentQrCode,
+    createOrder,
+    getPaymentQrCode,
+    savePaymentQrCode,
 } from "@/lib/dal";
 import { createAlipayPayment } from "@/lib/payments/alipay";
+import { assertPersonalAlipayQrImage } from "@/lib/payments/personal-qr";
 import { hasSameOrigin } from "@/lib/request-security";
 import { createOrderSchema } from "@/lib/validation";
 
@@ -16,14 +17,28 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ errorCode: "INVALID_ORIGIN" }, { status: 403 });
   }
   const idempotencyKey = request.headers.get("Idempotency-Key");
-  if (!idempotencyKey || idempotencyKey.length < 8 || idempotencyKey.length > 100) {
+  if (
+    !idempotencyKey ||
+    idempotencyKey.length < 8 ||
+    idempotencyKey.length > 100
+  ) {
     return NextResponse.json(
       { errorCode: "INVALID_IDEMPOTENCY_KEY" },
       { status: 400 },
     );
   }
 
-  const parsed = createOrderSchema.safeParse(await request.json());
+  const contentLength = Number(request.headers.get("content-length") ?? 0);
+  if (contentLength > 16 * 1024) {
+    return NextResponse.json({ errorCode: "INVALID_ORDER" }, { status: 413 });
+  }
+  let input: unknown;
+  try {
+    input = await request.json();
+  } catch {
+    return NextResponse.json({ errorCode: "INVALID_ORDER" }, { status: 400 });
+  }
+  const parsed = createOrderSchema.safeParse(input);
   if (!parsed.success) {
     return NextResponse.json(
       {
@@ -34,9 +49,16 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const order = createOrder(parsed.data, idempotencyKey);
+  let order: ReturnType<typeof createOrder> | null = null;
   try {
-    if (!getPaymentQrCode(order.orderNo)) {
+    if (siteConfig.paymentProvider === "personal_alipay_monitor") {
+      await assertPersonalAlipayQrImage();
+    }
+    order = createOrder(parsed.data, idempotencyKey);
+    if (
+      siteConfig.paymentProvider === "alipay" &&
+      !getPaymentQrCode(order.orderNo)
+    ) {
       const qrCode = await createAlipayPayment(order.orderNo);
       savePaymentQrCode(order.orderNo, qrCode);
     }
@@ -44,13 +66,26 @@ export async function POST(request: NextRequest) {
     const errorCode =
       error instanceof Error && error.message === "ALIPAY_NOT_CONFIGURED"
         ? "PAYMENT_NOT_CONFIGURED"
-        : "PAYMENT_CREATION_FAILED";
+        : error instanceof Error &&
+            error.message === "PAYMENT_AMOUNT_POOL_EXHAUSTED"
+          ? "PAYMENT_CAPACITY_REACHED"
+          : error instanceof Error &&
+              (error.message === "ORDER_RATE_LIMITED" ||
+                error.message === "BUYER_ACTIVE_ORDER_LIMIT_REACHED")
+            ? "ORDER_RATE_LIMITED"
+          : "PAYMENT_CREATION_FAILED";
     console.error("Unable to create Alipay payment", {
       errorCode,
-      orderNo: order.orderNo,
+      orderNo: order?.orderNo ?? null,
       cause: error instanceof Error ? error.message : "unknown",
     });
     return NextResponse.json({ errorCode }, { status: 503 });
+  }
+  if (!order) {
+    return NextResponse.json(
+      { errorCode: "PAYMENT_CREATION_FAILED" },
+      { status: 503 },
+    );
   }
 
   const response = NextResponse.json({
