@@ -7,6 +7,7 @@ activityCompose = "1.10.0"
 composeBom = "2024.12.01"
 cameraX = "1.4.1"
 coroutines = "1.9.0"
+workManager = "2.10.0"
 bouncyCastle = "1.85.2"
 json = "20260814"
 junit = "4.13.2"
@@ -33,6 +34,7 @@ androidx-camera-lifecycle = { module = "androidx.camera:camera-lifecycle", versi
 androidx-camera-view = { module = "androidx.camera:camera-view", version.ref = "cameraX" }
 
 kotlinx-coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android", version.ref = "coroutines" }
+androidx-work-runtime-ktx = { module = "androidx.work:work-runtime-ktx", version.ref = "workManager" }
 bouncycastle-provider = { module = "org.bouncycastle:bcprov-jdk18on", version.ref = "bouncyCastle" }
 json = { module = "org.json:json", version.ref = "json" }
 

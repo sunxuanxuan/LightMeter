@@ -41,7 +41,8 @@ PAYMENT_PROVIDER=personal_alipay_monitor
 ```
 
 网站从 `PERSONAL_ALIPAY_QR_IMAGE_PATH` 读取个人支付宝收款码。每笔订单从
-`¥8.90～¥9.90` 中分配一个在订单有效期内唯一的实付金额，并通过：
+`当前标价 - ¥1.00` 到当前标价之间分配一个在订单有效期内唯一的实付金额；
+标价低于 ¥1.01 时，实付下限固定为 ¥0.01。到账事件通过：
 
 ```text
 POST /api/internal/payment-monitor/events
@@ -50,6 +51,15 @@ POST /api/internal/payment-monitor/events
 接收 Android Debug 监听端的 HMAC-SHA256 签名事件。生产环境的
 `PAYMENT_MONITOR_SECRET` 至少 32 个字符，只能保存在部署 Secret 和监听设备的安全
 存储中，不得提交 Git。
+
+Debug 监听端可通过同一组 Monitor 凭据调用：
+
+```text
+POST /api/internal/payment-monitor/pricing
+```
+
+更新官网标价。新价格只影响更新后创建的订单，已有订单继续使用创建时保存的金额
+快照。
 
 切换到支付宝官方当面付时设置 `PAYMENT_PROVIDER=alipay`，并配置 `APP_BASE_URL`、
 `ALIPAY_APP_ID`、`ALIPAY_SELLER_ID`、应用私钥和支付宝公钥。官方异步通知地址为

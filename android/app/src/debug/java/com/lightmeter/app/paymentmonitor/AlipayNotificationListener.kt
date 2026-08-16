@@ -4,6 +4,7 @@ import android.app.Notification
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import android.util.Log
+import com.lightmeter.app.BuildConfig
 import java.security.MessageDigest
 import java.util.Locale
 
@@ -14,6 +15,12 @@ internal class AlipayNotificationListener : NotificationListenerService() {
             context = applicationContext,
             connectedAt = System.currentTimeMillis(),
         )
+        if (
+            PaymentMonitorConfigStore.load(applicationContext).isComplete &&
+            PaymentMonitorStore.pendingEvents(applicationContext).isNotEmpty()
+        ) {
+            PaymentUploadScheduler.enqueue(applicationContext)
+        }
         Log.i(TAG, "Alipay notification listener connected")
     }
 
@@ -43,12 +50,17 @@ internal class AlipayNotificationListener : NotificationListenerService() {
         when (
             PaymentMonitorStore.recordPayment(
                 context = applicationContext,
-                eventId = eventId,
-                amountMinor = parsed.amountMinor,
-                observedAt = observedAt,
+                event = PendingPaymentEvent(
+                    eventId = eventId,
+                    amountMinor = parsed.amountMinor,
+                    observedAt = observedAt,
+                    notificationHash = sha256(parsed.normalizedContent),
+                    monitorVersion = BuildConfig.VERSION_NAME,
+                ),
             )
         ) {
             RecordEventResult.RECORDED -> {
+                PaymentUploadScheduler.enqueue(applicationContext)
                 Log.i(
                     TAG,
                     String.format(

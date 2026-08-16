@@ -4,10 +4,16 @@ import { KeyRound, LoaderCircle, Smartphone } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { SyntheticEvent, useRef, useState } from "react";
 
-import { formatPrice, siteConfig } from "@/lib/config";
+import { formatPrice } from "@/lib/config";
 import { formatDeviceId, normalizeDeviceId } from "@/lib/validation";
 
-export function ActivationForm() {
+export function ActivationForm({
+  listPriceMinor,
+  currency,
+}: {
+  listPriceMinor: number;
+  currency: string;
+}) {
   const router = useRouter();
   const idempotencyKey = useRef<string | null>(null);
   const [deviceID, setDeviceID] = useState("");
@@ -173,7 +179,7 @@ export function ActivationForm() {
             </div>
             <div className="order-summary__price">
               <dt>价格</dt>
-              <dd>{formatPrice(siteConfig.priceMinor, siteConfig.currency)}</dd>
+              <dd>{formatPrice(listPriceMinor, currency)}</dd>
             </div>
           </dl>
         </div>

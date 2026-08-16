@@ -59,7 +59,10 @@ export async function POST(request: NextRequest) {
       siteConfig.paymentProvider === "alipay" &&
       !getPaymentQrCode(order.orderNo)
     ) {
-      const qrCode = await createAlipayPayment(order.orderNo);
+      const qrCode = await createAlipayPayment(
+        order.orderNo,
+        order.amountMinor,
+      );
       savePaymentQrCode(order.orderNo, qrCode);
     }
   } catch (error) {

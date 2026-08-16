@@ -118,12 +118,6 @@ const productPrice = requireInteger(
   1,
   100_000_000,
 );
-const discount = requireInteger(
-  values,
-  "PERSONAL_PAYMENT_DISCOUNT_MAX_MINOR",
-  0,
-  10_000,
-);
 const lifetime = requireInteger(
   values,
   "PERSONAL_PAYMENT_LIFETIME_SECONDS",
@@ -148,20 +142,17 @@ requireInteger(
   1,
   10,
 );
-if (productPrice !== null && discount !== null && discount >= productPrice) {
-  fail("最大优惠金额必须小于商品价格");
-}
 if (
-  discount !== null &&
   lifetime !== null &&
   grace !== null &&
   maxOrdersPerMinute !== null
 ) {
   const reservationMinutes = Math.ceil((lifetime + grace) / 60);
-  if (maxOrdersPerMinute * reservationMinutes >= discount + 1) {
+  const initialAmountPoolSize = Math.min(productPrice ?? 1, 101);
+  if (maxOrdersPerMinute * reservationMinutes >= initialAmountPoolSize) {
     fail(
-      "订单创建速率过高，持续请求可能占满全部唯一金额；请降低 " +
-        "PERSONAL_PAYMENT_MAX_ORDERS_PER_MINUTE 或扩大金额范围",
+      "订单创建速率过高，持续请求可能占满初始价格的唯一金额池；请降低 " +
+        "PERSONAL_PAYMENT_MAX_ORDERS_PER_MINUTE 或提高 PRODUCT_PRICE_MINOR",
     );
   } else {
     ok("订单限流配置不会在一个占用周期内耗尽金额池");
