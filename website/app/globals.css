@@ -1045,6 +1045,12 @@ textarea:focus-visible {
   border-radius: 6px;
 }
 
+.payment-qr--personal {
+  width: min(100%, 280px);
+  aspect-ratio: 1181 / 1772;
+  object-fit: contain;
+}
+
 .payment-qr--empty {
   display: grid;
   place-content: center;

@@ -63,7 +63,25 @@ export default async function ActivationResultPage({
   }
 
   const fulfilled = order.status === "fulfilled" && order.credential;
-  const waitingForPayment = order.status === "pending";
+  const pending = order.status === "pending";
+  const issuing = order.status === "issuing";
+  const expired = order.status === "expired";
+  const manualReview = order.status === "manual_review";
+  const waitingForPayment = pending || issuing;
+  const paymentTitle = issuing
+    ? "正在确认付款"
+    : expired
+      ? "订单已过期"
+      : manualReview
+        ? "付款需要人工确认"
+        : "请使用支付宝扫码付款";
+  const paymentDescription = issuing
+    ? "已识别到账，正在生成激活凭证。"
+    : expired
+      ? "付款金额已释放，请返回重新创建订单。"
+      : manualReview
+        ? "系统未能自动完成核销，请保留支付宝付款记录。"
+        : "请严格按照页面显示的本单金额付款，成功后页面会自动更新。";
 
   return (
     <div className="page-shell">
@@ -73,11 +91,11 @@ export default async function ActivationResultPage({
       />
       <PageHeader
         eyebrow="Order result"
-        title={fulfilled ? "激活凭证已签发" : "请使用支付宝扫码付款"}
+        title={fulfilled ? "激活凭证已签发" : paymentTitle}
         description={
           fulfilled
             ? "复制完整凭证回到 App。凭证只属于当前设备，不需要 App 联网。"
-            : "付款成功后页面会自动更新，请不要关闭当前页面。"
+            : paymentDescription
         }
         action={
           <Link className="button button--secondary" href="/activate">
@@ -94,11 +112,11 @@ export default async function ActivationResultPage({
               {fulfilled ? <ShieldCheck size={21} /> : <Clock3 size={21} />}
             </span>
             <div>
-              <h2>{fulfilled ? "激活凭证已生成" : "等待付款"}</h2>
+              <h2>{fulfilled ? "激活凭证已生成" : paymentTitle}</h2>
               <p>
                 {fulfilled
                   ? `签名密钥：${order.signingKeyId}`
-                  : `订单金额：${formatPrice(order.amountMinor, order.currency)}`}
+                  : `本单金额：${formatPrice(order.amountMinor, order.currency)}`}
               </p>
             </div>
           </div>
@@ -121,15 +139,23 @@ export default async function ActivationResultPage({
                 <CopyButton value={order.credential} label="复制完整凭证" />
               </div>
             </>
-          ) : (
+          ) : pending && order.paymentAvailable ? (
             <div className="payment-box">
               {order.paymentQrCode ? (
                 <Image
-                  className="payment-qr"
+                  className={`payment-qr ${
+                    order.paymentProvider === "personal_alipay_monitor"
+                      ? "payment-qr--personal"
+                      : ""
+                  }`}
                   src={`/api/orders/${encodeURIComponent(order.orderNo)}/payment-qr`}
                   alt="支付宝付款二维码"
                   width={320}
-                  height={320}
+                  height={
+                    order.paymentProvider === "personal_alipay_monitor"
+                      ? 480
+                      : 320
+                  }
                   unoptimized
                   priority
                 />
@@ -143,9 +169,17 @@ export default async function ActivationResultPage({
                 <ScanLine size={20} />
                 <div>
                   <strong>打开支付宝扫一扫</strong>
-                  <span>付款完成后，请留在此页面等待结果。</span>
+                  <span>
+                    请支付 {formatPrice(order.amountMinor, order.currency)}
+                    ，付款后留在此页面等待结果。
+                  </span>
                 </div>
               </div>
+            </div>
+          ) : (
+            <div className="notice notice--warning">
+              <Clock3 size={18} />
+              <span>{paymentDescription}</span>
             </div>
           )}
 
@@ -166,10 +200,27 @@ export default async function ActivationResultPage({
               <dt>金额</dt>
               <dd>{formatPrice(order.amountMinor, order.currency)}</dd>
             </div>
+            {order.amountMinor < order.listAmountMinor ? (
+              <div>
+                <dt>本单优惠</dt>
+                <dd>
+                  -{formatPrice(
+                    order.listAmountMinor - order.amountMinor,
+                    order.currency,
+                  )}
+                </dd>
+              </div>
+            ) : null}
             <div>
               <dt>创建时间</dt>
               <dd>{formattedTime(order.createdAt)}</dd>
             </div>
+            {order.expiresAt ? (
+              <div>
+                <dt>付款截止</dt>
+                <dd>{formattedTime(order.expiresAt)}</dd>
+              </div>
+            ) : null}
             <div>
               <dt>签发时间</dt>
               <dd>{formattedTime(order.issuedAt)}</dd>
@@ -190,15 +241,30 @@ export default async function ActivationResultPage({
               更换设备后设备 ID 会变化，需要提供订单号申请重新签发。
             </p>
           </aside>
-        ) : (
+        ) : pending ? (
           <aside className="next-steps">
             <h2>付款提示</h2>
             <ol>
               <li>使用支付宝扫描页面中的付款码。</li>
-              <li>确认金额为 ¥9.90 后完成付款。</li>
+              <li>
+                确认金额为 {formatPrice(order.amountMinor, order.currency)}
+                后完成付款。
+              </li>
               <li>付款后无需手动操作，等待页面自动更新。</li>
             </ol>
-            <p className="aside-note">付款码将在订单创建 30 分钟后失效。</p>
+            <p className="aside-note">
+              每个订单金额不同，请勿修改金额或重复付款。
+            </p>
+          </aside>
+        ) : (
+          <aside className="next-steps">
+            <h2>订单状态</h2>
+            <p className="aside-note">{paymentDescription}</p>
+            {expired ? (
+              <Link className="button button--primary" href="/activate">
+                重新创建订单
+              </Link>
+            ) : null}
           </aside>
         )}
       </div>

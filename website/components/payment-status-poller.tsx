@@ -25,7 +25,11 @@ export function PaymentStatusPoller({
         );
         if (response.ok) {
           const result = (await response.json()) as { status?: string };
-          if (result.status === "fulfilled") {
+          if (
+            result.status === "fulfilled" ||
+            result.status === "expired" ||
+            result.status === "manual_review"
+          ) {
             cancelled = true;
             router.refresh();
             return;

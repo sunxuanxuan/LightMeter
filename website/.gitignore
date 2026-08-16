@@ -16,6 +16,8 @@
 # local database
 /data/*.db
 /data/*.db-*
+/data/**/*.db
+/data/**/*.db-*
 
 # next.js
 /.next/

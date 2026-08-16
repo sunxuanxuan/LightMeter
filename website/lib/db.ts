@@ -20,10 +20,13 @@ function initializeDatabase(): DatabaseSync {
     path.join(dataDirectory, "filmlightmeter.db"),
   );
   database.exec(`
+    PRAGMA busy_timeout = 15000;
     PRAGMA journal_mode = WAL;
     PRAGMA foreign_keys = ON;
-    PRAGMA busy_timeout = 5000;
-
+  `);
+  database.exec("BEGIN IMMEDIATE");
+  try {
+    database.exec(`
     CREATE TABLE IF NOT EXISTS releases (
       id TEXT PRIMARY KEY,
       platform TEXT NOT NULL,
@@ -53,14 +56,18 @@ function initializeDatabase(): DatabaseSync {
       device_id_ciphertext TEXT NOT NULL,
       device_id_hash TEXT NOT NULL,
       device_id_suffix TEXT NOT NULL,
+      list_amount_minor INTEGER,
       amount_minor INTEGER NOT NULL,
       currency TEXT NOT NULL,
       payment_provider TEXT NOT NULL,
       payment_trade_no TEXT UNIQUE,
       payment_qr_code TEXT,
+      payment_event_id TEXT UNIQUE,
       status TEXT NOT NULL,
       terms_version TEXT NOT NULL,
       paid_at TEXT,
+      expires_at TEXT,
+      reservation_expires_at TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -94,14 +101,72 @@ function initializeDatabase(): DatabaseSync {
       received_at TEXT NOT NULL,
       FOREIGN KEY(order_id) REFERENCES orders(id)
     );
+
+    CREATE TABLE IF NOT EXISTS payment_amount_reservations (
+      id TEXT PRIMARY KEY,
+      provider TEXT NOT NULL,
+      amount_minor INTEGER NOT NULL,
+      order_id TEXT NOT NULL UNIQUE,
+      expires_at TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      UNIQUE(provider, amount_minor),
+      FOREIGN KEY(order_id) REFERENCES orders(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_payment_reservations_expires_at
+      ON payment_amount_reservations(expires_at);
+
+    CREATE TABLE IF NOT EXISTS monitor_payment_events (
+      id TEXT PRIMARY KEY,
+      provider_event_id TEXT NOT NULL UNIQUE,
+      source TEXT NOT NULL,
+      monitor_id TEXT NOT NULL,
+      nonce TEXT NOT NULL UNIQUE,
+      channel TEXT NOT NULL,
+      amount_minor INTEGER NOT NULL,
+      observed_at TEXT NOT NULL,
+      notification_hash TEXT NOT NULL,
+      source_authenticated INTEGER NOT NULL,
+      provider_verified INTEGER NOT NULL,
+      process_status TEXT NOT NULL,
+      order_id TEXT,
+      received_at TEXT NOT NULL,
+      processed_at TEXT,
+      FOREIGN KEY(order_id) REFERENCES orders(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_monitor_events_match
+      ON monitor_payment_events(channel, amount_minor, observed_at);
   `);
-  const orderColumns = database
-    .prepare("PRAGMA table_info(orders)")
-    .all() as Array<{ name: string }>;
-  if (!orderColumns.some((column) => column.name === "payment_qr_code")) {
-    database.exec("ALTER TABLE orders ADD COLUMN payment_qr_code TEXT");
+    const orderColumns = database
+      .prepare("PRAGMA table_info(orders)")
+      .all() as Array<{ name: string }>;
+    const orderMigrations = [
+      ["payment_qr_code", "TEXT"],
+      ["list_amount_minor", "INTEGER"],
+      ["payment_event_id", "TEXT"],
+      ["expires_at", "TEXT"],
+      ["reservation_expires_at", "TEXT"],
+    ] as const;
+    for (const [columnName, columnType] of orderMigrations) {
+      if (!orderColumns.some((column) => column.name === columnName)) {
+        database.exec(
+          `ALTER TABLE orders ADD COLUMN ${columnName} ${columnType}`,
+        );
+      }
+    }
+    database.exec(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_payment_event_id
+        ON orders(payment_event_id)
+        WHERE payment_event_id IS NOT NULL;
+    `);
+    seedLocalReleases(database);
+    database.exec("COMMIT");
+  } catch (error) {
+    database.exec("ROLLBACK");
+    database.close();
+    throw error;
   }
-  seedLocalReleases(database);
   return database;
 }
 

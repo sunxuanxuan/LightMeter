@@ -16,7 +16,7 @@ export async function GET(
     return Response.json({ errorCode: "ORDER_NOT_FOUND" }, { status: 404 });
   }
   return Response.json(
-    { status: order.status },
+    { status: order.status, expiresAt: order.expiresAt },
     { headers: { "Cache-Control": "private, no-store" } },
   );
 }
