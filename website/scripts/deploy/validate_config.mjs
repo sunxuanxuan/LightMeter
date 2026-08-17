@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 
 import {
-    createPrivateKey,
-    createPublicKey,
+  createPrivateKey,
+  createPublicKey,
 } from "node:crypto";
 import { readFileSync, statSync } from "node:fs";
 import path from "node:path";
@@ -164,6 +164,22 @@ if (dataKey) decodeBase64(dataKey, 32, "DATA_ENCRYPTION_KEY_BASE64");
 requireValue(values, "LOOKUP_HMAC_PEPPER", 32);
 requireValue(values, "ACTIVATION_SIGNING_KEY_ID", 1);
 
+const appBaseUrl = requireValue(values, "APP_BASE_URL");
+if (appBaseUrl) {
+  try {
+    const url = new URL(appBaseUrl);
+    if (url.protocol !== "https:") {
+      fail("APP_BASE_URL 必须使用 HTTPS");
+    } else if (url.hostname.endsWith(".example")) {
+      fail("APP_BASE_URL 必须替换为真实公网域名");
+    } else {
+      ok("APP_BASE_URL 是有效的 HTTPS 公网地址");
+    }
+  } catch {
+    fail("APP_BASE_URL 不是有效 URL");
+  }
+}
+
 const activationSeedValue = requireValue(
   values,
   "ACTIVATION_PRIVATE_KEY_BASE64",
@@ -203,7 +219,6 @@ if (provider === "personal_alipay_monitor") {
 
 if (provider === "alipay") {
   for (const key of [
-    "APP_BASE_URL",
     "ALIPAY_APP_ID",
     "ALIPAY_SELLER_ID",
     "ALIPAY_PRIVATE_KEY",
@@ -211,13 +226,10 @@ if (provider === "alipay") {
   ]) {
     requireValue(values, key);
   }
-  if (!values.APP_BASE_URL?.startsWith("https://")) {
-    fail("正式支付宝回调必须使用 HTTPS APP_BASE_URL");
-  }
 }
 
 for (const [key, fallback] of [
-  ["PERSONAL_ALIPAY_QR_IMAGE_PATH", "./asset/20260816-161025.jpeg"],
+  ["PERSONAL_ALIPAY_QR_IMAGE_PATH", "./asset/20260816-195133.jpeg"],
   ["ANDROID_APK_PATH", "./artifacts/FilmLightMeter-release.apk"],
 ]) {
   const configuredPath = values[key] || fallback;

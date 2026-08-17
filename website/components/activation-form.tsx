@@ -1,7 +1,6 @@
 "use client";
 
 import { KeyRound, LoaderCircle, Smartphone } from "lucide-react";
-import { useRouter } from "next/navigation";
 import { SyntheticEvent, useRef, useState } from "react";
 
 import { formatPrice } from "@/lib/config";
@@ -14,7 +13,6 @@ export function ActivationForm({
   listPriceMinor: number;
   currency: string;
 }) {
-  const router = useRouter();
   const idempotencyKey = useRef<string | null>(null);
   const [deviceID, setDeviceID] = useState("");
   const [email, setEmail] = useState("");
@@ -31,6 +29,7 @@ export function ActivationForm({
     try {
       const response = await fetch("/api/orders", {
         method: "POST",
+        credentials: "same-origin",
         headers: {
           "Content-Type": "application/json",
           "Idempotency-Key": idempotencyKey.current,
@@ -52,7 +51,9 @@ export function ActivationForm({
           ? Object.values(result.fieldErrors).flat()[0]
           : null;
         const paymentMessage =
-          result.errorCode === "PAYMENT_NOT_CONFIGURED"
+          result.errorCode === "INVALID_ORIGIN"
+            ? "站点代理配置异常，请联系管理员检查 APP_BASE_URL"
+            : result.errorCode === "PAYMENT_NOT_CONFIGURED"
             ? "支付宝付款暂未开放"
             : result.errorCode === "PAYMENT_CAPACITY_REACHED"
               ? "当前付款订单较多，请稍后重试"
@@ -65,7 +66,7 @@ export function ActivationForm({
           fieldMessage ?? paymentMessage ?? "订单创建失败，请检查输入后重试",
         );
       }
-      router.push(result.resultUrl);
+      window.location.assign(result.resultUrl);
     } catch (submissionError) {
       setError(
         submissionError instanceof Error
@@ -106,7 +107,6 @@ export function ActivationForm({
               className="device-input"
               value={formatDeviceId(deviceID)}
               onChange={(event) => updateDeviceID(event.target.value)}
-              placeholder="A1B2 C3D4 E5F6 A7B8"
               inputMode="text"
               autoComplete="off"
               required

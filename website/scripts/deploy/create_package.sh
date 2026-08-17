@@ -44,8 +44,8 @@ for entry in "${copy_entries[@]}"; do
   cp -R "$APP_ROOT/$entry" "$STAGE_DIR/"
 done
 
-cp "$APP_ROOT/asset/20260816-161025.jpeg" \
-  "$STAGE_DIR/asset/20260816-161025.jpeg"
+cp "$APP_ROOT/asset/20260816-195133.jpeg" \
+  "$STAGE_DIR/asset/20260816-195133.jpeg"
 cp "$APK_SOURCE" "$STAGE_DIR/artifacts/FilmLightMeter-release.apk"
 
 chmod +x \

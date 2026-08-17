@@ -153,7 +153,7 @@ export default async function ActivationResultPage({
                   width={320}
                   height={
                     order.paymentProvider === "personal_alipay_monitor"
-                      ? 480
+                      ? 317
                       : 320
                   }
                   unoptimized
