@@ -26,9 +26,14 @@ npm run dev
 复制 `.env.example` 为 `.env.local` 后按需修改。Production 必须提供：
 
 ```text
+APP_BASE_URL
 ACTIVATION_PRIVATE_KEY_BASE64
 ACTIVATION_SIGNING_KEY_ID
 ```
+
+`APP_BASE_URL` 必须填写用户实际访问的 HTTPS 公网地址，例如
+`https://lightmeter.example.cn`。订单接口使用它校验浏览器 `Origin`，避免 CDN 或
+Nginx 将 `Host` 改写为回源地址后误拒绝合法请求。
 
 部署脚本会在首次安装时自动生成 `DATA_ENCRYPTION_KEY_BASE64`、
 `LOOKUP_HMAC_PEPPER`、`PAYMENT_MONITOR_ID` 和 `PAYMENT_MONITOR_SECRET`。升级时会
@@ -110,6 +115,8 @@ sudo ./scripts/deploy/install.sh \
 
 公网访问必须配置 HTTPS 反向代理。Nginx 示例位于
 `scripts/deploy/nginx.conf.example`，其中对公开下单接口额外设置了 IP 限流。
+反向代理必须覆盖 `Host`、`X-Forwarded-Host` 和 `X-Forwarded-Proto`，不要透传
+客户端自带的同名请求头。
 
 常用运维命令：
 

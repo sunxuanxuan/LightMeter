@@ -1046,8 +1046,8 @@ textarea:focus-visible {
 }
 
 .payment-qr--personal {
-  width: min(100%, 280px);
-  aspect-ratio: 1181 / 1772;
+  width: min(100%, 320px);
+  aspect-ratio: 100 / 99;
   object-fit: contain;
 }
 

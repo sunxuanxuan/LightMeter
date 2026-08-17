@@ -74,7 +74,7 @@ for required_path in \
   app \
   components \
   lib \
-  asset/20260816-161025.jpeg; do
+  asset/20260816-195133.jpeg; do
   if [[ -e "$APP_ROOT/$required_path" ]]; then
     ok "文件：$required_path"
   else

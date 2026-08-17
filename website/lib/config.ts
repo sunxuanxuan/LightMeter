@@ -27,7 +27,7 @@ export const siteConfig = {
   ),
   personalPaymentQrImagePath:
     process.env.PERSONAL_ALIPAY_QR_IMAGE_PATH ??
-    "./asset/20260816-161025.jpeg",
+    "./asset/20260816-195133.jpeg",
   resultCookieName: "flm_result_session",
   signingKeyId:
     process.env.ACTIVATION_SIGNING_KEY_ID ??
