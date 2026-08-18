@@ -36,7 +36,11 @@ internal class AlipayNotificationListener : NotificationListenerService() {
                 bigText = extras.getCharSequence(Notification.EXTRA_BIG_TEXT)?.toString(),
                 subText = extras.getCharSequence(Notification.EXTRA_SUB_TEXT)?.toString(),
             ),
-        ) ?: return
+        )
+        if (parsed == null) {
+            Log.d(TAG, "Alipay notification ignored: unsupported or ambiguous content")
+            return
+        }
 
         val observedAt = notification.postTime.takeIf { it > 0 }
             ?: System.currentTimeMillis()

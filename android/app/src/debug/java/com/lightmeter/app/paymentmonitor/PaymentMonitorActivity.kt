@@ -1,11 +1,15 @@
 package com.lightmeter.app.paymentmonitor
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -37,6 +41,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -51,11 +56,16 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.lifecycleScope
 import com.lightmeter.app.settings.SharedPreferencesAppSettingsStore
 import com.lightmeter.app.ui.theme.LightMeterTheme
 import java.text.DateFormat
 import java.util.Date
 import java.util.Locale
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 internal class PaymentMonitorActivity : ComponentActivity() {
@@ -63,6 +73,19 @@ internal class PaymentMonitorActivity : ComponentActivity() {
     private var monitorConfig by mutableStateOf(
         PaymentMonitorConfig("", "", ""),
     )
+    private var pricingResult by mutableStateOf<PricingUpdateResult?>(null)
+    private var pricingLoading by mutableStateOf(false)
+    private var pricingRequestGeneration = 0
+    private var confirmations by mutableStateOf(
+        emptyList<PendingPaymentConfirmation>(),
+    )
+    private var confirmationsLoading by mutableStateOf(false)
+    private var confirmationError by mutableStateOf<String?>(null)
+    private var confirmationActionOrderNo by mutableStateOf<String?>(null)
+    private var confirmationPollingJob: Job? = null
+    private val notificationPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) {}
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -81,6 +104,12 @@ internal class PaymentMonitorActivity : ComponentActivity() {
                     notificationAccessGranted = notificationAccessGranted,
                     snapshot = snapshot,
                     monitorConfig = monitorConfig,
+                    pricingResult = pricingResult,
+                    pricingLoading = pricingLoading,
+                    confirmations = confirmations,
+                    confirmationsLoading = confirmationsLoading,
+                    confirmationError = confirmationError,
+                    confirmationActionOrderNo = confirmationActionOrderNo,
                     onOpenNotificationAccess = {
                         startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
                     },
@@ -88,6 +117,12 @@ internal class PaymentMonitorActivity : ComponentActivity() {
                         if (PaymentMonitorConfigStore.save(applicationContext, config)) {
                             monitorConfig = config
                             PaymentUploadScheduler.enqueue(applicationContext)
+                            refreshPricing()
+                            PaymentConfirmationPollingService.update(
+                                applicationContext,
+                                enabled = false,
+                            )
+                            startConfirmationPolling()
                             true
                         } else {
                             false
@@ -96,11 +131,21 @@ internal class PaymentMonitorActivity : ComponentActivity() {
                     onRetryUploads = {
                         PaymentUploadScheduler.enqueue(applicationContext)
                     },
+                    onRefreshConfirmations = {
+                        refreshConfirmations()
+                    },
+                    onConfirmationDecision = { orderNo, decision ->
+                        decideConfirmation(orderNo, decision)
+                    },
                     onUpdatePricing = { priceMinor ->
-                        PricingUpdateClient.update(
+                        val result = PricingUpdateClient.update(
                             config = monitorConfig,
                             priceMinor = priceMinor,
                         )
+                        if (result is PricingUpdateResult.Success) {
+                            pricingResult = result
+                        }
+                        result
                     },
                 )
             }
@@ -114,11 +159,139 @@ internal class PaymentMonitorActivity : ComponentActivity() {
                 .contains(packageName)
         PaymentMonitorStore.refresh(applicationContext)
         monitorConfig = PaymentMonitorConfigStore.load(applicationContext)
+        refreshPricing()
+        requestNotificationPermissionOnce()
+        PaymentConfirmationPollingService.update(
+            applicationContext,
+            enabled = false,
+        )
+        startConfirmationPolling()
         if (
             monitorConfig.isComplete &&
             PaymentMonitorStore.pendingEvents(applicationContext).isNotEmpty()
         ) {
             PaymentUploadScheduler.enqueue(applicationContext)
+        }
+    }
+
+    override fun onPause() {
+        confirmationPollingJob?.cancel()
+        confirmationPollingJob = null
+        PaymentConfirmationPollingService.update(
+            applicationContext,
+            enabled = monitorConfig.isComplete,
+        )
+        super.onPause()
+    }
+
+    private fun refreshPricing() {
+        val config = monitorConfig
+        val generation = ++pricingRequestGeneration
+        if (!config.isComplete) {
+            pricingLoading = false
+            pricingResult = PricingUpdateResult.Failure(
+                "请先保存有效的官网回传配置",
+            )
+            return
+        }
+        pricingLoading = true
+        pricingResult = null
+        lifecycleScope.launch {
+            val result = PricingUpdateClient.fetch(config)
+            if (generation == pricingRequestGeneration && monitorConfig == config) {
+                pricingResult = result
+                pricingLoading = false
+            }
+        }
+    }
+
+    private fun startConfirmationPolling() {
+        confirmationPollingJob?.cancel()
+        confirmationPollingJob = lifecycleScope.launch {
+            while (isActive) {
+                loadConfirmations()
+                delay(10_000)
+            }
+        }
+    }
+
+    private fun refreshConfirmations() {
+        if (confirmationsLoading) return
+        lifecycleScope.launch {
+            loadConfirmations()
+        }
+    }
+
+    private suspend fun loadConfirmations() {
+        val config = monitorConfig
+        if (!config.isComplete) {
+            confirmations = emptyList()
+            confirmationError = "请先保存有效的官网回传配置"
+            confirmationsLoading = false
+            return
+        }
+        if (confirmationsLoading) return
+        confirmationsLoading = true
+        when (val result = PaymentConfirmationClient.fetch(config)) {
+            is ConfirmationQueryResult.Success -> {
+                if (monitorConfig == config) {
+                    confirmations = result.confirmations
+                    confirmationError = null
+                }
+            }
+            is ConfirmationQueryResult.Failure -> {
+                if (monitorConfig == config) {
+                    confirmationError = result.message
+                }
+            }
+        }
+        confirmationsLoading = false
+    }
+
+    private fun decideConfirmation(orderNo: String, decision: String) {
+        if (confirmationActionOrderNo != null) return
+        confirmationActionOrderNo = orderNo
+        lifecycleScope.launch {
+            when (
+                val result = PaymentConfirmationClient.decide(
+                    config = monitorConfig,
+                    orderNo = orderNo,
+                    decision = decision,
+                )
+            ) {
+                is ConfirmationDecisionResult.Success -> {
+                    confirmationError = null
+                    loadConfirmations()
+                }
+                is ConfirmationDecisionResult.Failure -> {
+                    confirmationError = result.message
+                }
+            }
+            confirmationActionOrderNo = null
+        }
+    }
+
+    private fun requestNotificationPermissionOnce() {
+        if (
+            Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+            ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.POST_NOTIFICATIONS,
+            ) == PackageManager.PERMISSION_GRANTED
+        ) {
+            return
+        }
+        val preferences = getSharedPreferences(
+            "payment_monitor_debug",
+            MODE_PRIVATE,
+        )
+        if (!preferences.getBoolean("background_notification_requested", false)) {
+            preferences.edit()
+                .putBoolean("background_notification_requested", true)
+                .apply()
+            notificationPermissionLauncher.launch(
+                Manifest.permission.POST_NOTIFICATIONS,
+            )
         }
     }
 }
@@ -129,9 +302,17 @@ private fun PaymentMonitorScreen(
     notificationAccessGranted: Boolean,
     snapshot: PaymentMonitorSnapshot,
     monitorConfig: PaymentMonitorConfig,
+    pricingResult: PricingUpdateResult?,
+    pricingLoading: Boolean,
+    confirmations: List<PendingPaymentConfirmation>,
+    confirmationsLoading: Boolean,
+    confirmationError: String?,
+    confirmationActionOrderNo: String?,
     onOpenNotificationAccess: () -> Unit,
     onSaveConfig: (PaymentMonitorConfig) -> Boolean,
     onRetryUploads: () -> Unit,
+    onRefreshConfirmations: () -> Unit,
+    onConfirmationDecision: (orderNo: String, decision: String) -> Unit,
     onUpdatePricing: suspend (Int) -> PricingUpdateResult,
 ) {
     Scaffold(
@@ -159,8 +340,19 @@ private fun PaymentMonitorScreen(
                 config = monitorConfig,
                 onSaveConfig = onSaveConfig,
             )
+            PaymentConfirmationPanel(
+                confirmations = confirmations,
+                loading = confirmationsLoading,
+                errorMessage = confirmationError,
+                actionOrderNo = confirmationActionOrderNo,
+                configComplete = monitorConfig.isComplete,
+                onRefresh = onRefreshConfirmations,
+                onDecision = onConfirmationDecision,
+            )
             PricingConfigCard(
                 configComplete = monitorConfig.isComplete,
+                pricingResult = pricingResult,
+                pricingLoading = pricingLoading,
                 onUpdatePricing = onUpdatePricing,
             )
             PaymentSummaryCard(
@@ -175,12 +367,21 @@ private fun PaymentMonitorScreen(
 @Composable
 private fun PricingConfigCard(
     configComplete: Boolean,
+    pricingResult: PricingUpdateResult?,
+    pricingLoading: Boolean,
     onUpdatePricing: suspend (Int) -> PricingUpdateResult,
 ) {
-    var priceText by rememberSaveable { mutableStateOf("9.90") }
+    var priceText by rememberSaveable { mutableStateOf("") }
     var updating by rememberSaveable { mutableStateOf(false) }
-    var message by rememberSaveable { mutableStateOf<String?>(null) }
+    var updateMessage by rememberSaveable { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
+
+    LaunchedEffect(pricingResult) {
+        if (pricingResult is PricingUpdateResult.Success) {
+            priceText = formatAmountInput(pricingResult.priceMinor)
+            updateMessage = null
+        }
+    }
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -216,14 +417,26 @@ private fun PricingConfigCard(
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                 modifier = Modifier.fillMaxWidth(),
             )
-            message?.let { value ->
+            val statusMessage = updateMessage ?: when {
+                pricingLoading -> "正在获取官网最新定价"
+                pricingResult is PricingUpdateResult.Success ->
+                    "当前官网定价 ${formatAmount(pricingResult.priceMinor)}"
+                pricingResult is PricingUpdateResult.Failure -> pricingResult.message
+                else -> null
+            }
+            statusMessage?.let { value ->
+                val isError = if (updateMessage != null) {
+                    !value.startsWith("已更新")
+                } else {
+                    pricingResult is PricingUpdateResult.Failure
+                }
                 Text(
                     text = value,
                     style = MaterialTheme.typography.bodySmall,
-                    color = if (value.startsWith("已更新")) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
+                    color = if (isError) {
                         MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.primary
                     },
                 )
             }
@@ -231,13 +444,13 @@ private fun PricingConfigCard(
                 onClick = {
                     val priceMinor = PricingAmountParser.parseMinorUnits(priceText)
                     if (priceMinor == null) {
-                        message = "请输入大于等于 ¥0.01 的有效金额"
+                        updateMessage = "请输入大于等于 ¥0.01 的有效金额"
                         return@Button
                     }
                     updating = true
-                    message = null
+                    updateMessage = null
                     scope.launch {
-                        message = when (
+                        updateMessage = when (
                             val result = onUpdatePricing(priceMinor)
                         ) {
                             is PricingUpdateResult.Success -> {
@@ -250,7 +463,7 @@ private fun PricingConfigCard(
                         updating = false
                     }
                 },
-                enabled = configComplete && !updating,
+                enabled = configComplete && !updating && !pricingLoading,
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Text(if (updating) "正在同步" else "更新官网定价")
@@ -519,6 +732,15 @@ private fun formatAmount(amountMinor: Int): String {
     return String.format(
         Locale.CHINA,
         "¥%d.%02d",
+        amountMinor / 100,
+        amountMinor % 100,
+    )
+}
+
+private fun formatAmountInput(amountMinor: Int): String {
+    return String.format(
+        Locale.US,
+        "%d.%02d",
         amountMinor / 100,
         amountMinor % 100,
     )

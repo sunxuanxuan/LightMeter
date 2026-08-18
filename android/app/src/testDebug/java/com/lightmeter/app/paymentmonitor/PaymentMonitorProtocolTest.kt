@@ -66,6 +66,63 @@ class PaymentMonitorProtocolTest {
     }
 
     @Test
+    fun signsPricingQueryExactlyLikeWebsiteProtocol() {
+        val request = PaymentMonitorProtocol.createPricingQueryRequest(
+            secret = "test-secret-with-at-least-32-characters",
+            timestamp = 1_786_812_345_999,
+            nonce = "nonce_1234567890abcdef",
+        )
+
+        assertEquals(
+            "f8c609f6830a09dc84e6b32740b1e735" +
+                "1f88ab0567fee46dd2369b63bf282aea",
+            request.signature,
+        )
+        assertEquals("", request.body)
+    }
+
+    @Test
+    fun signsConfirmationQueryExactlyLikeWebsiteProtocol() {
+        val request = PaymentMonitorProtocol.createConfirmationQueryRequest(
+            secret = "test-secret-with-at-least-32-characters",
+            timestamp = 1_786_812_345_999,
+            nonce = "nonce_1234567890abcdef",
+        )
+
+        assertEquals(
+            "c0bb97ba3e1403b39ae70896533ad338" +
+                "48d783477d4ecdd083e4ef460df36531",
+            request.signature,
+        )
+        assertEquals("", request.body)
+    }
+
+    @Test
+    fun signsConfirmationDecisionExactlyLikeWebsiteProtocol() {
+        val (path, request) =
+            PaymentMonitorProtocol.createConfirmationDecisionRequest(
+                orderNo = "FLM-20260818-ABCDEF12",
+                decision = "confirm",
+                monitorVersion = "0.1.0-debug",
+                secret = "test-secret-with-at-least-32-characters",
+                timestamp = 1_786_812_345_999,
+                nonce = "nonce_1234567890abcdef",
+            )
+
+        assertEquals(
+            "/api/internal/payment-confirmations/" +
+                "FLM-20260818-ABCDEF12/decision",
+            path,
+        )
+        assertEquals(
+            "ed37845ec751af3dac83c0bf5aa591813" +
+                "d10230db6db37f4bafe688fa97f2497",
+            request.signature,
+        )
+        assertTrue(request.body.contains("\"decision\":\"confirm\""))
+    }
+
+    @Test
     fun parsesPricingWithOneDecimalPlace() {
         assertEquals(9_990, PricingAmountParser.parseMinorUnits("99.9"))
     }

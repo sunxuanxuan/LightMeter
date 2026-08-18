@@ -138,6 +138,27 @@ function initializeDatabase(): DatabaseSync {
     CREATE INDEX IF NOT EXISTS idx_monitor_events_match
       ON monitor_payment_events(channel, amount_minor, observed_at);
 
+    CREATE TABLE IF NOT EXISTS payment_confirmation_requests (
+      id TEXT PRIMARY KEY,
+      order_id TEXT NOT NULL,
+      status TEXT NOT NULL,
+      claimed_at TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      reviewed_at TEXT,
+      reviewed_by TEXT,
+      review_nonce TEXT UNIQUE,
+      rejection_reason TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY(order_id) REFERENCES orders(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_payment_confirmations_pending
+      ON payment_confirmation_requests(status, expires_at);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_payment_confirmations_active_order
+      ON payment_confirmation_requests(order_id)
+      WHERE status = 'pending';
+
     CREATE TABLE IF NOT EXISTS site_settings (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL,
@@ -153,6 +174,19 @@ function initializeDatabase(): DatabaseSync {
       command_payload TEXT NOT NULL,
       received_at TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS monitor_request_nonces (
+      monitor_id TEXT NOT NULL,
+      nonce TEXT NOT NULL,
+      method TEXT NOT NULL,
+      path TEXT NOT NULL,
+      used_at TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      PRIMARY KEY(monitor_id, nonce)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_monitor_request_nonces_expires
+      ON monitor_request_nonces(expires_at);
   `);
     const orderColumns = database
       .prepare("PRAGMA table_info(orders)")

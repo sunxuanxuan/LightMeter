@@ -27,6 +27,30 @@ internal object PricingAmountParser {
 }
 
 internal object PricingUpdateClient {
+    suspend fun fetch(config: PaymentMonitorConfig): PricingUpdateResult {
+        config.validate()?.let {
+            return PricingUpdateResult.Failure("请先保存有效的官网回传配置")
+        }
+        return try {
+            val request = PaymentMonitorProtocol.createPricingQueryRequest(
+                secret = config.secret,
+            )
+            val response = PaymentMonitorHttpClient.get(
+                config = config,
+                path = PaymentMonitorProtocol.PRICING_PATH,
+                request = request,
+            )
+            if (response.statusCode !in 200..299) {
+                return PricingUpdateResult.Failure(
+                    "获取官网定价失败（HTTP ${response.statusCode}）",
+                )
+            }
+            parsePricing(JSONObject(response.body).getJSONObject("pricing"))
+        } catch (_: Exception) {
+            PricingUpdateResult.Failure("获取官网定价失败，请检查网络和官网配置")
+        }
+    }
+
     suspend fun update(
         config: PaymentMonitorConfig,
         priceMinor: Int,
@@ -52,14 +76,17 @@ internal object PricingUpdateClient {
             }
             val responseJson = JSONObject(response.body)
             check(responseJson.optBoolean("updated", false))
-            val pricing = responseJson.getJSONObject("pricing")
-            PricingUpdateResult.Success(
-                priceMinor = pricing.getInt("priceMinor"),
-                discountMaxMinor = pricing.getInt("discountMaxMinor"),
-                minimumPaymentMinor = pricing.getInt("minimumPaymentMinor"),
-            )
+            parsePricing(responseJson.getJSONObject("pricing"))
         } catch (_: Exception) {
             PricingUpdateResult.Failure("价格同步失败，请检查网络和官网配置")
         }
+    }
+
+    private fun parsePricing(pricing: JSONObject): PricingUpdateResult.Success {
+        return PricingUpdateResult.Success(
+            priceMinor = pricing.getInt("priceMinor"),
+            discountMaxMinor = pricing.getInt("discountMaxMinor"),
+            minimumPaymentMinor = pricing.getInt("minimumPaymentMinor"),
+        )
     }
 }

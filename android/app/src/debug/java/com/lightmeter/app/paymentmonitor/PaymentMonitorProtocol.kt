@@ -24,6 +24,8 @@ internal data class SignedMonitorRequest(
 internal object PaymentMonitorProtocol {
     const val EVENTS_PATH = "/api/internal/payment-monitor/events"
     const val PRICING_PATH = "/api/internal/payment-monitor/pricing"
+    const val CONFIRMATIONS_PATH =
+        "/api/internal/payment-confirmations/pending"
 
     fun createSignedRequest(
         event: PendingPaymentEvent,
@@ -70,6 +72,7 @@ internal object PaymentMonitorProtocol {
             append('}')
         }
         return createSignedRequest(
+            method = "POST",
             path = PRICING_PATH,
             body = body,
             secret = secret,
@@ -78,7 +81,66 @@ internal object PaymentMonitorProtocol {
         )
     }
 
+    fun createPricingQueryRequest(
+        secret: String,
+        timestamp: Long = System.currentTimeMillis(),
+        nonce: String = UUID.randomUUID().toString().replace("-", ""),
+    ): SignedMonitorRequest {
+        return createSignedRequest(
+            method = "GET",
+            path = PRICING_PATH,
+            body = "",
+            secret = secret,
+            timestamp = timestamp,
+            nonce = nonce,
+        )
+    }
+
+    fun createConfirmationQueryRequest(
+        secret: String,
+        timestamp: Long = System.currentTimeMillis(),
+        nonce: String = UUID.randomUUID().toString().replace("-", ""),
+    ): SignedMonitorRequest {
+        return createSignedRequest(
+            method = "GET",
+            path = CONFIRMATIONS_PATH,
+            body = "",
+            secret = secret,
+            timestamp = timestamp,
+            nonce = nonce,
+        )
+    }
+
+    fun createConfirmationDecisionRequest(
+        orderNo: String,
+        decision: String,
+        monitorVersion: String,
+        secret: String,
+        timestamp: Long = System.currentTimeMillis(),
+        nonce: String = UUID.randomUUID().toString().replace("-", ""),
+    ): Pair<String, SignedMonitorRequest> {
+        require(decision in setOf("confirm", "reject"))
+        require(Regex("^FLM-[A-Z0-9-]{8,40}$").matches(orderNo))
+        val path = "/api/internal/payment-confirmations/$orderNo/decision"
+        val body = buildString {
+            append("{\"decision\":")
+            append(JSONObject.quote(decision))
+            append(",\"monitorVersion\":")
+            append(JSONObject.quote(monitorVersion))
+            append('}')
+        }
+        return path to createSignedRequest(
+            method = "POST",
+            path = path,
+            body = body,
+            secret = secret,
+            timestamp = timestamp,
+            nonce = nonce,
+        )
+    }
+
     private fun createSignedRequest(
+        method: String = "POST",
         path: String,
         body: String,
         secret: String,
@@ -87,7 +149,7 @@ internal object PaymentMonitorProtocol {
     ): SignedMonitorRequest {
         val timestampText = timestamp.toString()
         val payload = listOf(
-            "POST",
+            method,
             path,
             timestampText,
             nonce,
