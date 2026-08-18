@@ -18,10 +18,7 @@ export const metadata: Metadata = {
   title: "使用说明",
 };
 
-const guideImagePrompt = encodeURIComponent(
-  "Realistic editorial documentary photograph of a vintage 35mm film camera on a clean workbench beside a modern smartphone displaying a professional light meter interface, real camera and phone clearly visible, soft daylight, neutral gray and natural green surroundings, one orange camera strap as a strong compositional accent, no readable text, high detail, landscape composition",
-);
-const guideImage = `https://copilot-cn.bytedance.net/api/ide/v1/text_to_image?prompt=${guideImagePrompt}&image_size=landscape_16_9`;
+const guideImage = "/guide/film-camera-light-meter.jpeg";
 
 const modes = [
   {

@@ -230,7 +230,10 @@ if (provider === "alipay") {
 
 for (const [key, fallback] of [
   ["PERSONAL_ALIPAY_QR_IMAGE_PATH", "./asset/20260816-195133.jpeg"],
-  ["ANDROID_APK_PATH", "./artifacts/FilmLightMeter-release.apk"],
+  [
+    "ANDROID_APK_PATH",
+    "./artifacts/outputs/apk/release/FilmLightMeter-release.apk",
+  ],
 ]) {
   const configuredPath = values[key] || fallback;
   const resolvedPath = path.resolve(appRoot, configuredPath);

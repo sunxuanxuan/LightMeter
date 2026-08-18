@@ -25,13 +25,13 @@ fi
 mkdir -p \
   "$OUTPUT_DIR" \
   "$STAGE_DIR/asset" \
-  "$STAGE_DIR/artifacts" \
-  "$STAGE_DIR/public"
+  "$STAGE_DIR/artifacts/outputs/apk/release"
 
 copy_entries=(
   app
   components
   lib
+  public
   scripts
   package.json
   package-lock.json
@@ -46,7 +46,8 @@ done
 
 cp "$APP_ROOT/asset/20260816-195133.jpeg" \
   "$STAGE_DIR/asset/20260816-195133.jpeg"
-cp "$APK_SOURCE" "$STAGE_DIR/artifacts/FilmLightMeter-release.apk"
+cp "$APK_SOURCE" \
+  "$STAGE_DIR/artifacts/outputs/apk/release/FilmLightMeter-release.apk"
 
 chmod +x \
   "$STAGE_DIR/scripts/deploy/check_environment.sh" \

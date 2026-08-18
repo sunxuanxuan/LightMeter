@@ -189,7 +189,7 @@ done
 cat >> "$runtime_env" <<EOF
 NODE_ENV=production
 SITE_DATA_DIR=$STATE_DIR
-ANDROID_APK_PATH=./artifacts/FilmLightMeter-release.apk
+ANDROID_APK_PATH=./artifacts/outputs/apk/release/FilmLightMeter-release.apk
 EOF
 install -o root -g root -m 0600 "$runtime_env" "$ENV_TARGET"
 
