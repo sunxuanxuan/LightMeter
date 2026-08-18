@@ -82,10 +82,10 @@ for required_path in \
   fi
 done
 
-if [[ -f "$APP_ROOT/artifacts/FilmLightMeter-release.apk" ]]; then
+if [[ -f "$APP_ROOT/artifacts/outputs/apk/release/FilmLightMeter-release.apk" ]]; then
   ok "Android Release APK 已包含"
 elif [[ "$MODE" == "deploy" ]]; then
-  fail "缺少 artifacts/FilmLightMeter-release.apk"
+  fail "缺少 artifacts/outputs/apk/release/FilmLightMeter-release.apk"
 else
   warn "当前源码目录未包含部署包内的 Android Release APK"
 fi
