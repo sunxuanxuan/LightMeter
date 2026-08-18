@@ -38,6 +38,20 @@ class AlipayNotificationParserTest {
     }
 
     @Test
+    fun acceptsSameAmountFromCompactAndExpandedNotification() {
+        val payment = AlipayNotificationParser.parse(
+            AlipayNotificationContent(
+                title = "支付宝",
+                text = "张三通过扫码向你付款9.90元",
+                bigText = "张三通过扫码向你付款9.90元，已存入余额",
+                subText = null,
+            ),
+        )
+
+        assertEquals(990, payment?.amountMinor)
+    }
+
+    @Test
     fun rejectsNotificationWithoutPaymentKeyword() {
         val payment = AlipayNotificationParser.parse(
             content(text = "余额为9.90元"),

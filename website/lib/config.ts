@@ -25,6 +25,8 @@ export const siteConfig = {
   personalPaymentMaxActiveOrdersPerBuyer: Number(
     process.env.PERSONAL_PAYMENT_MAX_ACTIVE_ORDERS_PER_BUYER ?? 2,
   ),
+  paymentConfirmationLifetimeSeconds: 30 * 60,
+  paymentConfirmationMaxClaims: 3,
   personalPaymentQrImagePath:
     process.env.PERSONAL_ALIPAY_QR_IMAGE_PATH ??
     "./asset/20260816-195133.jpeg",

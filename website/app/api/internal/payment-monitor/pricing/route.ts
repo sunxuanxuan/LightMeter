@@ -1,4 +1,4 @@
-import { updateProductPricing } from "@/lib/dal";
+import { getCurrentPricing, updateProductPricing } from "@/lib/dal";
 import { verifyMonitorRequest } from "@/lib/payments/monitor-auth";
 import { monitorPricingUpdateSchema } from "@/lib/payments/monitor-pricing";
 import { paymentMonitorSettings } from "@/lib/payments/monitor-settings";
@@ -14,6 +14,65 @@ function errorResponse(errorCode: string, status: number) {
     { errorCode },
     { status, headers: { "Cache-Control": "no-store" } },
   );
+}
+
+export async function GET(request: Request) {
+  let settings: ReturnType<typeof paymentMonitorSettings>;
+  try {
+    settings = paymentMonitorSettings();
+  } catch {
+    return errorResponse("PAYMENT_MONITOR_NOT_CONFIGURED", 503);
+  }
+
+  const monitorId = request.headers.get("x-monitor-id") ?? "";
+  const timestamp = request.headers.get("x-timestamp") ?? "";
+  const nonce = request.headers.get("x-nonce") ?? "";
+  const signature = request.headers.get("x-signature") ?? "";
+  const timestampNumber = Number(timestamp);
+  const now = Date.now();
+
+  if (monitorId !== settings.monitorId) {
+    return errorResponse("INVALID_MONITOR", 401);
+  }
+  if (
+    !Number.isSafeInteger(timestampNumber) ||
+    Math.abs(now - timestampNumber) > MAX_REQUEST_CLOCK_SKEW_MS
+  ) {
+    return errorResponse("INVALID_TIMESTAMP", 401);
+  }
+  if (!/^[A-Za-z0-9_-]{16,128}$/.test(nonce)) {
+    return errorResponse("INVALID_NONCE", 401);
+  }
+
+  const path = new URL(request.url).pathname;
+  if (
+    !verifyMonitorRequest(
+      {
+        method: request.method,
+        path,
+        timestamp,
+        nonce,
+        rawBody: "",
+      },
+      signature,
+      settings.secret,
+    )
+  ) {
+    return errorResponse("INVALID_SIGNATURE", 401);
+  }
+
+  try {
+    return Response.json(
+      { pricing: getCurrentPricing() },
+      { headers: { "Cache-Control": "no-store" } },
+    );
+  } catch (error) {
+    console.error("Monitor pricing query failed", {
+      monitorId,
+      cause: error instanceof Error ? error.message : "unknown",
+    });
+    return errorResponse("PRICING_QUERY_FAILED", 500);
+  }
 }
 
 export async function POST(request: Request) {

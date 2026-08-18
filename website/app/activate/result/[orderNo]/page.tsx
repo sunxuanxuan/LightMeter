@@ -13,6 +13,7 @@ import Link from "next/link";
 
 import { CopyButton } from "@/components/copy-button";
 import { PageHeader } from "@/components/page-header";
+import { PaymentClaimButton } from "@/components/payment-claim-button";
 import { PaymentStatusPoller } from "@/components/payment-status-poller";
 import { formatPrice, siteConfig } from "@/lib/config";
 import { getOrder } from "@/lib/dal";
@@ -64,12 +65,19 @@ export default async function ActivationResultPage({
 
   const fulfilled = order.status === "fulfilled" && order.credential;
   const pending = order.status === "pending";
+  const awaitingConfirmation = order.status === "awaiting_confirmation";
   const issuing = order.status === "issuing";
   const expired = order.status === "expired";
   const manualReview = order.status === "manual_review";
-  const waitingForPayment = pending || issuing;
+  const paymentClaimOnly =
+    pending && !order.paymentAvailable && order.paymentClaimAvailable;
+  const waitingForPayment = pending || awaitingConfirmation || issuing;
   const paymentTitle = issuing
     ? "正在确认付款"
+    : awaitingConfirmation
+      ? "等待管理员确认"
+    : paymentClaimOnly
+      ? "付款时间已结束"
     : expired
       ? "订单已过期"
       : manualReview
@@ -77,6 +85,10 @@ export default async function ActivationResultPage({
         : "请使用支付宝扫码付款";
   const paymentDescription = issuing
     ? "已识别到账，正在生成激活凭证。"
+    : awaitingConfirmation
+      ? "付款信息已提交，请等待管理员核对支付宝到账记录。"
+    : paymentClaimOnly
+      ? "如已在截止时间前付款，请立即提交付款信息。"
     : expired
       ? "付款金额已释放，请返回重新创建订单。"
       : manualReview
@@ -88,6 +100,7 @@ export default async function ActivationResultPage({
       <PaymentStatusPoller
         active={waitingForPayment}
         orderNo={order.orderNo}
+        status={order.status}
       />
       <PageHeader
         eyebrow="Order result"
@@ -139,42 +152,55 @@ export default async function ActivationResultPage({
                 <CopyButton value={order.credential} label="复制完整凭证" />
               </div>
             </>
-          ) : pending && order.paymentAvailable ? (
+          ) : pending &&
+            (order.paymentAvailable || order.paymentClaimAvailable) ? (
             <div className="payment-box">
-              {order.paymentQrCode ? (
-                <Image
-                  className={`payment-qr ${
-                    order.paymentProvider === "personal_alipay_monitor"
-                      ? "payment-qr--personal"
-                      : ""
-                  }`}
-                  src={`/api/orders/${encodeURIComponent(order.orderNo)}/payment-qr`}
-                  alt="支付宝付款二维码"
-                  width={320}
-                  height={
-                    order.paymentProvider === "personal_alipay_monitor"
-                      ? 317
-                      : 320
-                  }
-                  unoptimized
-                  priority
-                />
+              {order.paymentAvailable ? (
+                <>
+                  {order.paymentQrCode ? (
+                    <Image
+                      className={`payment-qr ${
+                        order.paymentProvider === "personal_alipay_monitor"
+                          ? "payment-qr--personal"
+                          : ""
+                      }`}
+                      src={`/api/orders/${encodeURIComponent(order.orderNo)}/payment-qr`}
+                      alt="支付宝付款二维码"
+                      width={320}
+                      height={
+                        order.paymentProvider === "personal_alipay_monitor"
+                          ? 317
+                          : 320
+                      }
+                      unoptimized
+                      priority
+                    />
+                  ) : (
+                    <div className="payment-qr payment-qr--empty">
+                      <Clock3 size={28} />
+                      <span>正在准备付款码</span>
+                    </div>
+                  )}
+                  <div className="payment-instruction">
+                    <ScanLine size={20} />
+                    <div>
+                      <strong>打开支付宝扫一扫</strong>
+                      <span>
+                        请支付 {formatPrice(order.amountMinor, order.currency)}
+                        ，付款完成后点击“我已付款”。
+                      </span>
+                    </div>
+                  </div>
+                </>
               ) : (
-                <div className="payment-qr payment-qr--empty">
-                  <Clock3 size={28} />
-                  <span>正在准备付款码</span>
+                <div className="notice notice--warning">
+                  <Clock3 size={18} />
+                  <span>付款时间已结束，仅限已完成付款的用户提交确认。</span>
                 </div>
               )}
-              <div className="payment-instruction">
-                <ScanLine size={20} />
-                <div>
-                  <strong>打开支付宝扫一扫</strong>
-                  <span>
-                    请支付 {formatPrice(order.amountMinor, order.currency)}
-                    ，付款后留在此页面等待结果。
-                  </span>
-                </div>
-              </div>
+              {order.paymentClaimAvailable ? (
+                <PaymentClaimButton orderNo={order.orderNo} />
+              ) : null}
             </div>
           ) : (
             <div className="notice notice--warning">
@@ -243,15 +269,21 @@ export default async function ActivationResultPage({
           </aside>
         ) : pending ? (
           <aside className="next-steps">
-            <h2>付款提示</h2>
-            <ol>
-              <li>使用支付宝扫描页面中的付款码。</li>
-              <li>
-                确认金额为 {formatPrice(order.amountMinor, order.currency)}
-                后完成付款。
-              </li>
-              <li>付款后无需手动操作，等待页面自动更新。</li>
-            </ol>
+            <h2>{paymentClaimOnly ? "已付款？" : "付款提示"}</h2>
+            {paymentClaimOnly ? (
+              <p className="aside-note">
+                如果你已在截止时间前完成付款，请点击“我已付款”。未付款请重新创建订单。
+              </p>
+            ) : (
+              <ol>
+                <li>使用支付宝扫描页面中的付款码。</li>
+                <li>
+                  确认金额为 {formatPrice(order.amountMinor, order.currency)}
+                  后完成付款。
+                </li>
+                <li>付款完成后点击“我已付款”，等待管理员确认。</li>
+              </ol>
+            )}
             <p className="aside-note">
               每个订单金额不同，请勿修改金额或重复付款。
             </p>

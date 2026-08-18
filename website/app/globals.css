@@ -1084,6 +1084,17 @@ textarea:focus-visible {
   font-size: 12px;
 }
 
+.payment-claim {
+  width: min(100%, 320px);
+  display: grid;
+  gap: 8px;
+}
+
+.payment-claim .form-error {
+  margin: 0;
+  text-align: center;
+}
+
 .credential-box {
   padding: 16px;
   background: var(--background);

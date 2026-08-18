@@ -42,6 +42,7 @@ internal object AlipayNotificationParser {
 
         val amounts = amountPattern.findAll(normalizedContent)
             .mapNotNull(::amountToMinor)
+            .distinct()
             .toList()
         if (amounts.size != 1) return null
 

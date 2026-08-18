@@ -6,9 +6,11 @@ import { useEffect } from "react";
 export function PaymentStatusPoller({
   active,
   orderNo,
+  status,
 }: {
   active: boolean;
   orderNo: string;
+  status: string;
 }) {
   const router = useRouter();
 
@@ -25,12 +27,14 @@ export function PaymentStatusPoller({
         );
         if (response.ok) {
           const result = (await response.json()) as { status?: string };
-          if (
-            result.status === "fulfilled" ||
-            result.status === "expired" ||
-            result.status === "manual_review"
-          ) {
-            cancelled = true;
+          if (result.status && result.status !== status) {
+            if (
+              result.status === "fulfilled" ||
+              result.status === "expired" ||
+              result.status === "manual_review"
+            ) {
+              cancelled = true;
+            }
             router.refresh();
             return;
           }
@@ -47,7 +51,7 @@ export function PaymentStatusPoller({
       cancelled = true;
       if (timer) window.clearTimeout(timer);
     };
-  }, [active, orderNo, router]);
+  }, [active, orderNo, router, status]);
 
   return null;
 }

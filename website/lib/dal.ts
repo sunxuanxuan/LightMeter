@@ -63,6 +63,14 @@ type LicenseRow = {
   issued_at: number;
 };
 
+type PaymentConfirmationRow = {
+  id: string;
+  order_id: string;
+  status: string;
+  claimed_at: string;
+  expires_at: string;
+};
+
 export type ReleaseDTO = {
   platform: "android" | "ios";
   channel: string;
@@ -92,6 +100,7 @@ export type OrderDTO = {
   expiresAt: string | null;
   paymentQrCode: string | null;
   paymentAvailable: boolean;
+  paymentClaimAvailable: boolean;
   credential: string | null;
   signingKeyId: string | null;
   isDevelopmentCredential: boolean;
@@ -103,6 +112,18 @@ export type PricingDTO = {
   currency: string;
   discountMaxMinor: number;
   minimumPaymentMinor: number;
+};
+
+export type PendingPaymentConfirmationDTO = {
+  orderNo: string;
+  deviceID: string;
+  email: string;
+  amountMinor: number;
+  currency: string;
+  createdAt: string;
+  claimedAt: string;
+  confirmationExpiresAt: string;
+  notificationObserved: boolean;
 };
 
 const PRODUCT_PRICE_SETTING_KEY = "product_price_minor";
@@ -198,7 +219,34 @@ function orderByNumber(orderNo: string): OrderRow | undefined {
     .get(orderNo) as OrderRow | undefined;
 }
 
-function expireStalePersonalOrders(now: string): void {
+function expireStalePersonalOrdersInTransaction(now: string): void {
+  const staleConfirmationOrderIds = db
+    .prepare(
+      `SELECT order_id
+       FROM payment_confirmation_requests
+       WHERE status = 'pending' AND expires_at < ?`,
+    )
+    .all(now) as Array<{ order_id: string }>;
+  if (staleConfirmationOrderIds.length > 0) {
+    db.prepare(
+      `UPDATE payment_confirmation_requests
+       SET status = 'expired', updated_at = ?
+       WHERE status = 'pending' AND expires_at < ?`,
+    ).run(now, now);
+    const expireOrder = db.prepare(
+      `UPDATE orders
+       SET status = 'expired', updated_at = ?
+       WHERE id = ? AND status = 'awaiting_confirmation'`,
+    );
+    const deleteReservation = db.prepare(
+      "DELETE FROM payment_amount_reservations WHERE order_id = ?",
+    );
+    for (const row of staleConfirmationOrderIds) {
+      expireOrder.run(now, row.order_id);
+      deleteReservation.run(row.order_id);
+    }
+  }
+
   db.prepare(
     `UPDATE orders
      SET status = 'expired', updated_at = ?
@@ -211,6 +259,10 @@ function expireStalePersonalOrders(now: string): void {
     `DELETE FROM payment_amount_reservations
      WHERE expires_at < ?`,
   ).run(now);
+}
+
+function expireStalePersonalOrders(now: string): void {
+  transaction(() => expireStalePersonalOrdersInTransaction(now));
 }
 
 function availablePersonalPaymentAmount(createdAt: string): number {
@@ -308,7 +360,7 @@ export function createOrder(
   const now = nowDate.toISOString();
 
   return transaction(() => {
-    expireStalePersonalOrders(now);
+    expireStalePersonalOrdersInTransaction(now);
     const existing = db
       .prepare("SELECT order_no FROM orders WHERE idempotency_key = ?")
       .get(idempotencyKey) as { order_no: string } | undefined;
@@ -350,7 +402,7 @@ export function createOrder(
         .prepare(
           `SELECT COUNT(*) AS count FROM orders
            WHERE payment_provider = 'personal_alipay_monitor'
-             AND status = 'pending'
+             AND status IN ('pending', 'awaiting_confirmation')
              AND reservation_expires_at >= ?
              AND (buyer_email_hash = ? OR device_id_hash = ?)`,
         )
@@ -445,12 +497,20 @@ export function getOrder(
   expireStalePersonalOrders(now);
   const order = orderByNumber(orderNo);
   if (!order || !sessionCanRead(order, sessionToken)) return null;
-  const paymentDeadlinePassed =
+  const reservationDeadlinePassed =
     order.payment_provider === "personal_alipay_monitor" &&
     order.status === "pending" &&
-    order.expires_at !== null &&
-    order.expires_at < now;
-  const status = paymentDeadlinePassed ? "expired" : order.status;
+    order.reservation_expires_at !== null &&
+    order.reservation_expires_at < now;
+  const status = reservationDeadlinePassed ? "expired" : order.status;
+  const paymentWindowOpen =
+    order.payment_provider !== "personal_alipay_monitor" ||
+    (order.expires_at !== null && order.expires_at >= now);
+  const paymentClaimAvailable =
+    status === "pending" &&
+    order.payment_provider === "personal_alipay_monitor" &&
+    order.reservation_expires_at !== null &&
+    order.reservation_expires_at >= now;
   const license = db
     .prepare("SELECT * FROM licenses WHERE order_id = ?")
     .get(order.id) as LicenseRow | undefined;
@@ -469,12 +529,257 @@ export function getOrder(
     expiresAt: order.expires_at,
     paymentQrCode: order.payment_qr_code,
     paymentAvailable:
-      status === "pending" && Boolean(order.payment_qr_code),
+      status === "pending" &&
+      paymentWindowOpen &&
+      Boolean(order.payment_qr_code),
+    paymentClaimAvailable,
     credential: license ? decrypt(license.credential_ciphertext) : null,
     signingKeyId: license?.signing_key_id ?? null,
     isDevelopmentCredential: license?.is_development === 1,
     issuedAt: license?.issued_at ?? null,
   };
+}
+
+export function claimPersonalPayment(
+  orderNo: string,
+  sessionToken: string,
+  claimedAt = new Date(),
+): { status: "claimed" | "already_claimed"; confirmationExpiresAt: string } {
+  const now = claimedAt.toISOString();
+  return transaction(() => {
+    expireStalePersonalOrdersInTransaction(now);
+    const order = orderByNumber(orderNo);
+    if (!order || !sessionCanRead(order, sessionToken)) {
+      throw new Error("ORDER_NOT_FOUND");
+    }
+    if (order.payment_provider !== "personal_alipay_monitor") {
+      throw new Error("ORDER_NOT_CLAIMABLE");
+    }
+
+    const activeRequest = db
+      .prepare(
+        `SELECT * FROM payment_confirmation_requests
+         WHERE order_id = ? AND status = 'pending'`,
+      )
+      .get(order.id) as PaymentConfirmationRow | undefined;
+    if (order.status === "awaiting_confirmation" && activeRequest) {
+      return {
+        status: "already_claimed",
+        confirmationExpiresAt: activeRequest.expires_at,
+      };
+    }
+    if (
+      order.status !== "pending" ||
+      order.reservation_expires_at === null ||
+      order.reservation_expires_at < now
+    ) {
+      throw new Error("ORDER_NOT_CLAIMABLE");
+    }
+
+    const requestCount = db
+      .prepare(
+        `SELECT COUNT(*) AS count
+         FROM payment_confirmation_requests
+         WHERE order_id = ?`,
+      )
+      .get(order.id) as { count: number };
+    if (requestCount.count >= siteConfig.paymentConfirmationMaxClaims) {
+      throw new Error("PAYMENT_CLAIM_LIMIT_REACHED");
+    }
+
+    const confirmationExpiresAt = new Date(
+      claimedAt.getTime() +
+        siteConfig.paymentConfirmationLifetimeSeconds * 1_000,
+    ).toISOString();
+    db.prepare(
+      `INSERT INTO payment_confirmation_requests (
+        id, order_id, status, claimed_at, expires_at, created_at, updated_at
+      ) VALUES (?, ?, 'pending', ?, ?, ?, ?)`,
+    ).run(
+      randomUUID(),
+      order.id,
+      now,
+      confirmationExpiresAt,
+      now,
+      now,
+    );
+    const orderUpdate = db
+      .prepare(
+        `UPDATE orders
+         SET status = 'awaiting_confirmation',
+             reservation_expires_at = ?, updated_at = ?
+         WHERE id = ? AND status = 'pending'`,
+      )
+      .run(confirmationExpiresAt, now, order.id);
+    if (orderUpdate.changes !== 1) {
+      throw new Error("ORDER_NOT_CLAIMABLE");
+    }
+    const reservationUpdate = db
+      .prepare(
+        `UPDATE payment_amount_reservations
+         SET expires_at = ? WHERE order_id = ?`,
+      )
+      .run(confirmationExpiresAt, order.id);
+    if (reservationUpdate.changes !== 1) {
+      throw new Error("PAYMENT_RESERVATION_NOT_FOUND");
+    }
+    return { status: "claimed", confirmationExpiresAt };
+  });
+}
+
+export function listPendingPaymentConfirmations(
+  nowDate = new Date(),
+): PendingPaymentConfirmationDTO[] {
+  const now = nowDate.toISOString();
+  expireStalePersonalOrders(now);
+  const rows = db
+    .prepare(
+      `SELECT
+         o.order_no,
+         o.device_id_ciphertext,
+         o.buyer_email_ciphertext,
+         o.amount_minor,
+         o.currency,
+         o.created_at,
+         r.claimed_at,
+         r.expires_at,
+         EXISTS(
+           SELECT 1 FROM monitor_payment_events e
+           WHERE e.order_id = o.id AND e.process_status = 'matched'
+         ) AS notification_observed
+       FROM payment_confirmation_requests r
+       JOIN orders o ON o.id = r.order_id
+       WHERE r.status = 'pending'
+         AND r.expires_at >= ?
+         AND o.status = 'awaiting_confirmation'
+       ORDER BY r.claimed_at ASC`,
+    )
+    .all(now) as Array<{
+    order_no: string;
+    device_id_ciphertext: string;
+    buyer_email_ciphertext: string;
+    amount_minor: number;
+    currency: string;
+    created_at: string;
+    claimed_at: string;
+    expires_at: string;
+    notification_observed: number;
+  }>;
+  return rows.map((row) => ({
+    orderNo: row.order_no,
+    deviceID: decrypt(row.device_id_ciphertext),
+    email: decrypt(row.buyer_email_ciphertext),
+    amountMinor: row.amount_minor,
+    currency: row.currency,
+    createdAt: row.created_at,
+    claimedAt: row.claimed_at,
+    confirmationExpiresAt: row.expires_at,
+    notificationObserved: row.notification_observed === 1,
+  }));
+}
+
+export function reviewPaymentConfirmation(input: {
+  orderNo: string;
+  decision: "confirm" | "reject";
+  monitorId: string;
+  nonce: string;
+  monitorVersion: string;
+  reviewedAt?: Date;
+}): "confirmed" | "rejected" | "already_confirmed" {
+  const reviewedAt = input.reviewedAt ?? new Date();
+  const now = reviewedAt.toISOString();
+  return transaction(() => {
+    expireStalePersonalOrdersInTransaction(now);
+    const order = orderByNumber(input.orderNo);
+    if (!order || order.payment_provider !== "personal_alipay_monitor") {
+      throw new Error("ORDER_NOT_FOUND");
+    }
+    if (order.status === "fulfilled" && input.decision === "confirm") {
+      return "already_confirmed";
+    }
+    const confirmation = db
+      .prepare(
+        `SELECT * FROM payment_confirmation_requests
+         WHERE order_id = ? AND status = 'pending'`,
+      )
+      .get(order.id) as PaymentConfirmationRow | undefined;
+    if (!confirmation || order.status !== "awaiting_confirmation") {
+      throw new Error("ORDER_NOT_AWAITING_CONFIRMATION");
+    }
+
+    db.prepare(
+      `INSERT INTO monitor_admin_commands (
+        id, monitor_id, nonce, command_type, command_payload, received_at
+      ) VALUES (?, ?, ?, ?, ?, ?)`,
+    ).run(
+      randomUUID(),
+      input.monitorId,
+      input.nonce,
+      `payment_${input.decision}`,
+      JSON.stringify({
+        orderNo: input.orderNo,
+        monitorVersion: input.monitorVersion,
+      }),
+      now,
+    );
+
+    if (input.decision === "confirm") {
+      db.prepare(
+        `UPDATE payment_confirmation_requests
+         SET status = 'confirmed', reviewed_at = ?, reviewed_by = ?,
+             review_nonce = ?, updated_at = ?
+         WHERE id = ? AND status = 'pending'`,
+      ).run(now, input.monitorId, input.nonce, now, confirmation.id);
+      const updateResult = db
+        .prepare(
+          `UPDATE orders
+           SET status = 'issuing', paid_at = ?, updated_at = ?
+           WHERE id = ? AND status = 'awaiting_confirmation'`,
+        )
+        .run(now, now, order.id);
+      if (updateResult.changes !== 1) {
+        throw new Error("ORDER_NOT_AWAITING_CONFIRMATION");
+      }
+      issueLicenseForOrder(order, now);
+      return "confirmed";
+    }
+
+    const newExpiresAt = new Date(
+      reviewedAt.getTime() + siteConfig.personalPaymentLifetimeSeconds * 1_000,
+    ).toISOString();
+    const newReservationExpiresAt = new Date(
+      new Date(newExpiresAt).getTime() +
+        siteConfig.personalPaymentGraceSeconds * 1_000,
+    ).toISOString();
+    db.prepare(
+      `UPDATE payment_confirmation_requests
+       SET status = 'rejected', reviewed_at = ?, reviewed_by = ?,
+           review_nonce = ?, rejection_reason = 'payment_not_received',
+           updated_at = ?
+       WHERE id = ? AND status = 'pending'`,
+    ).run(now, input.monitorId, input.nonce, now, confirmation.id);
+    db.prepare(
+      `UPDATE orders
+       SET status = 'pending', expires_at = ?, reservation_expires_at = ?,
+           updated_at = ?
+       WHERE id = ? AND status = 'awaiting_confirmation'`,
+    ).run(newExpiresAt, newReservationExpiresAt, now, order.id);
+    const reservationUpdate = db
+      .prepare(
+        `UPDATE payment_amount_reservations
+         SET expires_at = ? WHERE order_id = ?`,
+      )
+      .run(newReservationExpiresAt, order.id);
+    if (reservationUpdate.changes !== 1) {
+      reservePersonalPaymentAmount(
+        order.id,
+        order.amount_minor,
+        now,
+        newReservationExpiresAt,
+      );
+    }
+    return "rejected";
+  });
 }
 
 export function getPaymentQrCode(orderNo: string): string | null {
@@ -594,7 +899,7 @@ export function processMonitorPaymentEvent(input: {
     `monitor:${input.monitorId}:${input.event.eventId}`;
 
   return transaction(() => {
-    expireStalePersonalOrders(receivedAtIso);
+    expireStalePersonalOrdersInTransaction(receivedAtIso);
     const duplicate = db
       .prepare(
         `SELECT id FROM monitor_payment_events
@@ -632,7 +937,7 @@ export function processMonitorPaymentEvent(input: {
         `SELECT * FROM orders
          WHERE payment_provider = 'personal_alipay_monitor'
            AND amount_minor = ?
-           AND status = 'pending'
+           AND status IN ('pending', 'awaiting_confirmation', 'expired')
            AND created_at <= ?
            AND reservation_expires_at >= ?
          ORDER BY created_at ASC`,
@@ -658,12 +963,6 @@ export function processMonitorPaymentEvent(input: {
          SET process_status = 'manual_review', processed_at = ?
          WHERE id = ?`,
       ).run(receivedAtIso, eventId);
-      for (const order of matches) {
-        db.prepare(
-          `UPDATE orders SET status = 'manual_review', updated_at = ?
-           WHERE id = ?`,
-        ).run(receivedAtIso, order.id);
-      }
       return "manual_review";
     }
 
@@ -673,13 +972,6 @@ export function processMonitorPaymentEvent(input: {
        SET process_status = 'matched', order_id = ?, processed_at = ?
        WHERE id = ?`,
     ).run(order.id, receivedAtIso, eventId);
-    db.prepare(
-      `UPDATE orders
-       SET status = 'issuing', payment_event_id = ?, paid_at = ?,
-           updated_at = ?
-       WHERE id = ? AND status = 'pending'`,
-    ).run(providerEventId, observedAtIso, receivedAtIso, order.id);
-    issueLicenseForOrder(order, receivedAtIso);
     return "matched";
   });
 }
