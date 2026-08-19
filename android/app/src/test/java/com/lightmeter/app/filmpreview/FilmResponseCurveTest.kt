@@ -3,13 +3,20 @@ package com.lightmeter.app.filmpreview
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlin.math.pow
 
 class FilmResponseCurveTest {
     @Test
-    fun curvePassesThroughFilmLatitudeAnchors() {
-        assertEquals(0.02, luminance(-2.0), 0.0001)
+    fun curveUsesCompressedDisplayExposureWithinFilmLatitude() {
+        assertEquals(0.09, luminance(-2.0), 0.0001)
         assertEquals(0.18, luminance(0.0), 0.0001)
-        assertEquals(0.98, luminance(3.0), 0.0001)
+        assertEquals(0.18 * 2.0.pow(1.5), luminance(3.0), 0.0001)
+    }
+
+    @Test
+    fun plusOrMinusOnePointSevenStopsStaysVisiblyModerate() {
+        assertEquals(0.18 * 2.0.pow(-0.85), luminance(-1.7), 0.0001)
+        assertEquals(0.18 * 2.0.pow(0.85), luminance(1.7), 0.0001)
     }
 
     @Test

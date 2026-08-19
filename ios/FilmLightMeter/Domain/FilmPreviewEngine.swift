@@ -100,32 +100,22 @@ public enum FilmResponseCurve {
             let progress = clamp(
                 (-deltaEV - shadowLatitudeStops) / outsideExtensionStops
             )
-            result = shadowEdgeLuminance * (1 - smoothstep(progress))
-        } else if deltaEV < 0 {
-            let progress = clamp(
-                (deltaEV + shadowLatitudeStops) / shadowLatitudeStops
-            )
             result = interpolate(
-                from: shadowEdgeLuminance,
-                to: middleGrayLuminance,
+                from: displayLuminance(-shadowLatitudeStops),
+                to: 0,
                 progress: progress
             )
-        } else if deltaEV <= highlightLatitudeStops {
-            let progress = clamp(deltaEV / highlightLatitudeStops)
-            result = interpolate(
-                from: middleGrayLuminance,
-                to: highlightEdgeLuminance,
-                progress: progress
-            )
-        } else {
+        } else if deltaEV > highlightLatitudeStops {
             let progress = clamp(
                 (deltaEV - highlightLatitudeStops) / outsideExtensionStops
             )
             result = interpolate(
-                from: highlightEdgeLuminance,
+                from: displayLuminance(highlightLatitudeStops),
                 to: 1,
                 progress: progress
             )
+        } else {
+            result = displayLuminance(deltaEV)
         }
         return abs(result) < 1e-9 ? 0 : clamp(result)
     }
@@ -138,6 +128,10 @@ public enum FilmResponseCurve {
         from + (to - from) * smoothstep(progress)
     }
 
+    private static func displayLuminance(_ deltaEV: Double) -> Double {
+        middleGrayLuminance * pow(2, deltaEV * displayExposureScale)
+    }
+
     private static func smoothstep(_ value: Double) -> Double {
         let normalized = clamp(value)
         return normalized * normalized * (3 - 2 * normalized)
@@ -147,8 +141,7 @@ public enum FilmResponseCurve {
         min(max(value, 0), 1)
     }
 
-    private static let shadowEdgeLuminance = 0.02
     private static let middleGrayLuminance = 0.18
-    private static let highlightEdgeLuminance = 0.98
+    private static let displayExposureScale = 0.5
     private static let outsideExtensionStops = 2.0
 }

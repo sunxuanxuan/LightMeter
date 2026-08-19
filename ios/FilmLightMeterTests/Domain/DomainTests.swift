@@ -153,6 +153,27 @@ final class DomainTests: XCTestCase {
         )
     }
 
+    func testFilmResponseCurveCompressesModerateExposureOffsets() {
+        XCTAssertEqual(
+            FilmResponseCurve.targetLuminance(
+                deltaEV: -1.7,
+                highlightLatitudeStops: 3,
+                shadowLatitudeStops: 2
+            ),
+            0.18 * pow(2, -0.85),
+            accuracy: 1e-12
+        )
+        XCTAssertEqual(
+            FilmResponseCurve.targetLuminance(
+                deltaEV: 1.7,
+                highlightLatitudeStops: 3,
+                shadowLatitudeStops: 2
+            ),
+            0.18 * pow(2, 0.85),
+            accuracy: 1e-12
+        )
+    }
+
     func testGrainIsDeterministicAndStrengthensForUnderexposure() {
         let baseGrain = 0.012
         XCTAssertEqual(
