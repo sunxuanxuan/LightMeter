@@ -16,6 +16,7 @@
 		4F2A8F469824DEBBF82F2B8F /* FilmExposureRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6529DBEEA4DDAA0F37F3D509 /* FilmExposureRenderer.swift */; };
 		4F833135BE10E6FB5BDEFB1C /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 1D1F2D31B1B0540BAAB12368 /* Assets.xcassets */; };
 		501C51ED9144A0C9E2711E10 /* FilmPreviewEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 791884E94ED4AA0C75C75F10 /* FilmPreviewEngine.swift */; };
+		51F07793618E710D6A0AE154 /* FilmGrainModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51F07792618E710D6A0AE154 /* FilmGrainModel.swift */; };
 		5CAE466733B07B056341E68A /* ExposureEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA18E494DC1047496B8DBEA5 /* ExposureEngine.swift */; };
 		5DBC56DD467AEE2E5CB9960C /* SettingsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB173AFED1BD0246B5E90799 /* SettingsStore.swift */; };
 		5F4D558A46D7F702B8E9CB15 /* MeteringScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 19F09894D5F314AD40A7EA1B /* MeteringScreen.swift */; };
@@ -56,6 +57,7 @@
 		378B05CC9FF226480A638BAE /* FilmLightMeterTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = FilmLightMeterTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		4326896FB21824E89EFFB966 /* AppRoute.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppRoute.swift; sourceTree = "<group>"; };
 		491A1EE45F2B222E316DA9CB /* ActivationScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivationScreen.swift; sourceTree = "<group>"; };
+		51F07792618E710D6A0AE154 /* FilmGrainModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilmGrainModel.swift; sourceTree = "<group>"; };
 		52C0A47DB5E5D0E67B7A4248 /* MeteringViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeteringViewModel.swift; sourceTree = "<group>"; };
 		54FB5AB8A4030AE3003DC1CA /* ExposureRiskEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExposureRiskEngine.swift; sourceTree = "<group>"; };
 		57082285A9345A1FADEF4FEF /* ActivationStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivationStore.swift; sourceTree = "<group>"; };
@@ -153,6 +155,7 @@
 				FA18E494DC1047496B8DBEA5 /* ExposureEngine.swift */,
 				54FB5AB8A4030AE3003DC1CA /* ExposureRiskEngine.swift */,
 				E480E57E97069D09805DEC72 /* FilmLatitudePreset.swift */,
+				51F07792618E710D6A0AE154 /* FilmGrainModel.swift */,
 				791884E94ED4AA0C75C75F10 /* FilmPreviewEngine.swift */,
 				7A94AC5AF936B7D6A1971C81 /* MeteringEngine.swift */,
 				0EE6E29FB6F5CF716D34101A /* MeteringModels.swift */,
@@ -340,6 +343,7 @@
 				4F2A8F469824DEBBF82F2B8F /* FilmExposureRenderer.swift in Sources */,
 				9B8315B011F81BC139B91858 /* FilmLatitudePreset.swift in Sources */,
 				D750F0949CBD9744EEF5290F /* FilmLightMeterApp.swift in Sources */,
+				51F07793618E710D6A0AE154 /* FilmGrainModel.swift in Sources */,
 				501C51ED9144A0C9E2711E10 /* FilmPreviewEngine.swift in Sources */,
 				CA0D2542190BE60ADC7DCA96 /* FilmPreviewScreen.swift in Sources */,
 				82D06A2FE0C20BD27685646C /* FilmPreviewSettingsScreen.swift in Sources */,

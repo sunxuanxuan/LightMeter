@@ -11,12 +11,14 @@ data class FilmProfile(
     val iso: Int,
     val highlightLatitudeStops: Double,
     val shadowLatitudeStops: Double,
+    val baseGrainIntensity: Double,
     val evidence: EvidenceLevel,
 ) {
     init {
         require(iso > 0)
         require(highlightLatitudeStops > 0.0)
         require(shadowLatitudeStops > 0.0)
+        require(baseGrainIntensity in 0.0..0.1)
     }
 }
 
@@ -86,6 +88,7 @@ object BuiltInDisposableCameraRepository : DisposableCameraRepository {
                 iso = 800,
                 highlightLatitudeStops = 3.0,
                 shadowLatitudeStops = 2.0,
+                baseGrainIntensity = 0.018,
                 evidence = EvidenceLevel.ESTIMATED,
             ),
             optics = FixedOptics(
@@ -111,6 +114,7 @@ object BuiltInDisposableCameraRepository : DisposableCameraRepository {
                 iso = 800,
                 highlightLatitudeStops = 3.0,
                 shadowLatitudeStops = 2.0,
+                baseGrainIntensity = 0.018,
                 evidence = EvidenceLevel.ESTIMATED,
             ),
             optics = FixedOptics(
@@ -136,6 +140,7 @@ object BuiltInDisposableCameraRepository : DisposableCameraRepository {
                 iso = 400,
                 highlightLatitudeStops = 3.0,
                 shadowLatitudeStops = 5.0 / 3.0,
+                baseGrainIntensity = 0.012,
                 evidence = EvidenceLevel.ESTIMATED,
             ),
             optics = FixedOptics(
@@ -161,6 +166,7 @@ object BuiltInDisposableCameraRepository : DisposableCameraRepository {
                 iso = 400,
                 highlightLatitudeStops = 3.0,
                 shadowLatitudeStops = 2.0,
+                baseGrainIntensity = 0.011,
                 evidence = EvidenceLevel.ESTIMATED,
             ),
             optics = FixedOptics(

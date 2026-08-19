@@ -19,6 +19,7 @@ final class DomainTests: XCTestCase {
         )
         XCTAssertEqual(quickSnap.presetVersion, 3)
         XCTAssertEqual(quickSnap.film.iso, 400)
+        XCTAssertEqual(quickSnap.film.baseGrainIntensity, 0.012)
         XCTAssertEqual(quickSnap.optics.aperture, 10)
         XCTAssertEqual(quickSnap.optics.focalLengthMillimeters, 32)
         XCTAssertEqual(quickSnap.shutterSeconds, 1.0 / 140, accuracy: 1e-12)
@@ -148,6 +149,37 @@ final class DomainTests: XCTestCase {
                 shadowLatitudeStops: 2
             ),
             0.18,
+            accuracy: 1e-12
+        )
+    }
+
+    func testGrainIsDeterministicAndStrengthensForUnderexposure() {
+        let baseGrain = 0.012
+        XCTAssertEqual(
+            FilmGrainModel.noise(x: 17, y: 23),
+            FilmGrainModel.noise(x: 17, y: 23)
+        )
+        XCTAssertEqual(
+            FilmGrainModel.intensity(
+                baseGrainIntensity: baseGrain,
+                deltaEV: 0
+            ),
+            baseGrain,
+            accuracy: 1e-12
+        )
+        XCTAssertGreaterThan(
+            FilmGrainModel.intensity(
+                baseGrainIntensity: baseGrain,
+                deltaEV: -2
+            ),
+            baseGrain
+        )
+        XCTAssertEqual(
+            FilmGrainModel.intensity(
+                baseGrainIntensity: baseGrain,
+                deltaEV: -10
+            ),
+            FilmGrainModel.maxGrainIntensity,
             accuracy: 1e-12
         )
     }
