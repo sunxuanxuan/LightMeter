@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>代码评审报告 — LightMeter</title>
+  <style>
+    :root {
+      --color-p0: #dc2626;
+      --color-p0-bg: #fef2f2;
+      --color-p0-border: #fca5a5;
+      --color-p1: #d97706;
+      --color-p1-bg: #fffbeb;
+      --color-p1-border: #fcd34d;
+      --color-p2: #2563eb;
+      --color-p2-bg: #eff6ff;
+      --color-p2-border: #93c5fd;
+      --color-bg: #f8fafc;
+      --color-card: #ffffff;
+      --color-border: #e2e8f0;
+      --color-text: #1e293b;
+      --color-text-secondary: #64748b;
+      --color-code-bg: #f1f5f9;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans SC", sans-serif;
+      background: var(--color-bg);
+      color: var(--color-text);
+      line-height: 1.6;
+      padding: 24px;
+    }
+
+    .container {
+      max-width: 960px;
+      margin: 0 auto;
+    }
+
+    /* --- Header --- */
+    .report-header {
+      background: var(--color-card);
+      border: 1px solid var(--color-border);
+      border-radius: 12px;
+      padding: 28px 32px;
+      margin-bottom: 20px;
+    }
+
+    .report-header h1 {
+      font-size: 22px;
+      font-weight: 700;
+      margin-bottom: 16px;
+    }
+
+    .meta-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 12px;
+    }
+
+    .meta-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 14px;
+      color: var(--color-text-secondary);
+    }
+
+    .meta-item .label { font-weight: 600; color: var(--color-text); }
+
+    /* --- P0 Alert Banner --- */
+    .p0-alert {
+      background: var(--color-p0-bg);
+      border: 1px solid var(--color-p0-border);
+      border-left: 4px solid var(--color-p0);
+      border-radius: 8px;
+      padding: 16px 20px;
+      margin-bottom: 20px;
+      display: none;
+    }
+
+    .p0-alert-title {
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--color-p0);
+      margin-bottom: 8px;
+    }
+
+    .p0-alert-list {
+      list-style: none;
+      font-size: 14px;
+    }
+
+    .p0-alert-list li {
+      padding: 2px 0;
+      color: var(--color-text);
+    }
+
+    /* --- Summary Bar --- */
+    .summary-bar {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 24px;
+      flex-wrap: wrap;
+    }
+
+    .summary-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      background: var(--color-card);
+      border: 1px solid var(--color-border);
+    }
+
+    .summary-chip .count {
+      font-size: 20px;
+      font-weight: 700;
+    }
+
+    .summary-chip.p0 { border-color: var(--color-p0); color: var(--color-p0); }
+    .summary-chip.p1 { border-color: var(--color-p1); color: var(--color-p1); }
+    .summary-chip.p2 { border-color: var(--color-p2); color: var(--color-p2); }
+    .summary-chip.total { border-color: var(--color-text); color: var(--color-text); }
+
+    /* --- Defect Cards --- */
+    .defect-list { display: flex; flex-direction: column; gap: 16px; }
+
+    .defect-card {
+      background: var(--color-card);
+      border: 1px solid var(--color-border);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+
+    .defect-card.severity-P0 { border-left: 4px solid var(--color-p0); }
+    .defect-card.severity-P1 { border-left: 4px solid var(--color-p1); }
+    .defect-card.severity-P2 { border-left: 4px solid var(--color-p2); }
+
+    .defect-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--color-border);
+      flex-wrap: wrap;
+    }
+
+    .severity-badge {
+      display: inline-block;
+      padding: 2px 10px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: 700;
+      color: #fff;
+    }
+
+    .severity-badge.P0 { background: var(--color-p0); }
+    .severity-badge.P1 { background: var(--color-p1); }
+    .severity-badge.P2 { background: var(--color-p2); }
+
+    .category-badge {
+      display: inline-block;
+      padding: 2px 10px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: 600;
+      background: var(--color-code-bg);
+      color: var(--color-text-secondary);
+    }
+
+    .defect-title {
+      font-size: 15px;
+      font-weight: 600;
+      flex: 1;
+    }
+
+    .confidence-tag {
+      font-size: 12px;
+      color: var(--color-text-secondary);
+      white-space: nowrap;
+    }
+
+    .defect-body { padding: 20px; }
+
+    .defect-location {
+      font-size: 13px;
+      color: var(--color-text-secondary);
+      margin-bottom: 12px;
+      font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
+    }
+
+    .defect-section { margin-bottom: 16px; }
+    .defect-section:last-child { margin-bottom: 0; }
+
+    .defect-section-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--color-text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 6px;
+    }
+
+    .defect-section p {
+      font-size: 14px;
+      line-height: 1.7;
+    }
+
+    .code-block {
+      background: var(--color-code-bg);
+      border: 1px solid var(--color-border);
+      border-radius: 6px;
+      padding: 12px 16px;
+      font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
+      font-size: 13px;
+      line-height: 1.6;
+      overflow-x: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+
+    /* --- Empty State --- */
+    .empty-state {
+      text-align: center;
+      padding: 64px 32px;
+      background: var(--color-card);
+      border: 1px solid var(--color-border);
+      border-radius: 12px;
+    }
+
+    .empty-state h2 {
+      font-size: 18px;
+      color: #16a34a;
+      margin-bottom: 8px;
+    }
+
+    .empty-state p {
+      font-size: 14px;
+      color: var(--color-text-secondary);
+    }
+
+    /* --- Footer --- */
+    .report-footer {
+      text-align: center;
+      padding: 20px;
+      font-size: 12px;
+      color: var(--color-text-secondary);
+    }
+
+    /* --- Responsive --- */
+    @media (max-width: 640px) {
+      body { padding: 12px; }
+      .report-header { padding: 20px; }
+      .defect-header { padding: 12px 16px; }
+      .defect-body { padding: 16px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+
+    <!-- ====== Header ====== -->
+    <div class="report-header">
+      <h1>代码评审报告</h1>
+      <div class="meta-grid">
+        <div class="meta-item">
+          <span class="label">仓库：</span>
+          <span>LightMeter</span>
+        </div>
+        <div class="meta-item">
+          <span class="label">检测模式：</span>
+          <span>通用检测</span>
+        </div>
+        <div class="meta-item">
+          <span class="label">检测范围：</span>
+          <span>当前工作区支付链路改造（含未跟踪新源码）</span>
+        </div>
+        <div class="meta-item">
+          <span class="label">生成时间：</span>
+          <span>2026-08-18 20:57</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ====== P0 Alert (hidden when no P0) ====== -->
+    <div class="p0-alert">
+      <div class="p0-alert-title">高优先级告警 — 发现 P0 级别缺陷，建议立即处理</div>
+      <ul class="p0-alert-list">
+        
+      </ul>
+    </div>
+
+    <!-- ====== Summary ====== -->
+    <div class="summary-bar">
+      <div class="summary-chip p0"><span class="count">0</span> P0</div>
+      <div class="summary-chip p1"><span class="count">5</span> P1</div>
+      <div class="summary-chip p2"><span class="count">0</span> P2</div>
+      <div class="summary-chip total"><span class="count">5</span> 合计</div>
+    </div>
+
+    <!-- ====== Defect List ====== -->
+    <div class="defect-list">
+      
+    <div class="defect-card severity-P1">
+      <div class="defect-header">
+        <span class="severity-badge P1">P1</span>
+        <span class="category-badge">安全漏洞</span>
+        <span class="defect-title">HTTP 明文链路会泄露并允许篡改付款确认数据</span>
+        <span class="confidence-tag">置信度 9/10</span>
+      </div>
+      <div class="defect-body">
+        <div class="defect-location">android/app/src/debug/java/com/lightmeter/app/paymentmonitor/PaymentMonitorConfig.kt:25-30</div>
+        <div class="defect-section">
+          <div class="defect-section-title">问题描述</div>
+          <p>Debug 配置允许任意 HTTP 地址，而待确认响应包含解密后的完整设备 ID、邮箱、金额和通知证据。HMAC 只认证请求、不认证响应，因此同网络攻击者可以读取 PII，或篡改金额和到账标记诱导管理员确认。</p>
+        </div>
+        <div class="defect-section">
+          <div class="defect-section-title">修复建议</div>
+          <p>除回环地址的本地开发模式外强制 HTTPS，并禁止 HTTPS 降级重定向；如必须支持明文环境，至少对响应体签名且不要返回完整 PII。</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="defect-card severity-P1">
+      <div class="defect-header">
+        <span class="severity-badge P1">P1</span>
+        <span class="category-badge">业务语义问题</span>
+        <span class="defect-title">单一结果 Cookie 会让较早的活动订单无法报付</span>
+        <span class="confidence-tag">置信度 10/10</span>
+      </div>
+      <div class="defect-body">
+        <div class="defect-location">website/app/api/orders/[orderNo]/payment-claimed/route.ts:17-23</div>
+        <div class="defect-section">
+          <div class="defect-section-title">问题描述</div>
+          <p>所有订单共用 flm_result_session Cookie，新建第二笔订单会覆盖第一笔令牌；配置却允许同一买家存在两笔活动订单。第一笔订单随后无法打开结果页或调用“我已付款”，而找回接口又只允许 fulfilled 订单。</p>
+        </div>
+        <div class="defect-section">
+          <div class="defect-section-title">修复建议</div>
+          <p>改为按订单保存能力令牌，例如订单号到 token 的 HttpOnly Cookie 映射，或为每个订单使用独立 Cookie；报付时验证对应订单令牌。</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="defect-card severity-P1">
+      <div class="defect-header">
+        <span class="severity-badge P1">P1</span>
+        <span class="category-badge">业务语义问题</span>
+        <span class="defect-title">宽限期内的真实付款无法进入人工确认</span>
+        <span class="confidence-tag">置信度 10/10</span>
+      </div>
+      <div class="defect-body">
+        <div class="defect-location">website/lib/dal.ts:555-560</div>
+        <div class="defect-section">
+          <div class="defect-section-title">问题描述</div>
+          <p>claimPersonalPayment 在 expires_at 后立即拒绝，但金额会保留到 reservation_expires_at，通知事件也仍可按实际发生时间匹配。现在通知匹配不再签发或创建确认任务，因此截止前完成、截止后数秒点击报付的真实付款会永久搁置。</p>
+        </div>
+        <div class="defect-section">
+          <div class="defect-section-title">修复建议</div>
+          <p>在 reservation_expires_at 前允许报付，或仅当已匹配通知证明 observedAt 位于付款窗口内时创建确认任务。</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="defect-card severity-P1">
+      <div class="defect-header">
+        <span class="severity-badge P1">P1</span>
+        <span class="category-badge">健壮性问题</span>
+        <span class="defect-title">确认任务过期清理不是原子操作</span>
+        <span class="confidence-tag">置信度 9/10</span>
+      </div>
+      <div class="defect-body">
+        <div class="defect-location">website/lib/dal.ts:221-246</div>
+        <div class="defect-section">
+          <div class="defect-section-title">问题描述</div>
+          <p>getOrder 和 listPendingPaymentConfirmations 会在事务外执行多条清理 SQL。若进程在确认请求已改为 expired、订单尚未改为 expired 时退出，后续清理无法再选中该请求，订单会永久停留在 awaiting_confirmation 并从管理列表消失。</p>
+        </div>
+        <div class="defect-section">
+          <div class="defect-section-title">修复建议</div>
+          <p>将过期请求更新、订单状态迁移和金额预留删除放入同一事务；为已经处于外层事务的调用提供内部 helper 或 savepoint。</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="defect-card severity-P1">
+      <div class="defect-header">
+        <span class="severity-badge P1">P1</span>
+        <span class="category-badge">安全漏洞</span>
+        <span class="defect-title">已签名的待确认查询可在时间窗口内重放</span>
+        <span class="confidence-tag">置信度 9/10</span>
+      </div>
+      <div class="defect-body">
+        <div class="defect-location">website/lib/payments/monitor-route-auth.ts:54-82</div>
+        <div class="defect-section">
+          <div class="defect-section-title">问题描述</div>
+          <p>认证层只校验 nonce 格式，没有原子消费 nonce。同一条 pending-confirmations GET 可在 60 秒时间偏差窗口内重复通过并返回当时最新的完整邮箱和设备 ID 列表，不符合项目既定的 nonce 防重放约束。</p>
+        </div>
+        <div class="defect-section">
+          <div class="defect-section-title">修复建议</div>
+          <p>为所有管理端鉴权请求原子登记 monitorId、nonce、请求路径和过期时间；已存在的 nonce 立即返回 409/401，并定期清理过期记录。</p>
+        </div>
+      </div>
+    </div>
+    </div>
+
+    <!-- ====== Empty State (shown when no defects) ====== -->
+    <!-- __EMPTY_STATE_START__
+    <div class="empty-state">
+      <h2>未发现缺陷</h2>
+      <p>本次评审未发现 P0-P2 级别的缺陷。共检查 25 个文件，约 1712 行变更。</p>
+    </div>
+    __EMPTY_STATE_END__ -->
+
+    <div class="report-footer">
+      bits-code-guard &middot; 由 AI 辅助生成 &middot; 2026-08-18 20:57
+    </div>
+
+  </div>
+</body>
+</html>
+
+<!--
+╔══════════════════════════════════════════════════════════════╗
+║                        占位符说明                           ║
+╠══════════════════════════════════════════════════════════════╣
+║                                                              ║
+║  --- 报告元信息 ---                                          ║
+║  LightMeter           仓库名称                            ║
+║  通用检测         检测模式                            ║
+║  当前工作区支付链路改造（含未跟踪新源码）          检测范围描述                         ║
+║  2026-08-18 20:57        报告生成时间 (YYYY-MM-DD HH:mm)     ║
+║                                                              ║
+║  --- 统计数据 ---                                            ║
+║  0            P0 缺陷数量                         ║
+║  5            P1 缺陷数量                         ║
+║  0            P2 缺陷数量                         ║
+║  5         缺陷总数                            ║
+║                                                              ║
+║  --- P0 告警 ---                                             ║
+║  none    有 P0 时为 "block"，无 P0 时为      ║
+║                          "none"                              ║
+║        P0 缺陷摘要列表，每项格式：         ║
+║    <li>[P0][类型] file:line | {title}</li>                   ║
+║                                                              ║
+║  --- 缺陷卡片 ---                                            ║
+║  
+    <div class="defect-card severity-P1">
+      <div class="defect-header">
+        <span class="severity-badge P1">P1</span>
+        <span class="category-badge">安全漏洞</span>
+        <span class="defect-title">HTTP 明文链路会泄露并允许篡改付款确认数据</span>
+        <span class="confidence-tag">置信度 9/10</span>
+      </div>
+      <div class="defect-body">
+        <div class="defect-location">android/app/src/debug/java/com/lightmeter/app/paymentmonitor/PaymentMonitorConfig.kt:25-30</div>
+        <div class="defect-section">
+          <div class="defect-section-title">问题描述</div>
+          <p>Debug 配置允许任意 HTTP 地址，而待确认响应包含解密后的完整设备 ID、邮箱、金额和通知证据。HMAC 只认证请求、不认证响应，因此同网络攻击者可以读取 PII，或篡改金额和到账标记诱导管理员确认。</p>
+        </div>
+        <div class="defect-section">
+          <div class="defect-section-title">修复建议</div>
+          <p>除回环地址的本地开发模式外强制 HTTPS，并禁止 HTTPS 降级重定向；如必须支持明文环境，至少对响应体签名且不要返回完整 PII。</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="defect-card severity-P1">
+      <div class="defect-header">
+        <span class="severity-badge P1">P1</span>
+        <span class="category-badge">业务语义问题</span>
+        <span class="defect-title">单一结果 Cookie 会让较早的活动订单无法报付</span>
+        <span class="confidence-tag">置信度 10/10</span>
+      </div>
+      <div class="defect-body">
+        <div class="defect-location">website/app/api/orders/[orderNo]/payment-claimed/route.ts:17-23</div>
+        <div class="defect-section">
+          <div class="defect-section-title">问题描述</div>
+          <p>所有订单共用 flm_result_session Cookie，新建第二笔订单会覆盖第一笔令牌；配置却允许同一买家存在两笔活动订单。第一笔订单随后无法打开结果页或调用“我已付款”，而找回接口又只允许 fulfilled 订单。</p>
+        </div>
+        <div class="defect-section">
+          <div class="defect-section-title">修复建议</div>
+          <p>改为按订单保存能力令牌，例如订单号到 token 的 HttpOnly Cookie 映射，或为每个订单使用独立 Cookie；报付时验证对应订单令牌。</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="defect-card severity-P1">
+      <div class="defect-header">
+        <span class="severity-badge P1">P1</span>
+        <span class="category-badge">业务语义问题</span>
+        <span class="defect-title">宽限期内的真实付款无法进入人工确认</span>
+        <span class="confidence-tag">置信度 10/10</span>
+      </div>
+      <div class="defect-body">
+        <div class="defect-location">website/lib/dal.ts:555-560</div>
+        <div class="defect-section">
+          <div class="defect-section-title">问题描述</div>
+          <p>claimPersonalPayment 在 expires_at 后立即拒绝，但金额会保留到 reservation_expires_at，通知事件也仍可按实际发生时间匹配。现在通知匹配不再签发或创建确认任务，因此截止前完成、截止后数秒点击报付的真实付款会永久搁置。</p>
+        </div>
+        <div class="defect-section">
+          <div class="defect-section-title">修复建议</div>
+          <p>在 reservation_expires_at 前允许报付，或仅当已匹配通知证明 observedAt 位于付款窗口内时创建确认任务。</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="defect-card severity-P1">
+      <div class="defect-header">
+        <span class="severity-badge P1">P1</span>
+        <span class="category-badge">健壮性问题</span>
+        <span class="defect-title">确认任务过期清理不是原子操作</span>
+        <span class="confidence-tag">置信度 9/10</span>
+      </div>
+      <div class="defect-body">
+        <div class="defect-location">website/lib/dal.ts:221-246</div>
+        <div class="defect-section">
+          <div class="defect-section-title">问题描述</div>
+          <p>getOrder 和 listPendingPaymentConfirmations 会在事务外执行多条清理 SQL。若进程在确认请求已改为 expired、订单尚未改为 expired 时退出，后续清理无法再选中该请求，订单会永久停留在 awaiting_confirmation 并从管理列表消失。</p>
+        </div>
+        <div class="defect-section">
+          <div class="defect-section-title">修复建议</div>
+          <p>将过期请求更新、订单状态迁移和金额预留删除放入同一事务；为已经处于外层事务的调用提供内部 helper 或 savepoint。</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="defect-card severity-P1">
+      <div class="defect-header">
+        <span class="severity-badge P1">P1</span>
+        <span class="category-badge">安全漏洞</span>
+        <span class="defect-title">已签名的待确认查询可在时间窗口内重放</span>
+        <span class="confidence-tag">置信度 9/10</span>
+      </div>
+      <div class="defect-body">
+        <div class="defect-location">website/lib/payments/monitor-route-auth.ts:54-82</div>
+        <div class="defect-section">
+          <div class="defect-section-title">问题描述</div>
+          <p>认证层只校验 nonce 格式，没有原子消费 nonce。同一条 pending-confirmations GET 可在 60 秒时间偏差窗口内重复通过并返回当时最新的完整邮箱和设备 ID 列表，不符合项目既定的 nonce 防重放约束。</p>
+        </div>
+        <div class="defect-section">
+          <div class="defect-section-title">修复建议</div>
+          <p>为所有管理端鉴权请求原子登记 monitorId、nonce、请求路径和过期时间；已存在的 nonce 立即返回 409/401，并定期清理过期记录。</p>
+        </div>
+      </div>
+    </div>        所有缺陷卡片的 HTML，单张卡片格式：  ║
+║                                                              ║
+║    <div class="defect-card severity-{severity}">             ║
+║      <div class="defect-header">                             ║
+║        <span class="severity-badge {severity}">              ║
+║          {severity}</span>                                   ║
+║        <span class="category-badge">                         ║
+║          {category_zh}</span>                                ║
+║        <span class="defect-title">                           ║
+║          {title}</span>                                       ║
+║        <span class="confidence-tag">                         ║
+║          置信度 {confidence}/10</span>                       ║
+║      </div>                                                  ║
+║      <div class="defect-body">                               ║
+║        <div class="defect-location">                         ║
+║          {file}:{start_line}-{end_line}</div>                ║
+║        <div class="defect-section">                          ║
+║          <div class="defect-section-title">                  ║
+║            问题描述</div>                                    ║
+║          <p>{rationale}</p>                                  ║
+║        </div>                                                ║
+║        <div class="defect-section">                          ║
+║          <div class="defect-section-title">                  ║
+║            问题代码</div>                                    ║
+║          <div class="code-block">                            ║
+║            {代码片段}</div>                                  ║
+║        </div>                                                ║
+║        <div class="defect-section">                          ║
+║          <div class="defect-section-title">                  ║
+║            修复建议</div>                                    ║
+║          <p>{suggestion}</p>                                 ║
+║        </div>                                                ║
+║      </div>                                                  ║
+║    </div>                                                    ║
+║                                                              ║
+║  --- 空状态 ---                                              ║
+║  无缺陷时：取消注释 __EMPTY_STATE_START__ 到                 ║
+║  __EMPTY_STATE_END__ 之间的内容，并删除 defect-list 区块      ║
+║  25          检查的文件数                         ║
+║  1712          变更行数                            ║
+║                                                              ║
+║  --- category 中英文映射 ---                                  ║
+║  LOGIC       → 逻辑错误                                     ║
+║  BUSINESS_SEMANTICS → 业务语义问题                           ║
+║  SECURITY    → 安全漏洞                                      ║
+║  CONCURRENCY → 并发问题                                      ║
+║  ROBUSTNESS  → 健壮性问题                                    ║
+║  PERFORMANCE → 性能问题                                      ║
+║  QUALITY     → 代码质量问题                                  ║
+║                                                              ║
+╚══════════════════════════════════════════════════════════════╝
+-->

@@ -12,6 +12,7 @@ import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
 
+import { GuideToc } from "@/components/guide-toc";
 import { PageHeader } from "@/components/page-header";
 
 export const metadata: Metadata = {
@@ -59,16 +60,7 @@ export default function GuidePage() {
       />
 
       <div className="guide-layout">
-        <aside className="guide-toc" aria-label="本页目录">
-          <p>本页目录</p>
-          <nav>
-            <a href="#disposable-preview">一次性胶片预览</a>
-            <a href="#professional-mode">专业模式</a>
-            <a href="#activation">离线激活</a>
-            <a href="#privacy">隐私</a>
-            <a href="#faq">常见问题</a>
-          </nav>
-        </aside>
+        <GuideToc />
 
         <div className="guide-content">
           <figure className="guide-visual">

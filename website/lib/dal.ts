@@ -126,6 +126,14 @@ export type PendingPaymentConfirmationDTO = {
   notificationObserved: boolean;
 };
 
+export type ActiveOrderSessionDTO = {
+  orderNo: string;
+  status: string;
+  amountMinor: number;
+  currency: string;
+  expiresAt: string | null;
+};
+
 const PRODUCT_PRICE_SETTING_KEY = "product_price_minor";
 
 function transaction<T>(work: () => T): T {
@@ -538,6 +546,70 @@ export function getOrder(
     isDevelopmentCredential: license?.is_development === 1,
     issuedAt: license?.issued_at ?? null,
   };
+}
+
+export function getActiveOrderForSession(
+  sessionToken: string,
+): ActiveOrderSessionDTO | null {
+  const now = new Date().toISOString();
+  expireStalePersonalOrders(now);
+  const order = db
+    .prepare(
+      `SELECT order_no, status, amount_minor, currency, expires_at
+       FROM orders
+       WHERE result_session_hash = ?
+         AND status IN ('pending', 'awaiting_confirmation', 'issuing')
+       ORDER BY created_at DESC
+       LIMIT 1`,
+    )
+    .get(tokenHash(sessionToken)) as
+    | {
+        order_no: string;
+        status: string;
+        amount_minor: number;
+        currency: string;
+        expires_at: string | null;
+      }
+    | undefined;
+  if (!order) return null;
+  return {
+    orderNo: order.order_no,
+    status: order.status,
+    amountMinor: order.amount_minor,
+    currency: order.currency,
+    expiresAt: order.expires_at,
+  };
+}
+
+export function cancelActiveOrder(
+  orderNo: string,
+  sessionToken: string,
+  cancelledAt = new Date(),
+): void {
+  const now = cancelledAt.toISOString();
+  transaction(() => {
+    expireStalePersonalOrdersInTransaction(now);
+    const order = orderByNumber(orderNo);
+    if (!order || !sessionCanRead(order, sessionToken)) {
+      throw new Error("ORDER_NOT_FOUND");
+    }
+    if (order.status !== "pending") {
+      throw new Error("ORDER_NOT_CANCELLABLE");
+    }
+    const result = db
+      .prepare(
+        `UPDATE orders
+         SET status = 'cancelled', updated_at = ?
+         WHERE id = ? AND status = 'pending'`,
+      )
+      .run(now, order.id);
+    if (result.changes !== 1) {
+      throw new Error("ORDER_NOT_CANCELLABLE");
+    }
+    db.prepare(
+      "DELETE FROM payment_amount_reservations WHERE order_id = ?",
+    ).run(order.id);
+  });
 }
 
 export function claimPersonalPayment(

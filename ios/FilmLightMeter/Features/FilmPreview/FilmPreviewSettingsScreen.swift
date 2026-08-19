@@ -8,7 +8,8 @@ struct FilmPreviewSettingsScreen: View {
 
     @Environment(\.dismiss) private var dismiss
     @State private var selectedPresetID: String
-    @State private var expandedPresetIDs: Set<String> = []
+    @State private var imagePreviewPreset: DisposableCameraPreset?
+    @State private var manualEditorExpanded: Bool
     @State private var manualISO: String
     @State private var manualShutter: String
     @State private var manualAperture: String
@@ -27,6 +28,9 @@ struct FilmPreviewSettingsScreen: View {
         self.onThemeStyleChanged = onThemeStyleChanged
         self.onSave = onSave
         _selectedPresetID = State(initialValue: selectedPreset.id)
+        _manualEditorExpanded = State(
+            initialValue: selectedPreset.id == ManualCameraConfig.presetID
+        )
         _manualISO = State(initialValue: String(manualConfig.iso))
         _manualShutter = State(
             initialValue: String(manualConfig.shutterDenominator)
@@ -56,7 +60,7 @@ struct FilmPreviewSettingsScreen: View {
                         .foregroundStyle(.secondary)
                         .padding(.vertical, 6)
                     ForEach(presets) { preset in
-                        presetDisclosure(preset)
+                        presetCard(preset)
                     }
                 }
                 .padding(16)
@@ -80,61 +84,79 @@ struct FilmPreviewSettingsScreen: View {
                 }
             }
         }
+        .sheet(item: $imagePreviewPreset) { preset in
+            PresetImagePreview(preset: preset)
+        }
     }
 
-    private func presetDisclosure(
+    private func presetCard(
         _ preset: DisposableCameraPreset
     ) -> some View {
         let selected = selectedPresetID == preset.id
-        return DisclosureGroup(
-            isExpanded: Binding(
-                get: { expandedPresetIDs.contains(preset.id) },
-                set: { expanded in
-                    if expanded {
-                        expandedPresetIDs.insert(preset.id)
-                    } else {
-                        expandedPresetIDs.remove(preset.id)
+        let isManualPreset = preset.id == ManualCameraConfig.presetID
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 12) {
+                if let assetName = preset.previewAssetName {
+                    Button {
+                        imagePreviewPreset = preset
+                    } label: {
+                        Image(assetName)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: 112, height: 72)
+                            .clipShape(RoundedRectangle(cornerRadius: 6))
                     }
-                }
-            )
-        ) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text(parameterSummary(preset))
-                    .font(.subheadline)
-                Text(flashSummary(preset))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                if let region = preset.regionOrBatch {
-                    Text(region)
-                        .font(.caption2)
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("查看\(preset.displayName)参考图")
+                } else {
+                    Image(systemName: "slider.horizontal.3")
+                        .font(.title2)
                         .foregroundStyle(.secondary)
+                        .frame(width: 112, height: 72)
+                        .background(
+                            Color(uiColor: .tertiarySystemFill),
+                            in: RoundedRectangle(cornerRadius: 6)
+                        )
                 }
-                if preset.id == ManualCameraConfig.presetID {
-                    Divider().padding(.vertical, 4)
-                    manualEditor
+                Button {
+                    if isManualPreset && selected {
+                        manualEditorExpanded.toggle()
+                    } else {
+                        selectedPresetID = preset.id
+                        manualEditorExpanded = isManualPreset
+                    }
+                } label: {
+                    HStack(spacing: 10) {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(preset.displayName)
+                                .font(.headline)
+                                .foregroundStyle(.primary)
+                            Text(parameterSummary(preset))
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                            Text(flashSummary(preset))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer(minLength: 0)
+                        Image(
+                            systemName: selected
+                                ? "checkmark.circle.fill" : "circle"
+                        )
+                        .foregroundStyle(selected ? .orange : .secondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
+                .accessibilityLabel("选择\(preset.displayName)")
             }
-            .padding(.top, 8)
-        } label: {
-            Button {
-                selectedPresetID = preset.id
-            } label: {
-                HStack(spacing: 10) {
-                    Image(
-                        systemName: selected
-                            ? "checkmark.circle.fill" : "circle"
-                    )
-                    .foregroundStyle(selected ? .orange : .secondary)
-                    Text(preset.displayName)
-                        .font(.headline)
-                        .foregroundStyle(.primary)
-                    Spacer()
-                }
-                .contentShape(Rectangle())
+            if selected, isManualPreset, manualEditorExpanded {
+                Divider()
+                manualEditor
             }
-            .buttonStyle(.plain)
         }
-        .padding(14)
+        .padding(10)
         .background(
             selected
                 ? Color.orange.opacity(0.14)
@@ -251,5 +273,43 @@ struct FilmPreviewSettingsScreen: View {
                 + "\(formatDecimal($0.effectiveDistanceMinMeters))-"
                 + "\(formatDecimal($0.effectiveDistanceMaxMeters)) m"
         } ?? "无闪光参数"
+    }
+}
+
+private struct PresetImagePreview: View {
+    let preset: DisposableCameraPreset
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                Color.black.ignoresSafeArea()
+                if let assetName = preset.previewAssetName {
+                    Image(assetName)
+                        .resizable()
+                        .scaledToFit()
+                        .padding(16)
+                }
+            }
+            .navigationTitle(preset.displayName)
+            .navigationBarTitleDisplayMode(.inline)
+        }
+        .presentationDetents([.large])
+    }
+}
+
+private extension DisposableCameraPreset {
+    var previewAssetName: String? {
+        switch id {
+        case "kodak-funsaver-800":
+            "PresetFunSaver"
+        case "kodak-power-flash-800":
+            "PresetPowerFlash"
+        case "fujifilm-quicksnap-flash-400":
+            "PresetQuickSnap"
+        case "fujifilm-c400-jelly":
+            "PresetC400"
+        default:
+            nil
+        }
     }
 }

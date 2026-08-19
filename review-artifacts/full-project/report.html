@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>代码评审报告 — LightMeter</title>
+  <style>
+    :root {
+      --color-p0: #dc2626;
+      --color-p0-bg: #fef2f2;
+      --color-p0-border: #fca5a5;
+      --color-p1: #d97706;
+      --color-p1-bg: #fffbeb;
+      --color-p1-border: #fcd34d;
+      --color-p2: #2563eb;
+      --color-p2-bg: #eff6ff;
+      --color-p2-border: #93c5fd;
+      --color-bg: #f8fafc;
+      --color-card: #ffffff;
+      --color-border: #e2e8f0;
+      --color-text: #1e293b;
+      --color-text-secondary: #64748b;
+      --color-code-bg: #f1f5f9;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans SC", sans-serif;
+      background: var(--color-bg);
+      color: var(--color-text);
+      line-height: 1.6;
+      padding: 24px;
+    }
+
+    .container {
+      max-width: 960px;
+      margin: 0 auto;
+    }
+
+    /* --- Header --- */
+    .report-header {
+      background: var(--color-card);
+      border: 1px solid var(--color-border);
+      border-radius: 12px;
+      padding: 28px 32px;
+      margin-bottom: 20px;
+    }
+
+    .report-header h1 {
+      font-size: 22px;
+      font-weight: 700;
+      margin-bottom: 16px;
+    }
+
+    .meta-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 12px;
+    }
+
+    .meta-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 14px;
+      color: var(--color-text-secondary);
+    }
+
+    .meta-item .label { font-weight: 600; color: var(--color-text); }
+
+    /* --- P0 Alert Banner --- */
+    .p0-alert {
+      background: var(--color-p0-bg);
+      border: 1px solid var(--color-p0-border);
+      border-left: 4px solid var(--color-p0);
+      border-radius: 8px;
+      padding: 16px 20px;
+      margin-bottom: 20px;
+      display: none;
+    }
+
+    .p0-alert-title {
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--color-p0);
+      margin-bottom: 8px;
+    }
+
+    .p0-alert-list {
+      list-style: none;
+      font-size: 14px;
+    }
+
+    .p0-alert-list li {
+      padding: 2px 0;
+      color: var(--color-text);
+    }
+
+    /* --- Summary Bar --- */
+    .summary-bar {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 24px;
+      flex-wrap: wrap;
+    }
+
+    .summary-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      background: var(--color-card);
+      border: 1px solid var(--color-border);
+    }
+
+    .summary-chip .count {
+      font-size: 20px;
+      font-weight: 700;
+    }
+
+    .summary-chip.p0 { border-color: var(--color-p0); color: var(--color-p0); }
+    .summary-chip.p1 { border-color: var(--color-p1); color: var(--color-p1); }
+    .summary-chip.p2 { border-color: var(--color-p2); color: var(--color-p2); }
+    .summary-chip.total { border-color: var(--color-text); color: var(--color-text); }
+
+    /* --- Defect Cards --- */
+    .defect-list { display: flex; flex-direction: column; gap: 16px; }
+
+    .defect-card {
+      background: var(--color-card);
+      border: 1px solid var(--color-border);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+
+    .defect-card.severity-P0 { border-left: 4px solid var(--color-p0); }
+    .defect-card.severity-P1 { border-left: 4px solid var(--color-p1); }
+    .defect-card.severity-P2 { border-left: 4px solid var(--color-p2); }
+
+    .defect-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--color-border);
+      flex-wrap: wrap;
+    }
+
+    .severity-badge {
+      display: inline-block;
+      padding: 2px 10px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: 700;
+      color: #fff;
+    }
+
+    .severity-badge.P0 { background: var(--color-p0); }
+    .severity-badge.P1 { background: var(--color-p1); }
+    .severity-badge.P2 { background: var(--color-p2); }
+
+    .category-badge {
+      display: inline-block;
+      padding: 2px 10px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: 600;
+      background: var(--color-code-bg);
+      color: var(--color-text-secondary);
+    }
+
+    .defect-title {
+      font-size: 15px;
+      font-weight: 600;
+      flex: 1;
+    }
+
+    .confidence-tag {
+      font-size: 12px;
+      color: var(--color-text-secondary);
+      white-space: nowrap;
+    }
+
+    .defect-body { padding: 20px; }
+
+    .defect-location {
+      font-size: 13px;
+      color: var(--color-text-secondary);
+      margin-bottom: 12px;
+      font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
+    }
+
+    .defect-section { margin-bottom: 16px; }
+    .defect-section:last-child { margin-bottom: 0; }
+
+    .defect-section-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--color-text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 6px;
+    }
+
+    .defect-section p {
+      font-size: 14px;
+      line-height: 1.7;
+    }
+
+    .code-block {
+      background: var(--color-code-bg);
+      border: 1px solid var(--color-border);
+      border-radius: 6px;
+      padding: 12px 16px;
+      font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
+      font-size: 13px;
+      line-height: 1.6;
+      overflow-x: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+
+    /* --- Empty State --- */
+    .empty-state {
+      text-align: center;
+      padding: 64px 32px;
+      background: var(--color-card);
+      border: 1px solid var(--color-border);
+      border-radius: 12px;
+    }
+
+    .empty-state h2 {
+      font-size: 18px;
+      color: #16a34a;
+      margin-bottom: 8px;
+    }
+
+    .empty-state p {
+      font-size: 14px;
+      color: var(--color-text-secondary);
+    }
+
+    /* --- Footer --- */
+    .report-footer {
+      text-align: center;
+      padding: 20px;
+      font-size: 12px;
+      color: var(--color-text-secondary);
+    }
+
+    /* --- Responsive --- */
+    @media (max-width: 640px) {
+      body { padding: 12px; }
+      .report-header { padding: 20px; }
+      .defect-header { padding: 12px 16px; }
+      .defect-body { padding: 16px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+
+    <!-- ====== Header ====== -->
+    <div class="report-header">
+      <h1>代码评审报告</h1>
+      <div class="meta-grid">
+        <div class="meta-item">
+          <span class="label">仓库：</span>
+          <span>LightMeter</span>
+        </div>
+        <div class="meta-item">
+          <span class="label">检测模式：</span>
+          <span>通用检测（全项目）</span>
+        </div>
+        <div class="meta-item">
+          <span class="label">检测范围：</span>
+          <span>当前 HEAD 全部受版本控制源码</span>
+        </div>
+        <div class="meta-item">
+          <span class="label">生成时间：</span>
+          <span>2026-08-17 16:45</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ====== P0 Alert (hidden when no P0) ====== -->
+    <div class="p0-alert">
+      <div class="p0-alert-title">高优先级告警 — 发现 P0 级别缺陷，建议立即处理</div>
+      <ul class="p0-alert-list">
+        
+      </ul>
+    </div>
+
+    <!-- ====== Summary ====== -->
+    <div class="summary-bar">
+      <div class="summary-chip p0"><span class="count">0</span> P0</div>
+      <div class="summary-chip p1"><span class="count">5</span> P1</div>
+      <div class="summary-chip p2"><span class="count">0</span> P2</div>
+      <div class="summary-chip total"><span class="count">5</span> 合计</div>
+    </div>
+
+    <!-- ====== Defect List ====== -->
+    <div class="defect-list">
+      
+    <div class="defect-card severity-P1">
+      <div class="defect-header">
+        <span class="severity-badge P1">P1</span>
+        <span class="category-badge">业务语义问题</span>
+        <span class="defect-title">延迟到账事件会在按付款时间匹配前使有效订单过期</span>
+        <span class="confidence-tag">置信度 10/10</span>
+      </div>
+      <div class="defect-body">
+        <div class="defect-location">website/lib/dal.ts:596-597</div>
+        <div class="defect-section">
+          <div class="defect-section-title">问题描述</div>
+          <p>处理事务先用 receivedAt 调用 expireStalePersonalOrders，再用 observedAt 查询订单。付款发生在保留窗口内、但手机断网至窗口结束后才上传时，订单会先变成 expired，随后被 status = 'pending' 排除，真实付款永久进入 unmatched。</p>
+        </div>
+        <div class="defect-section">
+          <div class="defect-section-title">修复建议</div>
+          <p>先按 observedAt 匹配并核销事件，再过期其余订单；或在过期逻辑中保留 observation time 覆盖该订单窗口的候选。</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="defect-card severity-P1">
+      <div class="defect-header">
+        <span class="severity-badge P1">P1</span>
+        <span class="category-badge">业务语义问题</span>
+        <span class="defect-title">生产环境的凭证找回始终不执行任何恢复或邮件交付</span>
+        <span class="confidence-tag">置信度 10/10</span>
+      </div>
+      <div class="defect-body">
+        <div class="defect-location">website/app/api/orders/recover/route.ts:16-18</div>
+        <div class="defect-section">
+          <div class="defect-section-title">问题描述</div>
+          <p>生产请求在调用 recoverOrderSession 前固定返回 accepted。前端提示会向购买邮箱发送一次性链接，但仓库没有邮件发送实现，因此 Cookie 丢失后的已付款用户无法找回凭证。</p>
+        </div>
+        <div class="defect-section">
+          <div class="defect-section-title">修复建议</div>
+          <p>实现带限流和防枚举的一次性找回链接邮件流程，或在严格校验订单号和邮箱后安全恢复订单会话。</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="defect-card severity-P1">
+      <div class="defect-header">
+        <span class="severity-badge P1">P1</span>
+        <span class="category-badge">逻辑错误</span>
+        <span class="defect-title">部署包内的正式 APK 永远会被判定为未发布</span>
+        <span class="confidence-tag">置信度 10/10</span>
+      </div>
+      <div class="defect-body">
+        <div class="defect-location">website/lib/db.ts:199-204</div>
+        <div class="defect-section">
+          <div class="defect-section-title">问题描述</div>
+          <p>安装器配置 ANDROID_APK_PATH=./artifacts/FilmLightMeter-release.apk，但 release 检测要求路径包含 /outputs/apk/release/。生产启动后记录总是被写成 draft，下载页不可用且下载 API 返回 404。</p>
+        </div>
+        <div class="defect-section">
+          <div class="defect-section-title">修复建议</div>
+          <p>验证 APK 的实际签名和哈希，并接受安装器定义的 artifacts 路径；不要依赖 Gradle 构建目录字符串判断是否为正式包。</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="defect-card severity-P1">
+      <div class="defect-header">
+        <span class="severity-badge P1">P1</span>
+        <span class="category-badge">业务语义问题</span>
+        <span class="defect-title">创建第二个订单会立即使浏览器失去第一个订单的访问权</span>
+        <span class="confidence-tag">置信度 10/10</span>
+      </div>
+      <div class="defect-body">
+        <div class="defect-location">website/app/api/orders/route.ts:94-104</div>
+        <div class="defect-section">
+          <div class="defect-section-title">问题描述</div>
+          <p>所有订单共享一个 flm_result_session Cookie，而每个订单保存不同 token hash。第二次创建订单会覆盖 Cookie，导致首个订单结果页、轮询和付款码接口认证失败；配置又明确允许同一买家存在两个活动订单。</p>
+        </div>
+        <div class="defect-section">
+          <div class="defect-section-title">修复建议</div>
+          <p>使用按订单区分的 Cookie，或用签名浏览器会话安全保存多个 orderNo 到 token 的映射。</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="defect-card severity-P1">
+      <div class="defect-header">
+        <span class="severity-badge P1">P1</span>
+        <span class="category-badge">逻辑错误</span>
+        <span class="defect-title">通知紧凑文本和展开文本重复金额时会漏掉真实付款</span>
+        <span class="confidence-tag">置信度 9/10</span>
+      </div>
+      <div class="defect-body">
+        <div class="defect-location">android/app/src/debug/java/com/lightmeter/app/paymentmonitor/AlipayNotificationParser.kt:43-46</div>
+        <div class="defect-section">
+          <div class="defect-section-title">问题描述</div>
+          <p>支付宝通知可能同时在 text 和 bigText 中展示同一笔金额，但附带文本不同。当前只对完整字符串去重，再要求金额匹配数量恰好为 1；同一金额出现两次会直接返回 null，事件不会持久化或上报。</p>
+        </div>
+        <div class="defect-section">
+          <div class="defect-section-title">修复建议</div>
+          <p>先将匹配结果转换为分单位金额并去重；只有出现多个不同金额时才拒绝，同时补充 text 与 bigText 同额测试。</p>
+        </div>
+      </div>
+    </div>
+    </div>
+
+    <!-- ====== Empty State (shown when no defects) ====== -->
+    <!-- __EMPTY_STATE_START__
+    <div class="empty-state">
+      <h2>未发现缺陷</h2>
+      <p>本次评审未发现 P0-P2 级别的缺陷。共检查 155 个文件，约 95409 行变更。</p>
+    </div>
+    __EMPTY_STATE_END__ -->
+
+    <div class="report-footer">
+      bits-code-guard &middot; 由 AI 辅助生成 &middot; 2026-08-17 16:45
+    </div>
+
+  </div>
+</body>
+</html>
+
+<!--
+╔══════════════════════════════════════════════════════════════╗
+║                        占位符说明                           ║
+╠══════════════════════════════════════════════════════════════╣
+║                                                              ║
+║  --- 报告元信息 ---                                          ║
+║  LightMeter           仓库名称                            ║
+║  通用检测（全项目）         检测模式                            ║
+║  当前 HEAD 全部受版本控制源码          检测范围描述                         ║
+║  2026-08-17 16:45        报告生成时间 (YYYY-MM-DD HH:mm)     ║
+║                                                              ║
+║  --- 统计数据 ---                                            ║
+║  0            P0 缺陷数量                         ║
+║  5            P1 缺陷数量                         ║
+║  0            P2 缺陷数量                         ║
+║  5         缺陷总数                            ║
+║                                                              ║
+║  --- P0 告警 ---                                             ║
+║  none    有 P0 时为 "block"，无 P0 时为      ║
+║                          "none"                              ║
+║        P0 缺陷摘要列表，每项格式：         ║
+║    <li>[P0][类型] file:line | {title}</li>                   ║
+║                                                              ║
+║  --- 缺陷卡片 ---                                            ║
+║  
+    <div class="defect-card severity-P1">
+      <div class="defect-header">
+        <span class="severity-badge P1">P1</span>
+        <span class="category-badge">业务语义问题</span>
+        <span class="defect-title">延迟到账事件会在按付款时间匹配前使有效订单过期</span>
+        <span class="confidence-tag">置信度 10/10</span>
+      </div>
+      <div class="defect-body">
+        <div class="defect-location">website/lib/dal.ts:596-597</div>
+        <div class="defect-section">
+          <div class="defect-section-title">问题描述</div>
+          <p>处理事务先用 receivedAt 调用 expireStalePersonalOrders，再用 observedAt 查询订单。付款发生在保留窗口内、但手机断网至窗口结束后才上传时，订单会先变成 expired，随后被 status = 'pending' 排除，真实付款永久进入 unmatched。</p>
+        </div>
+        <div class="defect-section">
+          <div class="defect-section-title">修复建议</div>
+          <p>先按 observedAt 匹配并核销事件，再过期其余订单；或在过期逻辑中保留 observation time 覆盖该订单窗口的候选。</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="defect-card severity-P1">
+      <div class="defect-header">
+        <span class="severity-badge P1">P1</span>
+        <span class="category-badge">业务语义问题</span>
+        <span class="defect-title">生产环境的凭证找回始终不执行任何恢复或邮件交付</span>
+        <span class="confidence-tag">置信度 10/10</span>
+      </div>
+      <div class="defect-body">
+        <div class="defect-location">website/app/api/orders/recover/route.ts:16-18</div>
+        <div class="defect-section">
+          <div class="defect-section-title">问题描述</div>
+          <p>生产请求在调用 recoverOrderSession 前固定返回 accepted。前端提示会向购买邮箱发送一次性链接，但仓库没有邮件发送实现，因此 Cookie 丢失后的已付款用户无法找回凭证。</p>
+        </div>
+        <div class="defect-section">
+          <div class="defect-section-title">修复建议</div>
+          <p>实现带限流和防枚举的一次性找回链接邮件流程，或在严格校验订单号和邮箱后安全恢复订单会话。</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="defect-card severity-P1">
+      <div class="defect-header">
+        <span class="severity-badge P1">P1</span>
+        <span class="category-badge">逻辑错误</span>
+        <span class="defect-title">部署包内的正式 APK 永远会被判定为未发布</span>
+        <span class="confidence-tag">置信度 10/10</span>
+      </div>
+      <div class="defect-body">
+        <div class="defect-location">website/lib/db.ts:199-204</div>
+        <div class="defect-section">
+          <div class="defect-section-title">问题描述</div>
+          <p>安装器配置 ANDROID_APK_PATH=./artifacts/FilmLightMeter-release.apk，但 release 检测要求路径包含 /outputs/apk/release/。生产启动后记录总是被写成 draft，下载页不可用且下载 API 返回 404。</p>
+        </div>
+        <div class="defect-section">
+          <div class="defect-section-title">修复建议</div>
+          <p>验证 APK 的实际签名和哈希，并接受安装器定义的 artifacts 路径；不要依赖 Gradle 构建目录字符串判断是否为正式包。</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="defect-card severity-P1">
+      <div class="defect-header">
+        <span class="severity-badge P1">P1</span>
+        <span class="category-badge">业务语义问题</span>
+        <span class="defect-title">创建第二个订单会立即使浏览器失去第一个订单的访问权</span>
+        <span class="confidence-tag">置信度 10/10</span>
+      </div>
+      <div class="defect-body">
+        <div class="defect-location">website/app/api/orders/route.ts:94-104</div>
+        <div class="defect-section">
+          <div class="defect-section-title">问题描述</div>
+          <p>所有订单共享一个 flm_result_session Cookie，而每个订单保存不同 token hash。第二次创建订单会覆盖 Cookie，导致首个订单结果页、轮询和付款码接口认证失败；配置又明确允许同一买家存在两个活动订单。</p>
+        </div>
+        <div class="defect-section">
+          <div class="defect-section-title">修复建议</div>
+          <p>使用按订单区分的 Cookie，或用签名浏览器会话安全保存多个 orderNo 到 token 的映射。</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="defect-card severity-P1">
+      <div class="defect-header">
+        <span class="severity-badge P1">P1</span>
+        <span class="category-badge">逻辑错误</span>
+        <span class="defect-title">通知紧凑文本和展开文本重复金额时会漏掉真实付款</span>
+        <span class="confidence-tag">置信度 9/10</span>
+      </div>
+      <div class="defect-body">
+        <div class="defect-location">android/app/src/debug/java/com/lightmeter/app/paymentmonitor/AlipayNotificationParser.kt:43-46</div>
+        <div class="defect-section">
+          <div class="defect-section-title">问题描述</div>
+          <p>支付宝通知可能同时在 text 和 bigText 中展示同一笔金额，但附带文本不同。当前只对完整字符串去重，再要求金额匹配数量恰好为 1；同一金额出现两次会直接返回 null，事件不会持久化或上报。</p>
+        </div>
+        <div class="defect-section">
+          <div class="defect-section-title">修复建议</div>
+          <p>先将匹配结果转换为分单位金额并去重；只有出现多个不同金额时才拒绝，同时补充 text 与 bigText 同额测试。</p>
+        </div>
+      </div>
+    </div>        所有缺陷卡片的 HTML，单张卡片格式：  ║
+║                                                              ║
+║    <div class="defect-card severity-{severity}">             ║
+║      <div class="defect-header">                             ║
+║        <span class="severity-badge {severity}">              ║
+║          {severity}</span>                                   ║
+║        <span class="category-badge">                         ║
+║          {category_zh}</span>                                ║
+║        <span class="defect-title">                           ║
+║          {title}</span>                                       ║
+║        <span class="confidence-tag">                         ║
+║          置信度 {confidence}/10</span>                       ║
+║      </div>                                                  ║
+║      <div class="defect-body">                               ║
+║        <div class="defect-location">                         ║
+║          {file}:{start_line}-{end_line}</div>                ║
+║        <div class="defect-section">                          ║
+║          <div class="defect-section-title">                  ║
+║            问题描述</div>                                    ║
+║          <p>{rationale}</p>                                  ║
+║        </div>                                                ║
+║        <div class="defect-section">                          ║
+║          <div class="defect-section-title">                  ║
+║            问题代码</div>                                    ║
+║          <div class="code-block">                            ║
+║            {代码片段}</div>                                  ║
+║        </div>                                                ║
+║        <div class="defect-section">                          ║
+║          <div class="defect-section-title">                  ║
+║            修复建议</div>                                    ║
+║          <p>{suggestion}</p>                                 ║
+║        </div>                                                ║
+║      </div>                                                  ║
+║    </div>                                                    ║
+║                                                              ║
+║  --- 空状态 ---                                              ║
+║  无缺陷时：取消注释 __EMPTY_STATE_START__ 到                 ║
+║  __EMPTY_STATE_END__ 之间的内容，并删除 defect-list 区块      ║
+║  155          检查的文件数                         ║
+║  95409          变更行数                            ║
+║                                                              ║
+║  --- category 中英文映射 ---                                  ║
+║  LOGIC       → 逻辑错误                                     ║
+║  BUSINESS_SEMANTICS → 业务语义问题                           ║
+║  SECURITY    → 安全漏洞                                      ║
+║  CONCURRENCY → 并发问题                                      ║
+║  ROBUSTNESS  → 健壮性问题                                    ║
+║  PERFORMANCE → 性能问题                                      ║
+║  QUALITY     → 代码质量问题                                  ║
+║                                                              ║
+╚══════════════════════════════════════════════════════════════╝
+-->

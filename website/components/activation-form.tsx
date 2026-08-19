@@ -46,6 +46,13 @@ export function ActivationForm({
         errorCode?: string;
         fieldErrors?: Record<string, string[]>;
       };
+      if (
+        result.errorCode === "ACTIVE_ORDER_EXISTS" &&
+        result.resultUrl
+      ) {
+        window.location.assign(result.resultUrl);
+        return;
+      }
       if (!response.ok || !result.resultUrl) {
         const fieldMessage = result.fieldErrors
           ? Object.values(result.fieldErrors).flat()[0]

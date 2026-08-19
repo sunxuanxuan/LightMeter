@@ -3,9 +3,10 @@ import { z } from "zod";
 
 import { siteConfig } from "@/lib/config";
 import {
-    createOrder,
-    getPaymentQrCode,
-    savePaymentQrCode,
+  createOrder,
+  getActiveOrderForSession,
+  getPaymentQrCode,
+  savePaymentQrCode,
 } from "@/lib/dal";
 import { createAlipayPayment } from "@/lib/payments/alipay";
 import { assertPersonalAlipayQrImage } from "@/lib/payments/personal-qr";
@@ -15,6 +16,22 @@ import { createOrderSchema } from "@/lib/validation";
 export async function POST(request: NextRequest) {
   if (!hasSameOrigin(request)) {
     return NextResponse.json({ errorCode: "INVALID_ORIGIN" }, { status: 403 });
+  }
+  const existingSessionToken = request.cookies.get(
+    siteConfig.resultCookieName,
+  )?.value;
+  const activeOrder = existingSessionToken
+    ? getActiveOrderForSession(existingSessionToken)
+    : null;
+  if (activeOrder) {
+    return NextResponse.json(
+      {
+        errorCode: "ACTIVE_ORDER_EXISTS",
+        orderNo: activeOrder.orderNo,
+        resultUrl: `/activate/result/${activeOrder.orderNo}`,
+      },
+      { status: 409 },
+    );
   }
   const idempotencyKey = request.headers.get("Idempotency-Key");
   if (

@@ -41,8 +41,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.ExpandLess
-import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.GridView
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Visibility
@@ -74,11 +72,13 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
@@ -95,6 +95,7 @@ import com.lightmeter.app.metering.ExposureRiskMask
 import com.lightmeter.app.metering.ExposureSnapshot
 import com.lightmeter.app.metering.MeteringConfig
 import com.lightmeter.app.metering.MeteringMode
+import com.lightmeter.app.R
 import com.lightmeter.app.ui.CameraPermissionState
 import com.lightmeter.app.ui.CameraPreviewView
 import com.lightmeter.app.ui.CameraViewfinderMask
@@ -192,9 +193,9 @@ private fun PresetCard(
     preset: DisposableCameraPreset,
     selected: Boolean,
     onClick: () -> Unit,
+    onImageClick: (() -> Unit)? = null,
     expandedContent: @Composable (() -> Unit)? = null,
 ) {
-    var detailsExpanded by rememberSaveable(preset.id) { mutableStateOf(false) }
     val containerColor = if (selected) {
         MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
     } else {
@@ -213,68 +214,109 @@ private fun PresetCard(
             },
         ),
     ) {
-        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+        Column(modifier = Modifier.padding(10.dp)) {
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable(onClick = onClick),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    text = preset.displayName,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.weight(1f),
-                )
-                Icon(
-                    imageVector = if (detailsExpanded) {
-                        Icons.Outlined.ExpandLess
-                    } else {
-                        Icons.Outlined.ExpandMore
-                    },
-                    contentDescription = if (detailsExpanded) {
-                        "收起参数"
-                    } else {
-                        "展开参数"
-                    },
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                val imageResource = presetImageResource(preset)
+                if (imageResource != null) {
+                    Image(
+                        painter = painterResource(imageResource),
+                        contentDescription = "${preset.displayName} 参考图",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .size(width = 112.dp, height = 72.dp)
+                            .clip(RoundedCornerShape(6.dp))
+                                .clickable(enabled = onImageClick != null) {
+                                    onImageClick?.invoke()
+                                },
+                    )
+                } else {
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        shape = RoundedCornerShape(6.dp),
+                        modifier = Modifier.size(width = 112.dp, height = 72.dp),
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Outlined.Settings,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+                Column(
                     modifier = Modifier
-                        .size(32.dp)
-                        .clickable { detailsExpanded = !detailsExpanded }
-                        .padding(4.dp),
-                )
-            }
-            if (detailsExpanded) {
-                Text(
-                    text = preset.parameterSummary(),
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.padding(top = 10.dp),
-                )
-                val flashText = preset.flash?.let {
-                    "闪光有效距离 ${formatDecimal(it.effectiveDistanceMinMeters)}-" +
-                        "${formatDecimal(it.effectiveDistanceMaxMeters)} m"
-                } ?: "无闪光参数"
-                Text(
-                    text = flashText,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 4.dp),
-                )
-                preset.regionOrBatch?.let {
+                        .weight(1f)
+                        .clickable(onClick = onClick),
+                    verticalArrangement = Arrangement.spacedBy(3.dp),
+                ) {
                     Text(
-                        text = it,
+                        text = preset.displayName,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        text = preset.parameterSummary(),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Text(
+                        text = preset.flash?.let {
+                            "闪光 ${formatDecimal(it.effectiveDistanceMinMeters)}-" +
+                                "${formatDecimal(it.effectiveDistanceMaxMeters)} m"
+                        } ?: "无闪光参数",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 4.dp),
                     )
                 }
-                expandedContent?.let { content ->
-                    Spacer(modifier = Modifier.height(10.dp))
-                    content()
-                }
+            }
+            if (selected && expandedContent != null) {
+                Spacer(modifier = Modifier.height(10.dp))
+                expandedContent()
             }
         }
+    }
+}
+
+@Composable
+private fun PresetImagePreviewDialog(
+    preset: DisposableCameraPreset,
+    onDismiss: () -> Unit,
+) {
+    val imageResource = presetImageResource(preset) ?: return
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            shape = RoundedCornerShape(12.dp),
+            color = MaterialTheme.colorScheme.surface,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(20.dp),
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Image(
+                    painter = painterResource(imageResource),
+                    contentDescription = "${preset.displayName} 参考图",
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 520.dp)
+                )
+            }
+        }
+    }
+}
+
+private fun presetImageResource(preset: DisposableCameraPreset): Int? {
+    return when (preset.id) {
+        "kodak-funsaver-800" -> R.drawable.preset_funsaver
+        "kodak-power-flash-800" -> R.drawable.preset_power_flash
+        "fujifilm-quicksnap-flash-400" -> R.drawable.preset_quick_snap
+        "fujifilm-c400-jelly" -> R.drawable.preset_c400
+        else -> null
     }
 }
 
@@ -963,6 +1005,12 @@ private fun PresetSettingsDialog(
     var pendingPresetId by rememberSaveable(selectedPreset.id) {
         mutableStateOf(selectedPreset.id)
     }
+    var imagePreviewPreset by remember {
+        mutableStateOf<DisposableCameraPreset?>(null)
+    }
+    var manualEditorExpanded by rememberSaveable(selectedPreset.id) {
+        mutableStateOf(selectedPreset.id == ManualCameraConfig.MANUAL_PRESET_ID)
+    }
     var manualIso by rememberSaveable(manualConfig) {
         mutableStateOf(manualConfig.iso.toString())
     }
@@ -1032,11 +1080,23 @@ private fun PresetSettingsDialog(
                     modifier = Modifier.padding(bottom = 4.dp),
                 )
                 presets.forEach { preset ->
+                    val isManualPreset =
+                        preset.id == ManualCameraConfig.MANUAL_PRESET_ID
                     PresetCard(
                         preset = preset,
                         selected = preset.id == pendingPresetId,
-                        onClick = { pendingPresetId = preset.id },
-                        expandedContent = if (preset.id == ManualCameraConfig.MANUAL_PRESET_ID) {
+                        onClick = {
+                            if (isManualPreset && pendingPresetId == preset.id) {
+                                manualEditorExpanded = !manualEditorExpanded
+                            } else {
+                                pendingPresetId = preset.id
+                                manualEditorExpanded = isManualPreset
+                            }
+                        },
+                        onImageClick = { imagePreviewPreset = preset },
+                        expandedContent = if (
+                            isManualPreset && manualEditorExpanded
+                        ) {
                             {
                                 ManualCameraConfigEditor(
                                     iso = manualIso,
@@ -1074,6 +1134,12 @@ private fun PresetSettingsDialog(
         titleContentColor = MaterialTheme.colorScheme.onSurface,
         textContentColor = MaterialTheme.colorScheme.onSurface,
     )
+    imagePreviewPreset?.let { preset ->
+        PresetImagePreviewDialog(
+            preset = preset,
+            onDismiss = { imagePreviewPreset = null },
+        )
+    }
 }
 
 @Composable
