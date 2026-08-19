@@ -448,9 +448,8 @@ internal object GpuFilmExposureRenderer {
         varying vec2 vTextureCoordinate;
 
         const float TARGET_LUMINANCE = 0.18;
-        const float SHADOW_EDGE_LUMINANCE = 0.02;
         const float MIDDLE_GRAY_LUMINANCE = 0.18;
-        const float HIGHLIGHT_EDGE_LUMINANCE = 0.98;
+        const float DISPLAY_EXPOSURE_SCALE = 0.5;
         const float OUTSIDE_EXTENSION_STOPS = 2.0;
         const float LUMINANCE_EPSILON = 0.000001;
 
@@ -476,34 +475,31 @@ internal object GpuFilmExposureRenderer {
             return from + (to - from) * smoothUnit(progress);
         }
 
+        float displayLuminance(float deltaEv) {
+            return MIDDLE_GRAY_LUMINANCE *
+                exp2(deltaEv * DISPLAY_EXPOSURE_SCALE);
+        }
+
         float filmLuminance(float deltaEv) {
             if (deltaEv < -uShadowLatitude) {
                 float progress =
                     (-deltaEv - uShadowLatitude) / OUTSIDE_EXTENSION_STOPS;
-                return SHADOW_EDGE_LUMINANCE * (1.0 - smoothUnit(progress));
-            }
-            if (deltaEv < 0.0) {
-                float progress = (deltaEv + uShadowLatitude) / uShadowLatitude;
                 return interpolateLuminance(
-                    SHADOW_EDGE_LUMINANCE,
-                    MIDDLE_GRAY_LUMINANCE,
+                    displayLuminance(-uShadowLatitude),
+                    0.0,
                     progress
                 );
             }
-            if (deltaEv <= uHighlightLatitude) {
+            if (deltaEv > uHighlightLatitude) {
+                float progress =
+                    (deltaEv - uHighlightLatitude) / OUTSIDE_EXTENSION_STOPS;
                 return interpolateLuminance(
-                    MIDDLE_GRAY_LUMINANCE,
-                    HIGHLIGHT_EDGE_LUMINANCE,
-                    deltaEv / uHighlightLatitude
+                    displayLuminance(uHighlightLatitude),
+                    1.0,
+                    progress
                 );
             }
-            float progress =
-                (deltaEv - uHighlightLatitude) / OUTSIDE_EXTENSION_STOPS;
-            return interpolateLuminance(
-                HIGHLIGHT_EDGE_LUMINANCE,
-                1.0,
-                progress
-            );
+            return displayLuminance(deltaEv);
         }
 
         float grainNoise(vec2 coordinate) {

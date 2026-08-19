@@ -1,6 +1,7 @@
 package com.lightmeter.app.filmpreview
 
 import kotlin.math.abs
+import kotlin.math.pow
 
 internal object FilmResponseCurve {
     fun targetLuminance(
@@ -17,42 +18,36 @@ internal object FilmResponseCurve {
                 val progress = (
                     (-deltaEv - shadowLatitudeStops) / OUTSIDE_EXTENSION_STOPS
                     ).coerceIn(0.0, 1.0)
-                SHADOW_EDGE_LUMINANCE * (1.0 - smoothstep(progress))
-            }
-
-            deltaEv < 0.0 -> {
-                val progress = (
-                    (deltaEv + shadowLatitudeStops) / shadowLatitudeStops
-                    ).coerceIn(0.0, 1.0)
                 interpolate(
-                    from = SHADOW_EDGE_LUMINANCE,
-                    to = MIDDLE_GRAY_LUMINANCE,
+                    from = displayLuminance(-shadowLatitudeStops),
+                    to = 0.0,
                     progress = progress,
                 )
             }
 
-            deltaEv <= highlightLatitudeStops -> {
-                val progress = (deltaEv / highlightLatitudeStops).coerceIn(0.0, 1.0)
+            deltaEv > highlightLatitudeStops -> {
+                val progress = (
+                    (deltaEv - highlightLatitudeStops) / OUTSIDE_EXTENSION_STOPS
+                    ).coerceIn(0.0, 1.0)
                 interpolate(
-                    from = MIDDLE_GRAY_LUMINANCE,
-                    to = HIGHLIGHT_EDGE_LUMINANCE,
+                    from = displayLuminance(highlightLatitudeStops),
+                    to = 1.0,
                     progress = progress,
                 )
             }
 
             else -> {
-                val progress = (
-                    (deltaEv - highlightLatitudeStops) / OUTSIDE_EXTENSION_STOPS
-                    ).coerceIn(0.0, 1.0)
-                interpolate(
-                    from = HIGHLIGHT_EDGE_LUMINANCE,
-                    to = 1.0,
-                    progress = progress,
-                )
+                displayLuminance(deltaEv)
             }
         }.let {
             if (abs(it) < LUMINANCE_EPSILON) 0.0 else it.coerceIn(0.0, 1.0)
         }
+    }
+
+    private fun displayLuminance(deltaEv: Double): Double {
+        return MIDDLE_GRAY_LUMINANCE * 2.0.pow(
+            deltaEv * DISPLAY_EXPOSURE_SCALE,
+        )
     }
 
     private fun interpolate(from: Double, to: Double, progress: Double): Double {
@@ -64,9 +59,8 @@ internal object FilmResponseCurve {
         return normalized * normalized * (3.0 - 2.0 * normalized)
     }
 
-    private const val SHADOW_EDGE_LUMINANCE = 0.02
     private const val MIDDLE_GRAY_LUMINANCE = 0.18
-    private const val HIGHLIGHT_EDGE_LUMINANCE = 0.98
+    private const val DISPLAY_EXPOSURE_SCALE = 0.5
     private const val OUTSIDE_EXTENSION_STOPS = 2.0
     private const val LUMINANCE_EPSILON = 1e-9
 }
