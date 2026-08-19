@@ -442,6 +442,7 @@ private fun FilmPreviewWorkspace(
                         referenceEv100 = presetReferenceEv100,
                         highlightLatitudeStops = preset.film.highlightLatitudeStops,
                         shadowLatitudeStops = preset.film.shadowLatitudeStops,
+                        baseGrainIntensity = preset.film.baseGrainIntensity,
                     )
                 }.getOrNull()
             }

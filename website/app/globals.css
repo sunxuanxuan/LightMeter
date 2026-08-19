@@ -1393,17 +1393,11 @@ textarea:focus-visible {
     position: sticky;
     z-index: 40;
     top: 64px;
-    overflow-x: auto;
     margin: 0 -14px;
     padding: 8px 14px 0;
     background: color-mix(in srgb, var(--background) 94%, transparent);
     border-bottom: 1px solid var(--border);
     backdrop-filter: blur(16px);
-    scrollbar-width: none;
-  }
-
-  .guide-toc::-webkit-scrollbar {
-    display: none;
   }
 
   .guide-toc p {
@@ -1411,15 +1405,19 @@ textarea:focus-visible {
   }
 
   .guide-toc nav {
-    display: flex;
-    min-width: max-content;
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 0;
   }
 
   .guide-toc a {
-    flex: 0 0 auto;
-    padding: 6px 11px;
+    min-width: 0;
+    padding: 7px 5px;
     border-left: 0;
     border-bottom: 2px solid var(--border);
+    overflow-wrap: anywhere;
+    text-align: center;
+    line-height: 1.35;
   }
 
   .guide-toc__link--active,

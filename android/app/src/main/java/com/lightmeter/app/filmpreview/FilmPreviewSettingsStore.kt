@@ -28,6 +28,7 @@ data class ManualCameraConfig(
             iso = iso,
             highlightLatitudeStops = 3.0,
             shadowLatitudeStops = 2.0,
+            baseGrainIntensity = FilmGrainModel.baseIntensityForIso(iso),
             evidence = EvidenceLevel.ESTIMATED,
         ),
         optics = FixedOptics(

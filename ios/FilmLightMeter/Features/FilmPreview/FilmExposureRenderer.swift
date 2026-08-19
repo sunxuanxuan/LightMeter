@@ -51,9 +51,17 @@ enum FilmExposureRenderer {
                 shadowLatitudeStops: preset.film.shadowLatitudeStops
             )
             let gain = outputLuminance / max(sourceLuminance, luminanceEpsilon)
-            pixels[index] = linearToByte(red * gain * alpha)
-            pixels[index + 1] = linearToByte(green * gain * alpha)
-            pixels[index + 2] = linearToByte(blue * gain * alpha)
+            let pixelIndex = index / 4
+            let grain = FilmGrainModel.noise(
+                x: pixelIndex % width,
+                y: pixelIndex / width
+            ) * FilmGrainModel.intensity(
+                baseGrainIntensity: preset.film.baseGrainIntensity,
+                deltaEV: pixelEV100 - referenceEV100
+            )
+            pixels[index] = linearToByte((red * gain + grain) * alpha)
+            pixels[index + 1] = linearToByte((green * gain + grain) * alpha)
+            pixels[index + 2] = linearToByte((blue * gain + grain) * alpha)
         }
 
         guard let provider = CGDataProvider(data: Data(pixels) as CFData) else {

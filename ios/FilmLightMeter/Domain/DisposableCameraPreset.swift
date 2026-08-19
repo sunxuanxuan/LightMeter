@@ -19,6 +19,7 @@ public struct FilmProfile: Codable, Equatable, Sendable {
     public let iso: Int
     public let highlightLatitudeStops: Double
     public let shadowLatitudeStops: Double
+    public let baseGrainIntensity: Double
     public let evidence: EvidenceLevel
 
     public init(
@@ -26,15 +27,18 @@ public struct FilmProfile: Codable, Equatable, Sendable {
         iso: Int,
         highlightLatitudeStops: Double,
         shadowLatitudeStops: Double,
+        baseGrainIntensity: Double,
         evidence: EvidenceLevel
     ) {
         precondition(iso > 0)
         precondition(highlightLatitudeStops > 0)
         precondition(shadowLatitudeStops > 0)
+        precondition((0...0.1).contains(baseGrainIntensity))
         self.name = name
         self.iso = iso
         self.highlightLatitudeStops = highlightLatitudeStops
         self.shadowLatitudeStops = shadowLatitudeStops
+        self.baseGrainIntensity = baseGrainIntensity
         self.evidence = evidence
     }
 }
@@ -163,6 +167,7 @@ public struct ManualCameraConfig: Codable, Equatable, Sendable {
                 iso: iso,
                 highlightLatitudeStops: 3,
                 shadowLatitudeStops: 2,
+                baseGrainIntensity: FilmGrainModel.baseIntensity(forISO: iso),
                 evidence: .estimated
             ),
             optics: FixedOptics(
@@ -191,6 +196,7 @@ public enum BuiltInDisposableCameraRepository {
                 iso: 800,
                 highlightLatitudeStops: 3,
                 shadowLatitudeStops: 2,
+                baseGrainIntensity: 0.018,
                 evidence: .estimated
             ),
             optics: FixedOptics(
@@ -216,6 +222,7 @@ public enum BuiltInDisposableCameraRepository {
                 iso: 800,
                 highlightLatitudeStops: 3,
                 shadowLatitudeStops: 2,
+                baseGrainIntensity: 0.018,
                 evidence: .estimated
             ),
             optics: FixedOptics(
@@ -241,6 +248,7 @@ public enum BuiltInDisposableCameraRepository {
                 iso: 400,
                 highlightLatitudeStops: 3,
                 shadowLatitudeStops: 5 / 3,
+                baseGrainIntensity: 0.012,
                 evidence: .estimated
             ),
             optics: FixedOptics(
@@ -266,6 +274,7 @@ public enum BuiltInDisposableCameraRepository {
                 iso: 400,
                 highlightLatitudeStops: 3,
                 shadowLatitudeStops: 2,
+                baseGrainIntensity: 0.011,
                 evidence: .estimated
             ),
             optics: FixedOptics(
