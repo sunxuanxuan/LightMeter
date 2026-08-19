@@ -442,6 +442,10 @@ private fun CameraContent(
     )
     val isZoomReady = cameraZoomState.isInitialized &&
         abs(cameraZoomState.zoomRatio - effectiveZoomRatio) <= ZOOM_RATIO_TOLERANCE
+    val isViewfinderReady = previewSize.width > 0 &&
+        previewSize.height > 0 &&
+        state.cameraOptics != null &&
+        isZoomReady
     val normalizedViewfinder = remember(projection, effectiveZoomRatio) {
         projection.viewfinderAt(effectiveZoomRatio.toDouble())
     }
@@ -645,12 +649,14 @@ private fun CameraContent(
                     }
                 }
 
-                CameraViewfinderMask(
-                    viewfinder = normalizedViewfinder,
-                    modifier = Modifier.fillMaxSize(),
-                )
+                if (isViewfinderReady) {
+                    CameraViewfinderMask(
+                        viewfinder = normalizedViewfinder,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
 
-                if (!state.isFrozen || frozenChromeVisible) {
+                if (isViewfinderReady && (!state.isFrozen || frozenChromeVisible)) {
                     ViewfinderOverlay(
                         state = state,
                         viewfinder = normalizedViewfinder,

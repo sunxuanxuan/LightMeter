@@ -20,7 +20,7 @@ class FilmPreviewEngineTest {
     fun fixedCameraParametersProduceExpectedReferenceEv100() {
         val reference = FilmPreviewEngine.presetEv100(quickSnap)
 
-        assertEquals(11.2877, reference, 0.0001)
+        assertEquals(11.7731, reference, 0.0001)
     }
 
     @Test
@@ -74,9 +74,43 @@ class FilmPreviewEngineTest {
         val presets = BuiltInDisposableCameraRepository.presets()
         val keys = presets.map { it.id to it.presetVersion }
 
-        assertEquals(6, presets.size)
+        assertEquals(4, presets.size)
         assertEquals(keys.size, keys.toSet().size)
         assertTrue(presets.all { it.presetVersion > 0 })
+    }
+
+    @Test
+    fun builtInPresetParametersMatchDisposableCameraReference() {
+        val presets = BuiltInDisposableCameraRepository.presets().associateBy { it.id }
+
+        assertCameraParameters(
+            requireNotNull(presets["kodak-funsaver-800"]),
+            iso = 800,
+            aperture = 10.0,
+            focalLengthMm = 31.0,
+            shutterSeconds = 1.0 / 100.0,
+        )
+        assertCameraParameters(
+            requireNotNull(presets["kodak-power-flash-800"]),
+            iso = 800,
+            aperture = 10.0,
+            focalLengthMm = 30.0,
+            shutterSeconds = 1.0 / 125.0,
+        )
+        assertCameraParameters(
+            requireNotNull(presets["fujifilm-quicksnap-flash-400"]),
+            iso = 400,
+            aperture = 10.0,
+            focalLengthMm = 32.0,
+            shutterSeconds = 1.0 / 140.0,
+        )
+        assertCameraParameters(
+            requireNotNull(presets["fujifilm-c400-jelly"]),
+            iso = 400,
+            aperture = 11.0,
+            focalLengthMm = 32.0,
+            shutterSeconds = 1.0 / 125.0,
+        )
     }
 
     @Test
@@ -173,7 +207,7 @@ class FilmPreviewEngineTest {
             ),
         )
 
-        viewModel.selectPreset("fujifilm-quicksnap-waterproof-800")
+        viewModel.selectPreset("fujifilm-c400-jelly")
 
         val state = viewModel.state.value
         assertNull(state.meteredEv100)
@@ -233,6 +267,19 @@ class FilmPreviewEngineTest {
 
         viewModel.resumeLivePreview()
         assertTrue(!viewModel.state.value.isFrozen)
+    }
+
+    private fun assertCameraParameters(
+        preset: DisposableCameraPreset,
+        iso: Int,
+        aperture: Double,
+        focalLengthMm: Double,
+        shutterSeconds: Double,
+    ) {
+        assertEquals(iso, preset.film.iso)
+        assertEquals(aperture, preset.optics.aperture, 0.0)
+        assertEquals(focalLengthMm, preset.optics.focalLengthMm, 0.0)
+        assertEquals(shutterSeconds, preset.shutterSeconds, 1e-12)
     }
 }
 

@@ -8,7 +8,7 @@ import XCTest
 final class DomainTests: XCTestCase {
     func testDisposableCameraPresetsMatchAndroidCatalog() throws {
         let presets = BuiltInDisposableCameraRepository.presets
-        XCTAssertEqual(presets.count, 6)
+        XCTAssertEqual(presets.count, 4)
         XCTAssertEqual(Set(presets.map(\.id)).count, presets.count)
         XCTAssertTrue(presets.allSatisfy { $0.presetVersion > 0 })
 
@@ -17,11 +17,11 @@ final class DomainTests: XCTestCase {
                 id: "fujifilm-quicksnap-flash-400"
             )
         )
-        XCTAssertEqual(quickSnap.presetVersion, 2)
+        XCTAssertEqual(quickSnap.presetVersion, 3)
         XCTAssertEqual(quickSnap.film.iso, 400)
         XCTAssertEqual(quickSnap.optics.aperture, 10)
         XCTAssertEqual(quickSnap.optics.focalLengthMillimeters, 32)
-        XCTAssertEqual(quickSnap.shutterSeconds, 1.0 / 100, accuracy: 1e-12)
+        XCTAssertEqual(quickSnap.shutterSeconds, 1.0 / 140, accuracy: 1e-12)
     }
 
     func testDisposableCameraReferenceEVMatchesAndroid() throws {
@@ -32,8 +32,45 @@ final class DomainTests: XCTestCase {
         )
         XCTAssertEqual(
             FilmPreviewEngine.presetEV100(quickSnap),
-            11.2877,
+            11.7731,
             accuracy: 0.0001
+        )
+    }
+
+    func testDisposableCameraParametersMatchReference() throws {
+        let presets = Dictionary(
+            uniqueKeysWithValues: BuiltInDisposableCameraRepository.presets.map {
+                ($0.id, $0)
+            }
+        )
+
+        assertCameraParameters(
+            try XCTUnwrap(presets["kodak-funsaver-800"]),
+            iso: 800,
+            aperture: 10,
+            focalLengthMillimeters: 31,
+            shutterSeconds: 1.0 / 100
+        )
+        assertCameraParameters(
+            try XCTUnwrap(presets["kodak-power-flash-800"]),
+            iso: 800,
+            aperture: 10,
+            focalLengthMillimeters: 30,
+            shutterSeconds: 1.0 / 125
+        )
+        assertCameraParameters(
+            try XCTUnwrap(presets["fujifilm-quicksnap-flash-400"]),
+            iso: 400,
+            aperture: 10,
+            focalLengthMillimeters: 32,
+            shutterSeconds: 1.0 / 140
+        )
+        assertCameraParameters(
+            try XCTUnwrap(presets["fujifilm-c400-jelly"]),
+            iso: 400,
+            aperture: 11,
+            focalLengthMillimeters: 32,
+            shutterSeconds: 1.0 / 125
         )
     }
 
@@ -81,6 +118,26 @@ final class DomainTests: XCTestCase {
         XCTAssertEqual(preset.shutterSeconds, 1.0 / 60, accuracy: 1e-12)
         XCTAssertEqual(preset.optics.aperture, 8)
         XCTAssertEqual(preset.optics.focalLengthMillimeters, 40)
+    }
+
+    private func assertCameraParameters(
+        _ preset: DisposableCameraPreset,
+        iso: Int,
+        aperture: Double,
+        focalLengthMillimeters: Double,
+        shutterSeconds: Double
+    ) {
+        XCTAssertEqual(preset.film.iso, iso)
+        XCTAssertEqual(preset.optics.aperture, aperture)
+        XCTAssertEqual(
+            preset.optics.focalLengthMillimeters,
+            focalLengthMillimeters
+        )
+        XCTAssertEqual(
+            preset.shutterSeconds,
+            shutterSeconds,
+            accuracy: 1e-12
+        )
     }
 
     func testFilmResponseCurveKeepsMiddleGrayAnchor() {

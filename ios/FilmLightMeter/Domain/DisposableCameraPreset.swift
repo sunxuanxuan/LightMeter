@@ -184,7 +184,7 @@ public enum BuiltInDisposableCameraRepository {
             id: "kodak-funsaver-800",
             presetVersion: 1,
             brand: "Kodak",
-            model: "FunSaver / Fun Saver",
+            model: "FunSaver",
             regionOrBatch: "31mm · 1/100s 代表版本",
             film: FilmProfile(
                 name: "Kodak ISO 800 彩色负片",
@@ -207,37 +207,12 @@ public enum BuiltInDisposableCameraRepository {
         ),
         DisposableCameraPreset(
             id: "kodak-power-flash-800",
-            presetVersion: 1,
+            presetVersion: 2,
             brand: "Kodak",
             model: "Power Flash",
-            regionOrBatch: "镜头与快门采用公开资料近似",
+            regionOrBatch: "30mm · f/10 · 1/125s · ISO 800",
             film: FilmProfile(
                 name: "Kodak ISO 800 彩色负片",
-                iso: 800,
-                highlightLatitudeStops: 3,
-                shadowLatitudeStops: 2,
-                evidence: .estimated
-            ),
-            optics: FixedOptics(
-                aperture: 16,
-                focalLengthMillimeters: 30,
-                minimumFocusMeters: 1
-            ),
-            shutterSeconds: 1 / 100,
-            flash: FlashProfile(
-                effectiveDistanceMinMeters: 1.2,
-                effectiveDistanceMaxMeters: 4.5
-            ),
-            exposureEvidence: .estimated
-        ),
-        DisposableCameraPreset(
-            id: "kodak-sport-waterproof-800",
-            presetVersion: 1,
-            brand: "Kodak",
-            model: "Sport / Waterproof",
-            regionOrBatch: "镜头与快门采用同类机型保守近似",
-            film: FilmProfile(
-                name: "Kodak UltraMax ISO 800 彩色负片",
                 iso: 800,
                 highlightLatitudeStops: 3,
                 shadowLatitudeStops: 2,
@@ -249,15 +224,18 @@ public enum BuiltInDisposableCameraRepository {
                 minimumFocusMeters: 1
             ),
             shutterSeconds: 1 / 125,
-            flash: nil,
+            flash: FlashProfile(
+                effectiveDistanceMinMeters: 1.2,
+                effectiveDistanceMaxMeters: 4.5
+            ),
             exposureEvidence: .estimated
         ),
         DisposableCameraPreset(
             id: "fujifilm-quicksnap-flash-400",
-            presetVersion: 2,
+            presetVersion: 3,
             brand: "Fujifilm",
             model: "QuickSnap Flash 400",
-            regionOrBatch: "1/100s 版本",
+            regionOrBatch: "32mm · f/10 · 1/140s · ISO 400",
             film: FilmProfile(
                 name: "FUJICOLOR SUPERIA X-TRA 400",
                 iso: 400,
@@ -270,7 +248,7 @@ public enum BuiltInDisposableCameraRepository {
                 focalLengthMillimeters: 32,
                 minimumFocusMeters: 1
             ),
-            shutterSeconds: 1 / 100,
+            shutterSeconds: 1 / 140,
             flash: FlashProfile(
                 effectiveDistanceMinMeters: 1,
                 effectiveDistanceMaxMeters: 3
@@ -278,33 +256,11 @@ public enum BuiltInDisposableCameraRepository {
             exposureEvidence: .official
         ),
         DisposableCameraPreset(
-            id: "fujifilm-quicksnap-waterproof-800",
-            presetVersion: 1,
-            brand: "Fujifilm",
-            model: "QuickSnap Waterproof / Marine",
-            regionOrBatch: "ISO 800 · 10m 防水版本",
-            film: FilmProfile(
-                name: "Fujifilm ISO 800 彩色负片",
-                iso: 800,
-                highlightLatitudeStops: 3,
-                shadowLatitudeStops: 2,
-                evidence: .estimated
-            ),
-            optics: FixedOptics(
-                aperture: 10,
-                focalLengthMillimeters: 32,
-                minimumFocusMeters: 1
-            ),
-            shutterSeconds: 1 / 125,
-            flash: nil,
-            exposureEvidence: .official
-        ),
-        DisposableCameraPreset(
             id: "fujifilm-c400-jelly",
-            presetVersion: 1,
+            presetVersion: 2,
             brand: "Fujifilm",
             model: "C400 果冻胶卷相机",
-            regionOrBatch: "预装 C400 · 可重复装卷",
+            regionOrBatch: "32mm · f/11 · 1/125s · ISO 400 · 单次 36 张",
             film: FilmProfile(
                 name: "Fujifilm C400 ISO 400 彩色负片",
                 iso: 400,
@@ -314,7 +270,7 @@ public enum BuiltInDisposableCameraRepository {
             ),
             optics: FixedOptics(
                 aperture: 11,
-                focalLengthMillimeters: 31,
+                focalLengthMillimeters: 32,
                 minimumFocusMeters: 1
             ),
             shutterSeconds: 1 / 125,
