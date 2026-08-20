@@ -318,6 +318,9 @@ class MeteringAnalyzer(
         val centerScale = sqrt(meteringConfig.centerAreaPercent / 100.0)
         val centerHalfWidth = viewfinder.width * centerScale / 2.0
         val centerHalfHeight = viewfinder.height * centerScale / 2.0
+        val centerCropScale = sqrt(meteringConfig.centerCropPercent / 100.0)
+        val centerCropHalfWidth = viewfinder.width * centerCropScale / 2.0
+        val centerCropHalfHeight = viewfinder.height * centerCropScale / 2.0
         val sampleStep = if (
             meteringConfig.mode == MeteringMode.SPOT &&
             meteringConfig.spotAreaPercent <= 2
@@ -361,6 +364,16 @@ class MeteringAnalyzer(
                             }
                         }
 
+                        MeteringMode.CENTER_CROP_AVERAGE -> {
+                            if (
+                                abs(previewPoint.first - viewfinder.centerX) <= centerCropHalfWidth &&
+                                abs(previewPoint.second - viewfinder.centerY) <= centerCropHalfHeight
+                            ) {
+                                primaryHistogram[luminance]++
+                                primarySampleCount++
+                            }
+                        }
+
                         MeteringMode.CENTER_WEIGHTED -> {
                             if (
                                 abs(previewPoint.first - viewfinder.centerX) <= centerHalfWidth &&
@@ -381,11 +394,15 @@ class MeteringAnalyzer(
         }
 
         if (primarySampleCount < MIN_SAMPLE_COUNT) return null
-        val primaryLuminance = trimmedLinearMean(
-            histogram = primaryHistogram,
-            sampleCount = primarySampleCount,
-            luminanceRange = luminanceRange,
-        )
+        val primaryLuminance = if (meteringConfig.mode == MeteringMode.CENTER_CROP_AVERAGE) {
+            geometricLuminanceMean(primaryHistogram, luminanceRange)
+        } else {
+            trimmedLinearMean(
+                histogram = primaryHistogram,
+                sampleCount = primarySampleCount,
+                luminanceRange = luminanceRange,
+            )
+        }
         if (meteringConfig.mode != MeteringMode.CENTER_WEIGHTED) {
             return primaryLuminance
         }
@@ -398,6 +415,23 @@ class MeteringAnalyzer(
         val centerWeight = meteringConfig.centerWeightPercent / 100.0
         return primaryLuminance * centerWeight +
             secondaryLuminance * (1.0 - centerWeight)
+    }
+
+    private fun geometricLuminanceMean(
+        histogram: IntArray,
+        luminanceRange: YuvLuminanceRange,
+    ): Double {
+        var sampleCount = 0
+        var logLuminanceSum = 0.0
+        histogram.forEachIndexed { rawLuminance, count ->
+            if (count == 0) return@forEachIndexed
+            logLuminanceSum += kotlin.math.ln(
+                YuvLuminance.linear(rawLuminance, luminanceRange)
+                    .coerceAtLeast(LUMINANCE_EPSILON),
+            ) * count
+            sampleCount += count
+        }
+        return kotlin.math.exp(logLuminanceSum / sampleCount.coerceAtLeast(1))
     }
 
     private fun trimmedLinearMean(
@@ -454,15 +488,16 @@ class MeteringAnalyzer(
         val cropRect = image.cropRect
         if (cropRect.width() <= 0 || cropRect.height() <= 0) return null
 
-        val previewAspectRatio = meteringConfig.previewAspectRatio
+        val rotationDegrees = image.imageInfo.rotationDegrees
+        val isQuarterTurn = rotationDegrees == 90 || rotationDegrees == 270
         val mapWidth: Int
         val mapHeight: Int
-        if (previewAspectRatio <= 1.0) {
-            mapHeight = EXPOSURE_MAP_LONG_EDGE
-            mapWidth = (mapHeight * previewAspectRatio).toInt().coerceAtLeast(1)
+        if (isQuarterTurn) {
+            mapWidth = cropRect.height()
+            mapHeight = cropRect.width()
         } else {
-            mapWidth = EXPOSURE_MAP_LONG_EDGE
-            mapHeight = (mapWidth / previewAspectRatio).toInt().coerceAtLeast(1)
+            mapWidth = cropRect.width()
+            mapHeight = cropRect.height()
         }
 
         val exposureSeconds = metadata.exposureTimeNs / 1_000_000_000.0
@@ -470,58 +505,46 @@ class MeteringAnalyzer(
         val pixelEv100 = FloatArray(mapWidth * mapHeight)
         val clippedHighlights = BooleanArray(mapWidth * mapHeight)
         val buffer = plane.buffer
-        val sampleOffsets = doubleArrayOf(0.25, 0.75)
+        val evByLuminance = FloatArray(256) { rawLuminance ->
+            (
+                settingEv100 +
+                    log2(
+                        YuvLuminance.linear(rawLuminance, luminanceRange) / TARGET_LUMINANCE,
+                    ) +
+                    meteringConfig.calibrationOffset
+                ).toFloat()
+        }
+        val clippedByLuminance = BooleanArray(256) { rawLuminance ->
+            YuvLuminance.isHighlightClipped(rawLuminance, luminanceRange)
+        }
 
         for (mapY in 0 until mapHeight) {
             for (mapX in 0 until mapWidth) {
                 val mapIndex = mapY * mapWidth + mapX
-                val centerX = (mapX + 0.5) / mapWidth
-                val centerY = (mapY + 0.5) / mapHeight
-                if (!meteringConfig.viewfinderRect.contains(centerX, centerY)) {
-                    pixelEv100[mapIndex] = Float.NaN
-                    continue
-                }
-
-                var linearLuminanceSum = 0.0
-                var clippedSampleCount = 0
-                var sampleCount = 0
-                for (offsetY in sampleOffsets) {
-                    val previewY = (mapY + offsetY) / mapHeight
-                    for (offsetX in sampleOffsets) {
-                        val previewX = (mapX + offsetX) / mapWidth
-                        if (!meteringConfig.viewfinderRect.contains(previewX, previewY)) {
-                            continue
-                        }
-                        val index = mapPreviewPointToBufferIndex(
-                            previewX = previewX,
-                            previewY = previewY,
-                            rotationDegrees = image.imageInfo.rotationDegrees,
-                            cropRect = cropRect,
-                            rowStride = plane.rowStride,
-                            pixelStride = plane.pixelStride,
-                        )
-                        if (index !in 0 until buffer.limit()) continue
-                        val rawLuminance = buffer.get(index).toInt() and 0xFF
-                        linearLuminanceSum += YuvLuminance.linear(rawLuminance, luminanceRange)
-                        if (YuvLuminance.isHighlightClipped(rawLuminance, luminanceRange)) {
-                            clippedSampleCount++
-                        }
-                        sampleCount++
+                val sourceX: Int
+                val sourceY: Int
+                when (rotationDegrees) {
+                    90 -> {
+                        sourceX = cropRect.left + mapY
+                        sourceY = cropRect.bottom - mapX - 1
+                    }
+                    180 -> {
+                        sourceX = cropRect.right - mapX - 1
+                        sourceY = cropRect.bottom - mapY - 1
+                    }
+                    270 -> {
+                        sourceX = cropRect.right - mapY - 1
+                        sourceY = cropRect.top + mapX
+                    }
+                    else -> {
+                        sourceX = cropRect.left + mapX
+                        sourceY = cropRect.top + mapY
                     }
                 }
-                if (sampleCount == 0) {
-                    pixelEv100[mapIndex] = Float.NaN
-                    continue
-                }
-
-                clippedHighlights[mapIndex] =
-                    clippedSampleCount / sampleCount.toDouble() >= CLIPPED_SAMPLE_RATIO
-                val linearLuminance = linearLuminanceSum / sampleCount
-                pixelEv100[mapIndex] = (
-                    settingEv100 +
-                        log2(linearLuminance / TARGET_LUMINANCE) +
-                        meteringConfig.calibrationOffset
-                    ).toFloat()
+                val index = sourceY * plane.rowStride + sourceX * plane.pixelStride
+                val rawLuminance = buffer.get(index).toInt() and 0xFF
+                clippedHighlights[mapIndex] = clippedByLuminance[rawLuminance]
+                pixelEv100[mapIndex] = evByLuminance[rawLuminance]
             }
         }
 
@@ -571,55 +594,17 @@ class MeteringAnalyzer(
         }
     }
 
-    private fun mapPreviewPointToBufferIndex(
-        previewX: Double,
-        previewY: Double,
-        rotationDegrees: Int,
-        cropRect: Rect,
-        rowStride: Int,
-        pixelStride: Int,
-    ): Int {
-        val rawX: Double
-        val rawY: Double
-        when (rotationDegrees) {
-            90 -> {
-                rawX = previewY
-                rawY = 1.0 - previewX
-            }
-            180 -> {
-                rawX = 1.0 - previewX
-                rawY = 1.0 - previewY
-            }
-            270 -> {
-                rawX = 1.0 - previewY
-                rawY = previewX
-            }
-            else -> {
-                rawX = previewX
-                rawY = previewY
-            }
-        }
-        val x = (cropRect.left + rawX * cropRect.width())
-            .toInt()
-            .coerceIn(cropRect.left, cropRect.right - 1)
-        val y = (cropRect.top + rawY * cropRect.height())
-            .toInt()
-            .coerceIn(cropRect.top, cropRect.bottom - 1)
-        return y * rowStride + x * pixelStride
-    }
-
     companion object {
         private const val TAG = "MeteringAnalyzer"
         private const val ANALYSIS_INTERVAL_NS = 200_000_000L
         private const val METADATA_TOLERANCE_NS = 50_000_000L
         private const val MAX_METADATA_ENTRIES = 24
-        private const val EXPOSURE_MAP_LONG_EDGE = 480
-        private const val CLIPPED_SAMPLE_RATIO = 0.25
         private const val SAMPLE_STEP = 4
         private const val FINE_SAMPLE_STEP = 2
         private const val MIN_SAMPLE_COUNT = 32
         private const val TRIM_RATIO = 0.05
         private const val TARGET_LUMINANCE = 0.18
+        private const val LUMINANCE_EPSILON = 1e-6
         private const val SMOOTHING_WEIGHT = 0.44
     }
 }

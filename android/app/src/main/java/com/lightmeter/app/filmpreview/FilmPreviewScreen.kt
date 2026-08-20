@@ -511,7 +511,8 @@ private fun FilmPreviewWorkspace(
                     CameraPermissionState.GRANTED -> key(cameraSessionId) {
                         CameraPreviewView(
                         meteringConfig = MeteringConfig(
-                            mode = MeteringMode.AVERAGE,
+                            mode = MeteringMode.CENTER_CROP_AVERAGE,
+                            centerCropPercent = 60,
                             viewfinderRect = normalizedViewfinder,
                             previewAspectRatio = PREVIEW_ASPECT_RATIO.toDouble(),
                             targetZoomRatio = effectiveZoomRatio.toDouble(),
@@ -612,6 +613,8 @@ private fun FilmPreviewWorkspace(
                     adviceCode = state.evaluation?.adviceCode,
                     preset = preset,
                 ),
+                statusPrefix = adviceStatusPrefix(state.evaluation?.rating),
+                textColor = adviceTextColor(state.evaluation?.rating),
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 24.dp, vertical = 8.dp),
@@ -754,6 +757,8 @@ private fun BottomPresetButton(
 @Composable
 private fun ExposureAdvicePanel(
     text: String,
+    statusPrefix: String,
+    textColor: Color,
     modifier: Modifier = Modifier,
 ) {
     Surface(
@@ -762,10 +767,11 @@ private fun ExposureAdvicePanel(
         shape = RoundedCornerShape(8.dp),
     ) {
         Text(
-            text = text,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            text = statusPrefix + text,
+            color = textColor,
             style = MaterialTheme.typography.bodySmall,
-            textAlign = TextAlign.Center,
+            fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.Left,
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 14.dp, vertical = 10.dp),
@@ -1540,25 +1546,46 @@ private fun previewGuidance(
     adviceCode: PreviewAdviceCode?,
     preset: DisposableCameraPreset,
 ): String {
-    if (!isFrozen) {
-        return "确认构图后，点击中间按钮查看成片模拟。"
-    }
-    if (!isSimulationReady) {
+    if (isFrozen && !isSimulationReady) {
         return "正在根据当前机型和底片生成成片模拟。"
     }
     return when (adviceCode) {
         PreviewAdviceCode.USE_FLASH -> preset.flash?.let {
-            "建议开启闪光灯，并让主体保持在 " +
+            "画面过暗，建议开启闪光灯，并让主体保持在 " +
                 "${formatDecimal(it.effectiveDistanceMinMeters)}-" +
                 "${formatDecimal(it.effectiveDistanceMaxMeters)} m 内。"
-        } ?: "建议增加现场光线后再拍摄。"
+        } ?: "画面过暗，建议到光线更充足的地方拍摄。"
 
-        PreviewAdviceCode.AMBIENT_TOO_DARK -> "画面会偏暗，建议增加现场光线后再拍摄。"
-        PreviewAdviceCode.AMBIENT_TOO_BRIGHT -> "画面会偏亮，建议避开强光或调整构图。"
-        PreviewAdviceCode.SUITABLE -> "当前构图适合直接拍摄。"
+        PreviewAdviceCode.AMBIENT_TOO_DARK -> "画面偏暗，建议到光线更充足的地方拍摄。"
+        PreviewAdviceCode.AMBIENT_TOO_BRIGHT -> "画面偏亮，建议到光线稍暗的地方拍摄。"
+        PreviewAdviceCode.SEEK_SHADE -> "画面过亮，建议移到阴影处拍摄。"
+        PreviewAdviceCode.SUITABLE -> "画面亮度合适，可以正常拍摄。"
         PreviewAdviceCode.UNAVAILABLE,
         null,
-        -> "左右拖动中间滑块，对比手机画面和模拟成片。"
+        -> "正在分析画面亮度。"
+    }
+}
+
+private fun adviceStatusPrefix(rating: PreviewSceneRating?): String {
+    return when (rating) {
+        PreviewSceneRating.GOOD -> "✅ "
+        PreviewSceneRating.CAUTION -> "！ "
+        PreviewSceneRating.POOR -> "❌ "
+        PreviewSceneRating.UNAVAILABLE,
+        null,
+        -> ""
+    }
+}
+
+@Composable
+private fun adviceTextColor(rating: PreviewSceneRating?): Color {
+    return when (rating) {
+        PreviewSceneRating.GOOD -> Color(0xFF3FAE5A)
+        PreviewSceneRating.CAUTION -> Color(0xFFE08A19)
+        PreviewSceneRating.POOR -> Color(0xFFD84343)
+        PreviewSceneRating.UNAVAILABLE,
+        null,
+        -> MaterialTheme.colorScheme.onSurfaceVariant
     }
 }
 

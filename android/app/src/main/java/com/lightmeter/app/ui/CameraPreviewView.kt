@@ -151,5 +151,5 @@ private suspend fun awaitCapturedFrame(
     }
     return null
 }
-private const val FRAME_CAPTURE_TIMEOUT_NS = 600_000_000L
+private const val FRAME_CAPTURE_TIMEOUT_NS = 1_500_000_000L
 private const val FRAME_CAPTURE_POLL_INTERVAL_MS = 10L

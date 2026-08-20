@@ -97,7 +97,7 @@ object BuiltInDisposableCameraRepository : DisposableCameraRepository {
             iso = 100,
             highlightLatitudeStops = 3.0,
             shadowLatitudeStops = 2.0,
-            baseGrainIntensity = 0.006,
+            baseGrainIntensity = 0.005,
             evidence = EvidenceLevel.ESTIMATED,
         ),
         FilmProfile(
@@ -106,7 +106,7 @@ object BuiltInDisposableCameraRepository : DisposableCameraRepository {
             iso = 200,
             highlightLatitudeStops = 3.0,
             shadowLatitudeStops = 2.0,
-            baseGrainIntensity = 0.009,
+            baseGrainIntensity = 0.007,
             evidence = EvidenceLevel.ESTIMATED,
         ),
         FilmProfile(
@@ -115,7 +115,7 @@ object BuiltInDisposableCameraRepository : DisposableCameraRepository {
             iso = 400,
             highlightLatitudeStops = 3.0,
             shadowLatitudeStops = 2.0,
-            baseGrainIntensity = 0.012,
+            baseGrainIntensity = 0.010,
             evidence = EvidenceLevel.ESTIMATED,
         ),
         FilmProfile(
@@ -124,7 +124,7 @@ object BuiltInDisposableCameraRepository : DisposableCameraRepository {
             iso = 800,
             highlightLatitudeStops = 3.0,
             shadowLatitudeStops = 2.0,
-            baseGrainIntensity = 0.018,
+            baseGrainIntensity = 0.014,
             evidence = EvidenceLevel.ESTIMATED,
         ),
     )
@@ -141,7 +141,7 @@ object BuiltInDisposableCameraRepository : DisposableCameraRepository {
                 iso = 800,
                 highlightLatitudeStops = 3.0,
                 shadowLatitudeStops = 2.0,
-                baseGrainIntensity = 0.018,
+                baseGrainIntensity = 0.014,
                 evidence = EvidenceLevel.ESTIMATED,
             ),
             optics = FixedOptics(
@@ -167,7 +167,7 @@ object BuiltInDisposableCameraRepository : DisposableCameraRepository {
                 iso = 400,
                 highlightLatitudeStops = 3.0,
                 shadowLatitudeStops = 5.0 / 3.0,
-                baseGrainIntensity = 0.012,
+                baseGrainIntensity = 0.010,
                 evidence = EvidenceLevel.ESTIMATED,
             ),
             optics = FixedOptics(
@@ -193,7 +193,7 @@ object BuiltInDisposableCameraRepository : DisposableCameraRepository {
                 iso = 400,
                 highlightLatitudeStops = 3.0,
                 shadowLatitudeStops = 2.0,
-                baseGrainIntensity = 0.011,
+                baseGrainIntensity = 0.009,
                 evidence = EvidenceLevel.ESTIMATED,
             ),
             optics = FixedOptics(

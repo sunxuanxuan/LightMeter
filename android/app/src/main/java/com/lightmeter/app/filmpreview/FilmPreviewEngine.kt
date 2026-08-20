@@ -14,6 +14,7 @@ enum class PreviewAdviceCode {
     AMBIENT_TOO_DARK,
     AMBIENT_TOO_BRIGHT,
     USE_FLASH,
+    SEEK_SHADE,
     UNAVAILABLE,
 }
 
@@ -22,7 +23,10 @@ data class FilmPreviewEvaluation(
     val sceneDeltaEv: Double?,
     val rating: PreviewSceneRating,
     val adviceCode: PreviewAdviceCode,
-)
+) {
+    val baseEv100: Double get() = presetEv100
+    val realEv100: Double? get() = sceneDeltaEv?.plus(presetEv100)
+}
 
 object FilmPreviewEngine {
     fun presetEv100(preset: DisposableCameraPreset): Double {
@@ -52,26 +56,18 @@ object FilmPreviewEngine {
         }
 
         val deltaEv = meteredEv100 - presetEv100
-        val shadowLimit = -preset.film.shadowLatitudeStops
-        val highlightLimit = preset.film.highlightLatitudeStops
         val rating = when {
-            deltaEv <= shadowLimit - POOR_MARGIN_STOPS + COMPARISON_EPSILON ||
-                deltaEv >= highlightLimit + POOR_MARGIN_STOPS -
-                COMPARISON_EPSILON -> PreviewSceneRating.POOR
-
-            deltaEv <= shadowLimit + CAUTION_MARGIN_STOPS + COMPARISON_EPSILON ||
-                deltaEv >= highlightLimit - CAUTION_MARGIN_STOPS -
-                COMPARISON_EPSILON -> PreviewSceneRating.CAUTION
-
-            else -> PreviewSceneRating.GOOD
+            kotlin.math.abs(deltaEv) <= NORMAL_DELTA_EV -> PreviewSceneRating.GOOD
+            kotlin.math.abs(deltaEv) <= CAUTION_DELTA_EV -> PreviewSceneRating.CAUTION
+            else -> PreviewSceneRating.POOR
         }
         val advice = when {
-            deltaEv <= shadowLimit + COMPARISON_EPSILON &&
-                preset.flash != null -> PreviewAdviceCode.USE_FLASH
-            deltaEv <= shadowLimit + COMPARISON_EPSILON -> PreviewAdviceCode.AMBIENT_TOO_DARK
-            deltaEv >= highlightLimit - COMPARISON_EPSILON ->
-                PreviewAdviceCode.AMBIENT_TOO_BRIGHT
-            else -> PreviewAdviceCode.SUITABLE
+            rating == PreviewSceneRating.GOOD -> PreviewAdviceCode.SUITABLE
+            deltaEv < 0.0 && rating == PreviewSceneRating.POOR && preset.flash != null ->
+                PreviewAdviceCode.USE_FLASH
+            deltaEv < 0.0 -> PreviewAdviceCode.AMBIENT_TOO_DARK
+            rating == PreviewSceneRating.POOR -> PreviewAdviceCode.SEEK_SHADE
+            else -> PreviewAdviceCode.AMBIENT_TOO_BRIGHT
         }
         return FilmPreviewEvaluation(
             presetEv100 = presetEv100,
@@ -81,7 +77,6 @@ object FilmPreviewEngine {
         )
     }
 
-    private const val CAUTION_MARGIN_STOPS = 1.0
-    private const val POOR_MARGIN_STOPS = 1.0
-    private const val COMPARISON_EPSILON = 1e-9
+    private const val NORMAL_DELTA_EV = 1.0
+    private const val CAUTION_DELTA_EV = 2.0
 }
