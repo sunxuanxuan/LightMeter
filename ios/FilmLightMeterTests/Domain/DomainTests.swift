@@ -46,18 +46,11 @@ final class DomainTests: XCTestCase {
         )
 
         assertCameraParameters(
-            try XCTUnwrap(presets["kodak-funsaver-800"]),
+            try XCTUnwrap(presets["kodak-power-flash-800"]),
             iso: 800,
             aperture: 10,
             focalLengthMillimeters: 31,
             shutterSeconds: 1.0 / 100
-        )
-        assertCameraParameters(
-            try XCTUnwrap(presets["kodak-power-flash-800"]),
-            iso: 800,
-            aperture: 10,
-            focalLengthMillimeters: 30,
-            shutterSeconds: 1.0 / 125
         )
         assertCameraParameters(
             try XCTUnwrap(presets["fujifilm-quicksnap-flash-400"]),
@@ -72,6 +65,20 @@ final class DomainTests: XCTestCase {
             aperture: 11,
             focalLengthMillimeters: 32,
             shutterSeconds: 1.0 / 125
+        )
+        let ec35 = try XCTUnwrap(presets["kodak-ec35-reusable"])
+        assertCameraParameters(
+            ec35,
+            iso: 400,
+            aperture: 10,
+            focalLengthMillimeters: 25,
+            shutterSeconds: 1.0 / 100
+        )
+        XCTAssertTrue(ec35.isFilmSelectable)
+        XCTAssertEqual(ec35.compatibleFilms.map(\.iso), [100, 200, 400, 800])
+        XCTAssertEqual(
+            ec35.withFilm(id: "generic-color-800")?.film.iso,
+            800
         )
     }
 

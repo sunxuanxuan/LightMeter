@@ -123,8 +123,11 @@ class MeteringAnalyzer(
         try {
             val timestampNs = image.imageInfo.timestamp
             val captureRequestId = pendingFrameCaptureRequest.get()
+            val timestampRegressed = lastAnalyzedTimestampNs > 0L &&
+                timestampNs < lastAnalyzedTimestampNs
             if (
                 captureRequestId == 0 &&
+                !timestampRegressed &&
                 timestampNs - lastAnalyzedTimestampNs < ANALYSIS_INTERVAL_NS
             ) {
                 return
@@ -202,8 +205,9 @@ class MeteringAnalyzer(
                 } else {
                     capturedBitmap?.recycle()
                 }
-                val configChanged = currentConfig != previousConfig
-                val filteredEv = if (configChanged) {
+                val shouldResetSmoothing = currentConfig != previousConfig ||
+                    timestampRegressed
+                val filteredEv = if (shouldResetSmoothing) {
                     ev
                 } else {
                     smoothedEv?.let { previous ->

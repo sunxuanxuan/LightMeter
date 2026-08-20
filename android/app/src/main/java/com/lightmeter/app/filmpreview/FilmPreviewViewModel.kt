@@ -13,6 +13,7 @@ data class FilmPreviewUiState(
     val presets: List<DisposableCameraPreset>,
     val manualConfig: ManualCameraConfig = ManualCameraConfig(),
     val selectedPreset: DisposableCameraPreset? = null,
+    val hasSavedPresetSelection: Boolean = false,
     val isCameraReady: Boolean = false,
     val isFrozen: Boolean = false,
     val freezeRequestId: Int = 0,
@@ -30,12 +31,21 @@ class FilmPreviewViewModel(
         repository.presets()
     private val initialPreset = initialPresets.firstOrNull {
         it.id == initialSettings.selectedPresetId
-    } ?: repository.presets().firstOrNull() ?: initialPresets.firstOrNull()
+    }?.withFilm(initialSettings.selectedFilmId.orEmpty())
+        ?: initialPresets.firstOrNull {
+            it.id == initialSettings.selectedPresetId
+        }
+        ?: repository.presets().firstOrNull()
+        ?: initialPresets.firstOrNull()
+    private val hasSavedPresetSelection = initialSettings.selectedPresetId?.let { savedId ->
+        initialPresets.any { it.id == savedId }
+    } == true
     private val mutableState = MutableStateFlow(
         FilmPreviewUiState(
             presets = initialPresets,
             manualConfig = initialSettings.manualConfig,
             selectedPreset = initialPreset,
+            hasSavedPresetSelection = hasSavedPresetSelection,
             evaluation = initialPreset?.let { FilmPreviewEngine.evaluate(null, it) },
         ),
     )
@@ -44,18 +54,54 @@ class FilmPreviewViewModel(
     fun selectPreset(id: String) {
         val preset = mutableState.value.presets.firstOrNull { it.id == id } ?: return
         val currentSettings = settingsStore.load()
-        if (!settingsStore.save(currentSettings.copy(selectedPresetId = id))) {
+        if (!settingsStore.save(
+                currentSettings.copy(
+                    selectedPresetId = id,
+                    selectedFilmId = preset.film.id,
+                ),
+            )
+        ) {
             mutableState.update { it.copy(errorMessage = "预设保存失败，请重试") }
             return
         }
         mutableState.update {
             if (it.selectedPreset?.id == preset.id &&
-                it.selectedPreset.presetVersion == preset.presetVersion
+                it.selectedPreset.presetVersion == preset.presetVersion &&
+                it.selectedPreset.film.id == preset.film.id
             ) {
                 return@update it
             }
             it.copy(
                 selectedPreset = preset,
+                hasSavedPresetSelection = true,
+                isFrozen = false,
+                meteredEv100 = null,
+                evaluation = FilmPreviewEngine.evaluate(null, preset),
+                errorMessage = null,
+            )
+        }
+    }
+
+    fun selectFilm(filmId: String) {
+        val current = mutableState.value
+        val preset = current.selectedPreset?.withFilm(filmId) ?: return
+        if (preset.film.id == current.selectedPreset.film.id) return
+
+        val currentSettings = settingsStore.load()
+        if (!settingsStore.save(
+                currentSettings.copy(
+                    selectedPresetId = preset.id,
+                    selectedFilmId = preset.film.id,
+                ),
+            )
+        ) {
+            mutableState.update { it.copy(errorMessage = "底片保存失败，请重试") }
+            return
+        }
+        mutableState.update {
+            it.copy(
+                selectedPreset = preset,
+                hasSavedPresetSelection = true,
                 isFrozen = false,
                 meteredEv100 = null,
                 evaluation = FilmPreviewEngine.evaluate(null, preset),
@@ -78,6 +124,7 @@ class FilmPreviewViewModel(
         val saved = settingsStore.save(
             FilmPreviewSettings(
                 selectedPresetId = selectedPreset.id,
+                selectedFilmId = selectedPreset.film.id,
                 manualConfig = manualConfig,
             ),
         )
@@ -90,6 +137,7 @@ class FilmPreviewViewModel(
                 presets = presets,
                 manualConfig = manualConfig,
                 selectedPreset = selectedPreset,
+                hasSavedPresetSelection = true,
                 isFrozen = false,
                 meteredEv100 = null,
                 evaluation = FilmPreviewEngine.evaluate(null, selectedPreset),
@@ -101,6 +149,19 @@ class FilmPreviewViewModel(
 
     fun onCameraReady() {
         mutableState.update { it.copy(isCameraReady = true, errorMessage = null) }
+    }
+
+    fun prepareForCameraResume() {
+        mutableState.update { current ->
+            if (current.isFrozen) return@update current
+            val preset = current.selectedPreset ?: return@update current
+            current.copy(
+                isCameraReady = false,
+                meteredEv100 = null,
+                evaluation = FilmPreviewEngine.evaluate(null, preset),
+                errorMessage = null,
+            )
+        }
     }
 
     fun onCameraError(error: Throwable) {

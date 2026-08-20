@@ -12,12 +12,15 @@ import android.provider.Settings
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -40,14 +43,17 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.GridView
+import androidx.compose.material.icons.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.CameraAlt
+import androidx.compose.material.icons.outlined.MoreHoriz
 import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material.icons.outlined.Visibility
-import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -58,16 +64,21 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
@@ -78,7 +89,6 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
@@ -90,8 +100,6 @@ import com.lightmeter.app.camera.CameraZoomState
 import com.lightmeter.app.camera.ViewfinderProjection
 import com.lightmeter.app.camera.ViewfinderProjectionCalculator
 import com.lightmeter.app.exposure.FrameFormat
-import com.lightmeter.app.metering.ExposureRiskCalculator
-import com.lightmeter.app.metering.ExposureRiskMask
 import com.lightmeter.app.metering.ExposureSnapshot
 import com.lightmeter.app.metering.MeteringConfig
 import com.lightmeter.app.metering.MeteringMode
@@ -101,6 +109,7 @@ import com.lightmeter.app.ui.CameraPreviewView
 import com.lightmeter.app.ui.CameraViewfinderMask
 import com.lightmeter.app.ui.theme.AppThemeStyle
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import java.util.Locale
 import kotlin.math.abs
@@ -133,6 +142,7 @@ fun FilmPreviewRoute(
         )
     }
     var hasRequestedPermission by rememberSaveable { mutableStateOf(false) }
+    var cameraSessionId by rememberSaveable { mutableStateOf(0) }
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
@@ -155,6 +165,10 @@ fun FilmPreviewRoute(
         } else {
             CameraPermissionState.DENIED
         }
+        if (permissionState == CameraPermissionState.GRANTED && !state.isFrozen) {
+            cameraSessionId += 1
+            viewModel.prepareForCameraResume()
+        }
     }
 
     LaunchedEffect(calibrationOffset) {
@@ -168,7 +182,10 @@ fun FilmPreviewRoute(
     FilmPreviewWorkspace(
         state = state,
         permissionState = permissionState,
+        cameraSessionId = cameraSessionId,
         onBack = onExit,
+        onPresetSelected = viewModel::selectPreset,
+        onFilmSelected = viewModel::selectFilm,
         onPresetSettingsSaved = viewModel::savePresetSettings,
         onRequestPermission = {
             hasRequestedPermission = true
@@ -193,7 +210,6 @@ private fun PresetCard(
     preset: DisposableCameraPreset,
     selected: Boolean,
     onClick: () -> Unit,
-    onImageClick: (() -> Unit)? = null,
     expandedContent: @Composable (() -> Unit)? = null,
 ) {
     val containerColor = if (selected) {
@@ -221,17 +237,25 @@ private fun PresetCard(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 val imageResource = presetImageResource(preset)
+                    ?: if (preset.id == ManualCameraConfig.MANUAL_PRESET_ID) {
+                        R.drawable.bottom_camera_left
+                    } else {
+                        null
+                    }
                 if (imageResource != null) {
                     Image(
                         painter = painterResource(imageResource),
                         contentDescription = "${preset.displayName} 参考图",
-                        contentScale = ContentScale.Crop,
+                        contentScale = if (
+                            preset.id == ManualCameraConfig.MANUAL_PRESET_ID
+                        ) {
+                            ContentScale.Fit
+                        } else {
+                            ContentScale.Crop
+                        },
                         modifier = Modifier
                             .size(width = 112.dp, height = 72.dp)
-                            .clip(RoundedCornerShape(6.dp))
-                                .clickable(enabled = onImageClick != null) {
-                                    onImageClick?.invoke()
-                                },
+                            .clip(RoundedCornerShape(6.dp)),
                     )
                 } else {
                     Surface(
@@ -282,41 +306,35 @@ private fun PresetCard(
     }
 }
 
-@Composable
-private fun PresetImagePreviewDialog(
-    preset: DisposableCameraPreset,
-    onDismiss: () -> Unit,
-) {
-    val imageResource = presetImageResource(preset) ?: return
-    Dialog(onDismissRequest = onDismiss) {
-        Surface(
-            shape = RoundedCornerShape(12.dp),
-            color = MaterialTheme.colorScheme.surface,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(20.dp),
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Image(
-                    painter = painterResource(imageResource),
-                    contentDescription = "${preset.displayName} 参考图",
-                    contentScale = ContentScale.Fit,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 520.dp)
-                )
-            }
-        }
-    }
-}
-
 private fun presetImageResource(preset: DisposableCameraPreset): Int? {
     return when (preset.id) {
-        "kodak-funsaver-800" -> R.drawable.preset_funsaver
+        ManualCameraConfig.MANUAL_PRESET_ID -> R.drawable.bottom_camera_left
         "kodak-power-flash-800" -> R.drawable.preset_power_flash
+        "kodak-ec35-reusable" -> R.drawable.preset_kodak_ec35
         "fujifilm-quicksnap-flash-400" -> R.drawable.preset_quick_snap
         "fujifilm-c400-jelly" -> R.drawable.preset_c400
         else -> null
+    }
+}
+
+private fun filmImageResource(film: FilmProfile): Int {
+    return when {
+        film.name.contains("Fuji", ignoreCase = true) && film.iso == 200 ->
+            R.drawable.film_fuji200
+
+        film.name.contains("Fuji", ignoreCase = true) && film.iso == 400 ->
+            R.drawable.film_fuji400
+
+        film.name.contains("Kodak", ignoreCase = true) && film.iso == 200 ->
+            R.drawable.film_kodak200
+
+        film.name.contains("Kodak", ignoreCase = true) && film.iso == 400 ->
+            R.drawable.film_kodak400
+
+        film.iso == 100 -> R.drawable.film_iso100
+        film.iso == 200 -> R.drawable.film_iso200
+        film.iso == 400 -> R.drawable.film_iso400
+        else -> R.drawable.film_iso800
     }
 }
 
@@ -324,7 +342,10 @@ private fun presetImageResource(preset: DisposableCameraPreset): Int? {
 private fun FilmPreviewWorkspace(
     state: FilmPreviewUiState,
     permissionState: CameraPermissionState,
+    cameraSessionId: Int,
     onBack: () -> Unit,
+    onPresetSelected: (String) -> Unit,
+    onFilmSelected: (String) -> Unit,
     onPresetSettingsSaved: (String, ManualCameraConfig) -> Boolean,
     onRequestPermission: () -> Unit,
     onOpenSettings: () -> Unit,
@@ -341,15 +362,24 @@ private fun FilmPreviewWorkspace(
 ) {
     val preset = state.selectedPreset ?: return
     var showsSettings by rememberSaveable { mutableStateOf(false) }
-    var isExposureSimulationEnabled by rememberSaveable { mutableStateOf(false) }
-    var frozenChromeVisible by rememberSaveable { mutableStateOf(true) }
+    var selector by rememberSaveable { mutableStateOf<PreviewSelector?>(null) }
+    var hasSelectedCameraImage by rememberSaveable {
+        mutableStateOf(state.hasSavedPresetSelection)
+    }
+    var hasSelectedFilmImage by rememberSaveable {
+        mutableStateOf(state.hasSavedPresetSelection)
+    }
     var frozenFrame by remember { mutableStateOf<Bitmap?>(null) }
     var simulatedFrame by remember { mutableStateOf<Bitmap?>(null) }
     var frozenSnapshot by remember { mutableStateOf<ExposureSnapshot?>(null) }
-    var exposureRiskMask by remember { mutableStateOf<ExposureRiskMask?>(null) }
+    var comparisonSplit by rememberSaveable { mutableStateOf(0.5f) }
     var previewSize by remember { mutableStateOf(IntSize.Zero) }
     var cameraOptics by remember { mutableStateOf<CameraOptics?>(null) }
     var cameraZoomState by remember { mutableStateOf(CameraZoomState()) }
+    LaunchedEffect(cameraSessionId) {
+        cameraOptics = null
+        cameraZoomState = CameraZoomState()
+    }
     val presetReferenceEv100 = remember(preset) {
         FilmPreviewEngine.presetEv100(preset)
     }
@@ -391,38 +421,6 @@ private fun FilmPreviewWorkspace(
     }
 
     LaunchedEffect(
-        frozenSnapshot,
-        normalizedViewfinder,
-        presetReferenceEv100,
-        preset.film.highlightLatitudeStops,
-        preset.film.shadowLatitudeStops,
-    ) {
-        val snapshot = frozenSnapshot
-        exposureRiskMask = if (snapshot == null) {
-            null
-        } else {
-            withContext(Dispatchers.Default) {
-                ExposureRiskCalculator.calculate(
-                    exposureMap = snapshot.exposureMap,
-                    viewfinder = normalizedViewfinder,
-                    referenceEv100 = presetReferenceEv100,
-                    highlightLatitudeStops = preset.film.highlightLatitudeStops,
-                    shadowLatitudeStops = preset.film.shadowLatitudeStops,
-                )
-            }
-        }
-    }
-    val exposureRiskBitmap = remember(exposureRiskMask) {
-        exposureRiskMask?.let {
-            Bitmap.createBitmap(
-                it.argb,
-                it.width,
-                it.height,
-                Bitmap.Config.ARGB_8888,
-            )
-        }
-    }
-    LaunchedEffect(
         frozenFrame,
         frozenSnapshot,
         presetReferenceEv100,
@@ -451,32 +449,37 @@ private fun FilmPreviewWorkspace(
 
     LaunchedEffect(state.isFrozen) {
         if (!state.isFrozen) {
-            isExposureSimulationEnabled = false
             frozenFrame = null
             simulatedFrame = null
             frozenSnapshot = null
-            exposureRiskMask = null
         }
     }
     LaunchedEffect(state.isFrozen, state.freezeRequestId) {
-        frozenChromeVisible = true
-        isExposureSimulationEnabled = false
+        comparisonSplit = 0.5f
     }
 
-    Column(
+    Box(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
             .statusBarsPadding()
             .navigationBarsPadding(),
     ) {
-        BoxWithConstraints(
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f)
-                .padding(horizontal = 10.dp, vertical = 8.dp),
-            contentAlignment = Alignment.Center,
-        ) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            PreviewTopControls(
+                onBack = onBack,
+                onOpenSettings = { showsSettings = true },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 12.dp),
+            )
+            BoxWithConstraints(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .padding(horizontal = 20.dp, vertical = 4.dp),
+                contentAlignment = Alignment.Center,
+            ) {
             val availableAspectRatio = if (maxHeight.value > 0f) {
                 maxWidth.value / maxHeight.value
             } else {
@@ -493,23 +496,22 @@ private fun FilmPreviewWorkspace(
             }
             val previewShape = RoundedCornerShape(8.dp)
 
-            Box(
-                modifier = previewModifier
-                    .background(Color.Black, previewShape)
-                    .clip(previewShape)
-                    .onSizeChanged { previewSize = it }
-                    .border(
-                        1.dp,
-                        Color(0xFFD3AA5F).copy(alpha = 0.72f),
-                        previewShape,
-                    ),
-            ) {
+                Box(
+                    modifier = previewModifier
+                        .background(Color.Black, previewShape)
+                        .clip(previewShape)
+                        .onSizeChanged { previewSize = it }
+                        .border(
+                            1.dp,
+                            Color(0xFFD3AA5F).copy(alpha = 0.72f),
+                            previewShape,
+                        ),
+                ) {
                 when (permissionState) {
-                    CameraPermissionState.GRANTED -> CameraPreviewView(
+                    CameraPermissionState.GRANTED -> key(cameraSessionId) {
+                        CameraPreviewView(
                         meteringConfig = MeteringConfig(
-                            mode = MeteringMode.CENTER_WEIGHTED,
-                            centerAreaPercent = PREVIEW_CENTER_AREA_PERCENT,
-                            centerWeightPercent = PREVIEW_CENTER_WEIGHT_PERCENT,
+                            mode = MeteringMode.AVERAGE,
                             viewfinderRect = normalizedViewfinder,
                             previewAspectRatio = PREVIEW_ASPECT_RATIO.toDouble(),
                             targetZoomRatio = effectiveZoomRatio.toDouble(),
@@ -551,8 +553,9 @@ private fun FilmPreviewWorkspace(
                         onZoomStateChanged = { cameraZoomState = it },
                         onReady = onCameraReady,
                         onError = onCameraError,
-                        modifier = Modifier.fillMaxSize(),
-                    )
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
 
                     CameraPermissionState.PERMANENTLY_DENIED -> PreviewPermissionContent(
                         buttonText = "打开系统设置",
@@ -568,118 +571,98 @@ private fun FilmPreviewWorkspace(
                 }
 
                 if (state.isFrozen) {
-                    val displayedFrame = if (isExposureSimulationEnabled) {
-                        simulatedFrame ?: frozenFrame
-                    } else {
-                        frozenFrame
-                    }
-                    displayedFrame?.let { bitmap ->
-                        Image(
-                            bitmap = bitmap.asImageBitmap(),
-                            contentDescription = if (isExposureSimulationEnabled) {
-                                "一次性相机曝光结果模拟"
-                            } else {
-                                "一次性相机冻结预览"
-                            },
-                            contentScale = ContentScale.FillBounds,
-                            filterQuality = FilterQuality.High,
-                            modifier = Modifier.fillMaxSize(),
-                        )
-                    }
-                    if (!isExposureSimulationEnabled) {
-                        exposureRiskBitmap?.let { bitmap ->
+                    val source = frozenFrame
+                    val simulated = simulatedFrame
+                    when {
+                        source != null && simulated != null -> {
+                            FilmSimulationComparison(
+                                source = source,
+                                simulated = simulated,
+                                splitFraction = comparisonSplit,
+                                onSplitChanged = { comparisonSplit = it },
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                        }
+
+                        source != null -> {
                             Image(
-                                bitmap = bitmap.asImageBitmap(),
-                                contentDescription = "胶片宽容度风险预警",
+                                bitmap = source.asImageBitmap(),
+                                contentDescription = "冻结的手机画面",
                                 contentScale = ContentScale.FillBounds,
                                 filterQuality = FilterQuality.High,
                                 modifier = Modifier.fillMaxSize(),
                             )
-                        }
-                        exposureRiskMask?.let { riskMask ->
-                            FilmRiskLegend(
-                                riskMask = riskMask,
-                                modifier = Modifier
-                                    .align(Alignment.TopCenter)
-                                    .padding(top = 10.dp),
-                            )
+                            SimulationLoadingOverlay(modifier = Modifier.fillMaxSize())
                         }
                     }
-                }
-
-                CameraViewfinderMask(
-                    viewfinder = normalizedViewfinder,
-                    modifier = Modifier.fillMaxSize(),
-                )
-
-                if (state.isFrozen) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .pointerInput(state.freezeRequestId) {
-                                detectTapGestures {
-                                    frozenChromeVisible = !frozenChromeVisible
-                                }
-                            },
+                } else {
+                    CameraViewfinderMask(
+                        viewfinder = normalizedViewfinder,
+                        modifier = Modifier.fillMaxSize(),
                     )
                 }
 
-                if (!state.isFrozen || frozenChromeVisible) {
-                    PreviewTopControls(
-                        onBack = onBack,
-                        onOpenSettings = { showsSettings = true },
-                        modifier = Modifier
-                            .align(Alignment.TopCenter)
-                            .fillMaxWidth()
-                            .padding(10.dp),
-                    )
-
-                    Row(
-                        modifier = Modifier
-                            .align(Alignment.BottomCenter)
-                            .padding(bottom = 12.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        PreviewFreezeButton(
-                            isFrozen = state.isFrozen,
-                            enabled = state.isFrozen ||
-                                (
-                                    state.isCameraReady &&
-                                        state.meteredEv100 != null &&
-                                        isZoomReady
-                                    ),
-                            onClick = if (state.isFrozen) onResumeLive else onFreezePreview,
-                        )
-                        if (
-                            state.isFrozen &&
-                            exposureRiskMask != null &&
-                            simulatedFrame != null
-                        ) {
-                            ExposureSimulationToggle(
-                                isSimulationEnabled = isExposureSimulationEnabled,
-                                onClick = {
-                                    isExposureSimulationEnabled =
-                                        !isExposureSimulationEnabled
-                                },
-                            )
-                        }
-                    }
                 }
             }
+
+            ExposureAdvicePanel(
+                text = previewGuidance(
+                    isFrozen = state.isFrozen,
+                    isSimulationReady = simulatedFrame != null,
+                    adviceCode = state.evaluation?.adviceCode,
+                    preset = preset,
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp, vertical = 8.dp),
+            )
+
+            SimulationBottomBar(
+                cameraImageResource = if (hasSelectedCameraImage) {
+                    presetImageResource(preset) ?: R.drawable.bottom_camera_left
+                } else {
+                    R.drawable.bottom_camera_left
+                },
+                filmImageResource = if (hasSelectedFilmImage) {
+                    filmImageResource(preset.film)
+                } else {
+                    R.drawable.bottom_film_right
+                },
+                isFrozen = state.isFrozen,
+                captureEnabled = state.isFrozen ||
+                    (
+                        state.isCameraReady &&
+                            state.meteredEv100 != null &&
+                            isZoomReady
+                        ),
+                onCameraClick = { selector = PreviewSelector.CAMERA },
+                onCaptureClick = if (state.isFrozen) onResumeLive else onFreezePreview,
+                onFilmClick = { selector = PreviewSelector.FILM },
+            )
         }
 
-        PreviewStatusPanel(
-            preset = preset,
-            state = state,
-            modifier = Modifier.fillMaxWidth(),
-        )
+        selector?.let { activeSelector ->
+            PresetSelectorSheet(
+                selector = activeSelector,
+                presets = state.presets,
+                selectedPreset = preset,
+                onDismiss = { selector = null },
+                onPresetSelected = { selected ->
+                    onPresetSelected(selected.id)
+                    hasSelectedCameraImage = true
+                    selector = null
+                },
+                onFilmSelected = { film ->
+                    onFilmSelected(film.id)
+                    hasSelectedFilmImage = true
+                    selector = null
+                },
+            )
+        }
     }
 
     if (showsSettings) {
         PresetSettingsDialog(
-            presets = state.presets,
-            selectedPreset = preset,
             manualConfig = state.manualConfig,
             themeStyle = themeStyle,
             onThemeStyleChanged = onThemeStyleChanged,
@@ -694,98 +677,424 @@ private fun FilmPreviewWorkspace(
 }
 
 @Composable
-private fun PreviewStatusPanel(
-    preset: DisposableCameraPreset,
-    state: FilmPreviewUiState,
+private fun SimulationBottomBar(
+    cameraImageResource: Int,
+    filmImageResource: Int,
+    isFrozen: Boolean,
+    captureEnabled: Boolean,
+    onCameraClick: () -> Unit,
+    onCaptureClick: () -> Unit,
+    onFilmClick: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f),
+        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp, vertical = 18.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            BottomPresetButton(
+                imageResource = cameraImageResource,
+                label = "机型",
+                onClick = onCameraClick,
+                modifier = Modifier.weight(1f),
+            )
+            PreviewFreezeButton(
+                isFrozen = isFrozen,
+                enabled = captureEnabled,
+                onClick = onCaptureClick,
+                modifier = Modifier.padding(horizontal = 20.dp),
+            )
+            BottomPresetButton(
+                imageResource = filmImageResource,
+                label = "底片",
+                onClick = onFilmClick,
+                modifier = Modifier.weight(1f),
+            )
+        }
+    }
+}
+
+@Composable
+private fun BottomPresetButton(
+    imageResource: Int,
+    label: String,
+    onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val evaluation = state.evaluation
-    val presetEv100 = evaluation?.presetEv100 ?: FilmPreviewEngine.presetEv100(preset)
-    val sceneEv100 = evaluation?.sceneDeltaEv?.let { presetEv100 + it }
-    Surface(
-        modifier = modifier.fillMaxWidth(),
-        color = MaterialTheme.colorScheme.surface,
-        shape = RoundedCornerShape(topStart = 10.dp, topEnd = 10.dp),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    Column(
+        modifier = modifier
+            .heightIn(min = 78.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 4.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
     ) {
-        Column(modifier = Modifier.padding(horizontal = 18.dp, vertical = 12.dp)) {
-            Text(
-                text = preset.displayName,
-                color = MaterialTheme.colorScheme.onSurface,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-            )
-            Text(
-                text = "参数由预设锁定",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodySmall,
-            )
+        Image(
+            painter = painterResource(imageResource),
+            contentDescription = label,
+            contentScale = ContentScale.Fit,
+            modifier = Modifier.size(42.dp),
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
 
-            Spacer(modifier = Modifier.height(12.dp))
-            Text(
-                text = "胶片预设固定曝光：${formatEv(presetEv100)}",
-                color = MaterialTheme.colorScheme.onSurface,
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            Text(
-                text = "场景推荐曝光：${sceneEv100?.let(::formatEv) ?: "--"}",
-                color = MaterialTheme.colorScheme.onSurface,
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            Text(
-                text = "相对差值：${
-                    evaluation?.sceneDeltaEv?.let(::formatSignedStops) ?: "--"
-                }",
-                color = MaterialTheme.colorScheme.onSurface,
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            Text(
-                text = adviceText(evaluation?.adviceCode, preset),
-                color = when (evaluation?.adviceCode) {
-                    PreviewAdviceCode.SUITABLE,
-                    PreviewAdviceCode.UNAVAILABLE,
-                    null,
-                    -> MaterialTheme.colorScheme.onSurfaceVariant
+@Composable
+private fun ExposureAdvicePanel(
+    text: String,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier,
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        shape = RoundedCornerShape(8.dp),
+    ) {
+        Text(
+            text = text,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodySmall,
+            textAlign = TextAlign.Center,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+        )
+    }
+}
 
-                    else -> MaterialTheme.colorScheme.error
-                },
-                style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.padding(top = 4.dp),
-            )
-            Spacer(modifier = Modifier.height(12.dp))
+@Composable
+private fun FilmSimulationComparison(
+    source: Bitmap,
+    simulated: Bitmap,
+    splitFraction: Float,
+    onSplitChanged: (Float) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val sourceImage = remember(source) { source.asImageBitmap() }
+    val simulatedImage = remember(simulated) { simulated.asImageBitmap() }
+    val latestSplitFraction by rememberUpdatedState(splitFraction)
+    Canvas(
+        modifier = modifier.pointerInput(Unit) {
+            var dragSplitFraction = latestSplitFraction
+            detectDragGestures(
+                onDragStart = { dragSplitFraction = latestSplitFraction },
+            ) { change, dragAmount ->
+                change.consume()
+                if (size.width > 0) {
+                    dragSplitFraction = (
+                        dragSplitFraction + dragAmount.x / size.width
+                    ).coerceIn(COMPARISON_MIN_SPLIT, COMPARISON_MAX_SPLIT)
+                    onSplitChanged(dragSplitFraction)
+                }
+            }
+        },
+    ) {
+        val destinationSize = IntSize(
+            width = size.width.roundToInt(),
+            height = size.height.roundToInt(),
+        )
+        val splitX = size.width * splitFraction
+
+        drawImage(sourceImage, dstSize = destinationSize)
+        clipRect(left = splitX) {
+            drawImage(simulatedImage, dstSize = destinationSize)
+        }
+        drawLine(
+            color = Color.White,
+            start = Offset(splitX, 0f),
+            end = Offset(splitX, size.height),
+            strokeWidth = 2.dp.toPx(),
+        )
+        drawCircle(
+            color = Color.White,
+            radius = 18.dp.toPx(),
+            center = Offset(splitX, size.height / 2f),
+        )
+        drawCircle(
+            color = Color(0xFF222222),
+            radius = 15.dp.toPx(),
+            center = Offset(splitX, size.height / 2f),
+        )
+        drawLine(
+            color = Color.White,
+            start = Offset(splitX - 6.dp.toPx(), size.height / 2f),
+            end = Offset(splitX + 6.dp.toPx(), size.height / 2f),
+            strokeWidth = 2.dp.toPx(),
+        )
+    }
+    ComparisonLabels(modifier = Modifier.fillMaxSize())
+}
+
+@Composable
+private fun ComparisonLabels(modifier: Modifier = Modifier) {
+    Box(modifier = modifier.padding(10.dp)) {
+        ComparisonLabel(
+            text = "手机画面",
+            modifier = Modifier.align(Alignment.TopStart),
+        )
+        ComparisonLabel(
+            text = "模拟成片",
+            modifier = Modifier.align(Alignment.TopEnd),
+        )
+    }
+}
+
+@Composable
+private fun ComparisonLabel(
+    text: String,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        color = Color.Black.copy(alpha = 0.56f),
+        shape = RoundedCornerShape(5.dp),
+        modifier = modifier,
+    ) {
+        Text(
+            text = text,
+            color = Color.White,
+            style = MaterialTheme.typography.labelSmall,
+            modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp),
+        )
+    }
+}
+
+@Composable
+private fun SimulationLoadingOverlay(modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier.background(Color.Black.copy(alpha = 0.35f)),
+        contentAlignment = Alignment.Center,
+    ) {
+        Surface(
+            color = Color.Black.copy(alpha = 0.72f),
+            shape = RoundedCornerShape(8.dp),
+        ) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                ReadOnlyParameter(
-                    label = "ISO",
-                    value = preset.film.iso.toString(),
-                    modifier = Modifier.weight(1f),
+                CircularProgressIndicator(
+                    color = Color.White,
+                    strokeWidth = 2.dp,
+                    modifier = Modifier.size(18.dp),
                 )
-                ReadOnlyParameter(
-                    label = "光圈",
-                    value = "f/${formatDecimal(preset.optics.aperture)}",
-                    modifier = Modifier.weight(1f),
-                )
-                ReadOnlyParameter(
-                    label = "快门",
-                    value = shutterLabel(preset.shutterSeconds),
-                    modifier = Modifier.weight(1f),
-                )
-                ReadOnlyParameter(
-                    label = "焦距",
-                    value = "${formatDecimal(preset.optics.focalLengthMm)} mm",
-                    modifier = Modifier.weight(1f),
-                )
-            }
-            state.errorMessage?.let {
                 Text(
-                    text = it,
-                    color = MaterialTheme.colorScheme.error,
+                    text = "正在生成成片模拟",
+                    color = Color.White,
                     style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.padding(top = 6.dp),
                 )
             }
+        }
+    }
+}
+
+private enum class PreviewSelector {
+    CAMERA,
+    FILM,
+}
+
+@Composable
+private fun PresetSelectorSheet(
+    selector: PreviewSelector,
+    presets: List<DisposableCameraPreset>,
+    selectedPreset: DisposableCameraPreset,
+    onDismiss: () -> Unit,
+    onPresetSelected: (DisposableCameraPreset) -> Unit,
+    onFilmSelected: (FilmProfile) -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.36f))
+            .clickable(onClick = onDismiss),
+    ) {
+        Surface(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .clickable(onClick = {}),
+            color = MaterialTheme.colorScheme.surface,
+            shape = RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp),
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 12.dp, bottom = 22.dp),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.CenterHorizontally)
+                        .size(width = 36.dp, height = 4.dp)
+                        .background(
+                            MaterialTheme.colorScheme.outlineVariant,
+                            RoundedCornerShape(2.dp),
+                        ),
+                )
+                Text(
+                    text = if (selector == PreviewSelector.CAMERA) "选择机型" else "底片",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(start = 22.dp, top = 16.dp, bottom = 12.dp),
+                )
+                if (selector == PreviewSelector.CAMERA) {
+                    LazyRow(
+                        contentPadding = PaddingValues(horizontal = 20.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        items(presets, key = { it.id }) { candidate ->
+                            CameraPresetOption(
+                                preset = candidate,
+                                selected = candidate.id == selectedPreset.id,
+                                onClick = { onPresetSelected(candidate) },
+                            )
+                        }
+                    }
+                } else {
+                    LazyRow(
+                        contentPadding = PaddingValues(horizontal = 20.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        items(selectedPreset.compatibleFilms, key = { it.id }) { film ->
+                            FilmPresetOption(
+                                film = film,
+                                selected = film.id == selectedPreset.film.id,
+                                isSelectable = selectedPreset.isFilmSelectable,
+                                onClick = { onFilmSelected(film) },
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CameraPresetOption(
+    preset: DisposableCameraPreset,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier
+            .size(width = 144.dp, height = 142.dp)
+            .clickable(onClick = onClick),
+        color = if (selected) {
+            MaterialTheme.colorScheme.primaryContainer
+        } else {
+            MaterialTheme.colorScheme.surfaceVariant
+        },
+        shape = RoundedCornerShape(10.dp),
+        border = BorderStroke(
+            1.dp,
+            if (selected) MaterialTheme.colorScheme.primary
+            else MaterialTheme.colorScheme.outlineVariant,
+        ),
+    ) {
+        Column(
+            modifier = Modifier.padding(10.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(7.dp),
+        ) {
+            presetImageResource(preset)?.let { image ->
+                Image(
+                    painter = painterResource(image),
+                    contentDescription = preset.displayName,
+                    contentScale = if (preset.id == ManualCameraConfig.MANUAL_PRESET_ID) {
+                        ContentScale.Fit
+                    } else {
+                        ContentScale.Crop
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(72.dp)
+                        .clip(RoundedCornerShape(6.dp)),
+                )
+            } ?: Icon(
+                imageVector = Icons.Outlined.CameraAlt,
+                contentDescription = null,
+                modifier = Modifier.size(52.dp),
+            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center,
+            ) {
+                Text(
+                    text = preset.displayName,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    textAlign = TextAlign.Center,
+                    maxLines = 2,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun FilmPresetOption(
+    film: FilmProfile,
+    selected: Boolean,
+    isSelectable: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier
+            .size(width = 144.dp, height = 142.dp)
+            .clickable(onClick = onClick),
+        color = if (selected) {
+            MaterialTheme.colorScheme.primaryContainer
+        } else {
+            MaterialTheme.colorScheme.surfaceVariant
+        },
+        shape = RoundedCornerShape(10.dp),
+        border = BorderStroke(
+            1.dp,
+            if (selected) MaterialTheme.colorScheme.primary
+            else MaterialTheme.colorScheme.outlineVariant,
+        ),
+    ) {
+        Column(
+            modifier = Modifier.padding(10.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(7.dp),
+        ) {
+            Image(
+                painter = painterResource(filmImageResource(film)),
+                contentDescription = film.name,
+                contentScale = ContentScale.Fit,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(76.dp),
+            )
+            Text(
+                text = film.name,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Center,
+                maxLines = 2,
+            )
+            Text(
+                text = if (isSelectable) "ISO ${film.iso}" else "内置，不可更换",
+                style = MaterialTheme.typography.labelSmall,
+                color = if (selected) {
+                    MaterialTheme.colorScheme.onPrimaryContainer
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+            )
         }
     }
 }
@@ -802,99 +1111,40 @@ private fun PreviewTopControls(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Surface(
-            color = Color.Black.copy(alpha = 0.68f),
-            shape = RoundedCornerShape(18.dp),
-            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)),
-            modifier = Modifier.clickable(onClick = onBack),
+            color = MaterialTheme.colorScheme.surfaceVariant,
+            shape = CircleShape,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+            modifier = Modifier
+                .size(48.dp)
+                .clickable(onClick = onBack),
         ) {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(
-                    horizontal = (14 * PREVIEW_CHROME_SCALE).dp,
-                    vertical = (10 * PREVIEW_CHROME_SCALE).dp,
-                ),
-            ) {
+            Box(contentAlignment = Alignment.Center) {
                 Icon(
-                    imageVector = Icons.Outlined.GridView,
-                    contentDescription = null,
-                    tint = Color(0xFFD3AA5F),
-                    modifier = Modifier.size((22 * PREVIEW_CHROME_SCALE).dp),
-                )
-                Text(
-                    text = "模式",
-                    color = Color(0xFFD3AA5F),
-                    style = MaterialTheme.typography.labelLarge,
+                    imageVector = Icons.Outlined.ArrowBack,
+                    contentDescription = "返回",
+                    tint = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.size(25.dp),
                 )
             }
         }
 
         Surface(
-            color = Color.Black.copy(alpha = 0.68f),
+            color = MaterialTheme.colorScheme.surfaceVariant,
             shape = CircleShape,
-            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
             modifier = Modifier
-                .size((48 * PREVIEW_CHROME_SCALE).dp)
+                .size(48.dp)
                 .clickable(onClick = onOpenSettings),
         ) {
             Box(contentAlignment = Alignment.Center) {
                 Icon(
-                    imageVector = Icons.Outlined.Settings,
+                    imageVector = Icons.Outlined.MoreHoriz,
                     contentDescription = "设置",
-                    tint = Color(0xFFD3AA5F),
-                    modifier = Modifier.size((24 * PREVIEW_CHROME_SCALE).dp),
+                    tint = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.size(25.dp),
                 )
             }
         }
-    }
-}
-
-@Composable
-private fun FilmRiskLegend(
-    riskMask: ExposureRiskMask,
-    modifier: Modifier = Modifier,
-) {
-    Surface(
-        modifier = modifier,
-        color = Color.Black.copy(alpha = 0.68f),
-        shape = RoundedCornerShape(8.dp),
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            FilmRiskLegendItem(
-                color = Color(0xFFFF2D2D),
-                label = "高光 %.1f%%".format(riskMask.highlightRatio * 100.0),
-            )
-            FilmRiskLegendItem(
-                color = Color(0xFF00D26A),
-                label = "暗部 %.1f%%".format(riskMask.shadowRatio * 100.0),
-            )
-        }
-    }
-}
-
-@Composable
-private fun FilmRiskLegendItem(
-    color: Color,
-    label: String,
-) {
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(5.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(
-            modifier = Modifier
-                .size(8.dp)
-                .background(color, CircleShape),
-        )
-        Text(
-            text = label,
-            color = Color.White,
-            style = MaterialTheme.typography.labelSmall,
-        )
     }
 }
 
@@ -905,59 +1155,68 @@ private fun PreviewFreezeButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Button(
-        onClick = onClick,
-        enabled = enabled,
-        shape = CircleShape,
-        colors = ButtonDefaults.buttonColors(
-            containerColor = Color.White,
-            contentColor = Color.Black,
-            disabledContainerColor = Color.White.copy(alpha = 0.35f),
-            disabledContentColor = Color.Black.copy(alpha = 0.5f),
-        ),
-        contentPadding = PaddingValues(0.dp),
-        modifier = modifier.size(52.dp),
-    ) {
-        Text(
-            text = if (isFrozen) "▶" else "⏸",
-            style = MaterialTheme.typography.titleLarge,
-        )
-    }
-}
+    var isCaptureFeedbackVisible by remember { mutableStateOf(false) }
+    val innerRingScale by animateFloatAsState(
+        targetValue = if (isCaptureFeedbackVisible) 0.66f else 1f,
+        animationSpec = tween(durationMillis = 120),
+        label = "captureInnerRingScale",
+    )
 
-@Composable
-private fun ExposureSimulationToggle(
-    isSimulationEnabled: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Button(
-        onClick = onClick,
-        shape = CircleShape,
-        colors = ButtonDefaults.buttonColors(
-            containerColor = if (isSimulationEnabled) {
-                Color(0xFFD3AA5F)
-            } else {
-                Color.White
-            },
-            contentColor = Color.Black,
-        ),
-        contentPadding = PaddingValues(0.dp),
-        modifier = modifier.size(52.dp),
-    ) {
-        Icon(
-            imageVector = if (isSimulationEnabled) {
-                Icons.Outlined.VisibilityOff
-            } else {
-                Icons.Outlined.Visibility
-            },
-            contentDescription = if (isSimulationEnabled) {
-                "关闭曝光模拟"
-            } else {
-                "开启曝光模拟"
-            },
-            modifier = Modifier.size(25.dp),
-        )
+    LaunchedEffect(isCaptureFeedbackVisible) {
+        if (isCaptureFeedbackVisible) {
+            delay(CAPTURE_FEEDBACK_DURATION_MS)
+            isCaptureFeedbackVisible = false
+            onClick()
+        }
+    }
+
+    if (isFrozen) {
+        Surface(
+            color = MaterialTheme.colorScheme.surfaceVariant,
+            shape = CircleShape,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+            modifier = modifier
+                .size(CONTROL_BUTTON_SIZE)
+                .clickable(onClick = onClick),
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    imageVector = Icons.Outlined.ArrowBack,
+                    contentDescription = "退出冻结，恢复取景",
+                    tint = Color.Gray,
+                    modifier = Modifier.size(30.dp),
+                )
+            }
+        }
+    } else {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = modifier
+                .size(CONTROL_BUTTON_SIZE)
+                .background(
+                    color = CAPTURE_RED,
+                    shape = CircleShape,
+                )
+                .border(
+                    width = 3.dp,
+                    color = Color.White,
+                    shape = CircleShape,
+                )
+                .clip(CircleShape)
+                .clickable(enabled = enabled && !isCaptureFeedbackVisible) {
+                    isCaptureFeedbackVisible = true
+                },
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(53.dp)
+                    .scale(innerRingScale)
+                    .background(
+                        color = Color.White,
+                        shape = CircleShape,
+                    ),
+            )
+        }
     }
 }
 
@@ -995,22 +1254,14 @@ private fun ReadOnlyParameter(
 
 @Composable
 private fun PresetSettingsDialog(
-    presets: List<DisposableCameraPreset>,
-    selectedPreset: DisposableCameraPreset,
     manualConfig: ManualCameraConfig,
     themeStyle: AppThemeStyle,
     onThemeStyleChanged: (AppThemeStyle) -> Unit,
     onSave: (String, ManualCameraConfig) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    var pendingPresetId by rememberSaveable(selectedPreset.id) {
-        mutableStateOf(selectedPreset.id)
-    }
-    var imagePreviewPreset by remember {
-        mutableStateOf<DisposableCameraPreset?>(null)
-    }
-    var manualEditorExpanded by rememberSaveable(selectedPreset.id) {
-        mutableStateOf(selectedPreset.id == ManualCameraConfig.MANUAL_PRESET_ID)
+    var manualEditorExpanded by rememberSaveable {
+        mutableStateOf(true)
     }
     var manualIso by rememberSaveable(manualConfig) {
         mutableStateOf(manualConfig.iso.toString())
@@ -1031,8 +1282,6 @@ private fun PresetSettingsDialog(
         focalLengthMm = manualFocalLength.toDoubleOrNull() ?: Double.NaN,
     )
     val manualConfigValid = pendingManualConfig.isValid()
-    val selectedManualPreset =
-        pendingPresetId == ManualCameraConfig.MANUAL_PRESET_ID
     val manualConfigToSave = if (manualConfigValid) {
         pendingManualConfig
     } else {
@@ -1041,7 +1290,7 @@ private fun PresetSettingsDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("一次性相机预设") },
+        title = { Text("设置") },
         text = {
             Column(
                 modifier = Modifier
@@ -1075,53 +1324,44 @@ private fun PresetSettingsDialog(
                 }
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
-                    text = "曝光参数由预设提供，预览模式中不可单独修改。",
+                    text = "内置机型请在底部“机型”按钮中选择。",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(bottom = 4.dp),
                 )
-                presets.forEach { preset ->
-                    val isManualPreset =
-                        preset.id == ManualCameraConfig.MANUAL_PRESET_ID
-                    PresetCard(
-                        preset = preset,
-                        selected = preset.id == pendingPresetId,
-                        onClick = {
-                            if (isManualPreset && pendingPresetId == preset.id) {
-                                manualEditorExpanded = !manualEditorExpanded
-                            } else {
-                                pendingPresetId = preset.id
-                                manualEditorExpanded = isManualPreset
-                            }
-                        },
-                        onImageClick = { imagePreviewPreset = preset },
-                        expandedContent = if (
-                            isManualPreset && manualEditorExpanded
-                        ) {
-                            {
-                                ManualCameraConfigEditor(
-                                    iso = manualIso,
-                                    shutterDenominator = manualShutter,
-                                    aperture = manualAperture,
-                                    focalLengthMm = manualFocalLength,
-                                    isValid = manualConfigValid,
-                                    onIsoChanged = { manualIso = it },
-                                    onShutterChanged = { manualShutter = it },
-                                    onApertureChanged = { manualAperture = it },
-                                    onFocalLengthChanged = { manualFocalLength = it },
-                                )
-                            }
-                        } else {
-                            null
-                        },
-                    )
-                }
+                PresetCard(
+                    preset = manualConfig.toPreset(),
+                    selected = true,
+                    onClick = { manualEditorExpanded = !manualEditorExpanded },
+                    expandedContent = if (manualEditorExpanded) {
+                        {
+                            ManualCameraConfigEditor(
+                                iso = manualIso,
+                                shutterDenominator = manualShutter,
+                                aperture = manualAperture,
+                                focalLengthMm = manualFocalLength,
+                                isValid = manualConfigValid,
+                                onIsoChanged = { manualIso = it },
+                                onShutterChanged = { manualShutter = it },
+                                onApertureChanged = { manualAperture = it },
+                                onFocalLengthChanged = { manualFocalLength = it },
+                            )
+                        }
+                    } else {
+                        null
+                    },
+                )
             }
         },
         confirmButton = {
             TextButton(
-                onClick = { onSave(pendingPresetId, manualConfigToSave) },
-                enabled = !selectedManualPreset || manualConfigValid,
+                onClick = {
+                    onSave(
+                        ManualCameraConfig.MANUAL_PRESET_ID,
+                        manualConfigToSave,
+                    )
+                },
+                enabled = manualConfigValid,
             ) {
                 Text("保存")
             }
@@ -1135,12 +1375,6 @@ private fun PresetSettingsDialog(
         titleContentColor = MaterialTheme.colorScheme.onSurface,
         textContentColor = MaterialTheme.colorScheme.onSurface,
     )
-    imagePreviewPreset?.let { preset ->
-        PresetImagePreviewDialog(
-            preset = preset,
-            onDismiss = { imagePreviewPreset = null },
-        )
-    }
 }
 
 @Composable
@@ -1300,31 +1534,41 @@ private fun formatEv(value: Double): String {
     return String.format(Locale.US, "%.1f EV", value)
 }
 
-private fun adviceText(
-    code: PreviewAdviceCode?,
+private fun previewGuidance(
+    isFrozen: Boolean,
+    isSimulationReady: Boolean,
+    adviceCode: PreviewAdviceCode?,
     preset: DisposableCameraPreset,
 ): String {
-    return when (code) {
-        PreviewAdviceCode.SUITABLE -> "当前环境亮度适合这组固定参数。"
+    if (!isFrozen) {
+        return "确认构图后，点击中间按钮查看成片模拟。"
+    }
+    if (!isSimulationReady) {
+        return "正在根据当前机型和底片生成成片模拟。"
+    }
+    return when (adviceCode) {
         PreviewAdviceCode.USE_FLASH -> preset.flash?.let {
-            "环境偏暗，建议开启闪光灯并让主体保持在 " +
+            "建议开启闪光灯，并让主体保持在 " +
                 "${formatDecimal(it.effectiveDistanceMinMeters)}-" +
-                "${formatDecimal(it.effectiveDistanceMaxMeters)} m。"
-        } ?: "环境偏暗，建议增加现场光线。"
+                "${formatDecimal(it.effectiveDistanceMaxMeters)} m 内。"
+        } ?: "建议增加现场光线后再拍摄。"
 
-        PreviewAdviceCode.AMBIENT_TOO_DARK -> "环境超出暗部宽容度，成片可能明显欠曝。"
-        PreviewAdviceCode.AMBIENT_TOO_BRIGHT -> "环境超出高光宽容度，亮部细节可能丢失。"
+        PreviewAdviceCode.AMBIENT_TOO_DARK -> "画面会偏暗，建议增加现场光线后再拍摄。"
+        PreviewAdviceCode.AMBIENT_TOO_BRIGHT -> "画面会偏亮，建议避开强光或调整构图。"
+        PreviewAdviceCode.SUITABLE -> "当前构图适合直接拍摄。"
         PreviewAdviceCode.UNAVAILABLE,
         null,
-        -> "稳定后将显示固定曝光下的场景判断。"
+        -> "左右拖动中间滑块，对比手机画面和模拟成片。"
     }
 }
 
 private const val PREVIEW_ASPECT_RATIO = 2f / 3f
 private const val PREVIEW_ZOOM_TOLERANCE = 0.02f
-private const val PREVIEW_CENTER_AREA_PERCENT = 30
-private const val PREVIEW_CENTER_WEIGHT_PERCENT = 70
-private const val PREVIEW_CHROME_SCALE = 0.75f
+private const val COMPARISON_MIN_SPLIT = 0f
+private const val COMPARISON_MAX_SPLIT = 1f
+private val CONTROL_BUTTON_SIZE = 75.dp
+private const val CAPTURE_FEEDBACK_DURATION_MS = 140L
+private val CAPTURE_RED = Color(0xFFD84343)
 
 private fun Context.hasCameraPermission(): Boolean {
     return ContextCompat.checkSelfPermission(

@@ -5,7 +5,7 @@
 - 版本：V2.0 设计基线
 - 适用平台：Android、iOS
 - 产品形态：专业测光模式 + 胶片预览模式
-- 关联文档：[胶片预览技术方案](film-preview-technical-design.md)
+- 关联文档：[胶片预览技术方案](../../shared/film-preview-technical-design.md)
 - 现有能力基线：Android 当前实现、iOS 迁移版本
 
 本文定义双模式改造后的产品边界、用户流程、功能范围和验收标准。两端允许遵循

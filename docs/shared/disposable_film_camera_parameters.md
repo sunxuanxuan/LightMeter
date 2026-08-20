@@ -6,6 +6,7 @@
 |---|---:|---:|---:|---:|---:|---|
 | Kodak FunSaver / Fun Saver | 约 30–31mm；部分官方/商品页出现 24mm 说法 | 800 | 约 1/90–1/100s | 约 f/9.5–f/11 | 1.2–3.5m / 4–11.5ft | 预装 ISO 800 彩色负片；相机官方未见 EV 宽容度量化。彩色负片通常具备一定曝光容错，但不宜写成精确 EV。 |
 | Kodak Power Flash | 未见官方公开明确焦距 | 800 | 未见官方公开 | 未见官方公开 | 1.2–4.5m | 预装 ISO 800 彩色负片；相机官方未见 EV 宽容度量化。 |
+| Kodak EC35 | 25mm | 取决于装入胶卷 | 1/100s | f/10 | 未纳入当前预设 | 可换 135 胶卷机身；App 默认 Kodak Ultra Max 400，并允许选择 ISO 100/200/400/800 胶卷。 |
 | Kodak Sport / Waterproof | 未见官方公开明确焦距 | 800 | 固定；未见官方公开具体值 | 固定；未见官方公开具体值 | 无闪光灯 | 预装 ISO 800 彩色负片；面向户外、日光和防水场景，未见 EV 宽容度量化。 |
 | Kodak Professional TRI-X 400 Single Use Camera | 公开资料常见 30mm | 400 | 公开资料常见 1/125s | 公开资料常见 f/10 | 约 1.2–4.5m；部分零售页写 3–10ft | Kodak TRI-X 400 黑白负片以宽曝光宽容度和可 push processing 著称；一次性机页面通常不单独给出 EV 数字。 |
 | Fujifilm QuickSnap Flash 400 | 32mm | 400 | 1/100s；国际页写 1/140s | f/10 | 1–3m | 预装 Fujifilm 400 / ISO 400 135 彩色负片；相机官方页未见 EV 宽容度量化。 |
@@ -35,8 +36,8 @@
 
 | 预设 | App 使用参数 | 参数可信度 |
 |---|---|---|
-| Kodak FunSaver / Fun Saver | 31mm、ISO 800、1/100s、f/10、闪光 1.2–3.5m | 曝光参数取公开范围中的代表值 |
-| Kodak Power Flash | 30mm、ISO 800、1/100s、f/16、闪光 1.2–4.5m | ISO 与闪光距离有官方依据；镜头和快门为公开资料近似 |
+| Kodak Power Flash / FunSaver | 31mm、ISO 800、1/100s、f/10、闪光 1.2–3.5m | App 合并为同一预设；采用 FunSaver 的保守曝光与闪光距离，界面使用 Power Flash 图标 |
+| Kodak EC35 | 25mm、f/10、1/100s；默认 Kodak Ultra Max 400，可选 ISO 100/200/400/800 胶卷 | 用户提供机身参数；无闪光参数时不输出闪光建议 |
 | Kodak Sport / Waterproof | 30mm、ISO 800、1/125s、f/10、无闪光灯 | ISO 与无闪光灯有官方依据；镜头和快门为同类机型保守近似 |
 | Fujifilm QuickSnap Flash 400 | 32mm、ISO 400、1/100s、f/10、闪光 1–3m | 富士官方美国版规格 |
 | Fujifilm QuickSnap Waterproof / Marine | 32mm、ISO 800、1/125s、f/10、无闪光灯 | 富士官方规格 |

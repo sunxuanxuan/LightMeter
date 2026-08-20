@@ -49,6 +49,7 @@ data class ManualCameraConfig(
 
 data class FilmPreviewSettings(
     val selectedPresetId: String? = null,
+    val selectedFilmId: String? = null,
     val manualConfig: ManualCameraConfig = ManualCameraConfig(),
 )
 
@@ -90,6 +91,7 @@ class SharedPreferencesFilmPreviewSettingsStore(context: Context) :
         ).takeIf(ManualCameraConfig::isValid) ?: defaults.manualConfig
         return FilmPreviewSettings(
             selectedPresetId = preferences.getString(KEY_SELECTED_PRESET_ID, null),
+            selectedFilmId = preferences.getString(KEY_SELECTED_FILM_ID, null),
             manualConfig = config,
         )
     }
@@ -98,6 +100,7 @@ class SharedPreferencesFilmPreviewSettingsStore(context: Context) :
         require(settings.manualConfig.isValid())
         return preferences.edit()
             .putString(KEY_SELECTED_PRESET_ID, settings.selectedPresetId)
+            .putString(KEY_SELECTED_FILM_ID, settings.selectedFilmId)
             .putInt(KEY_MANUAL_ISO, settings.manualConfig.iso)
             .putInt(
                 KEY_MANUAL_SHUTTER_DENOMINATOR,
@@ -117,6 +120,7 @@ class SharedPreferencesFilmPreviewSettingsStore(context: Context) :
     private companion object {
         const val PREFERENCES_NAME = "film_preview_settings"
         const val KEY_SELECTED_PRESET_ID = "selected_preset_id"
+        const val KEY_SELECTED_FILM_ID = "selected_film_id"
         const val KEY_MANUAL_ISO = "manual_iso"
         const val KEY_MANUAL_SHUTTER_DENOMINATOR = "manual_shutter_denominator"
         const val KEY_MANUAL_APERTURE = "manual_aperture"

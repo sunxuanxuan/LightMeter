@@ -300,10 +300,10 @@ private struct PresetImagePreview: View {
 private extension DisposableCameraPreset {
     var previewAssetName: String? {
         switch id {
-        case "kodak-funsaver-800":
-            "PresetFunSaver"
         case "kodak-power-flash-800":
             "PresetPowerFlash"
+        case "kodak-ec35-reusable":
+            "PresetKodakEC35"
         case "fujifilm-quicksnap-flash-400":
             "PresetQuickSnap"
         case "fujifilm-c400-jelly":

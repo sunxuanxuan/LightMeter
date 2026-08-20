@@ -3,8 +3,8 @@ import UIKit
 
 private enum AppDestination {
     case modeSelection
-    case professional
     case filmPreview
+    case instantCamera
 }
 
 struct AppRoute: View {
@@ -20,18 +20,8 @@ struct AppRoute: View {
             switch destination {
             case .modeSelection:
                 ModeSelectionScreen(
-                    onProfessionalSelected: { destination = .professional },
-                    onFilmPreviewSelected: { destination = .filmPreview }
-                )
-            case .professional:
-                MeteringScreen(
-                    viewModel: metering,
-                    onSwitchMode: {
-                        metering.leaveProfessionalMode()
-                        destination = .modeSelection
-                    },
-                    themeStyle: themeStyle,
-                    onThemeStyleChanged: onThemeStyleChanged
+                    onFilmPreviewSelected: { destination = .filmPreview },
+                    onInstantCameraSelected: { destination = .instantCamera }
                 )
             case .filmPreview:
                 FilmPreviewScreen(
@@ -43,6 +33,10 @@ struct AppRoute: View {
                     themeStyle: themeStyle,
                     onThemeStyleChanged: onThemeStyleChanged
                 )
+            case .instantCamera:
+                InstantCameraEntryScreen {
+                    destination = .modeSelection
+                }
             }
         }
         .onAppear(perform: updateCameraState)
@@ -51,11 +45,6 @@ struct AppRoute: View {
     }
 
     private func updateCameraState() {
-        if destination == .professional, scenePhase == .active {
-            metering.start()
-        } else {
-            metering.stop()
-        }
         if destination == .filmPreview, scenePhase == .active {
             filmPreview.start(
                 calibrationOffset: metering.settings.calibrationOffset
@@ -67,8 +56,8 @@ struct AppRoute: View {
 }
 
 private struct ModeSelectionScreen: View {
-    let onProfessionalSelected: () -> Void
     let onFilmPreviewSelected: () -> Void
+    let onInstantCameraSelected: () -> Void
 
     var body: some View {
         VStack(spacing: 0) {
@@ -84,17 +73,40 @@ private struct ModeSelectionScreen: View {
             VStack(spacing: 14) {
                 ModeCard(
                     systemImage: "film.stack",
-                    title: "胶片预览",
-                    description: "固定参数下的曝光效果与宽容度风险",
+                    title: "胶片模拟",
+                    description: "拍前曝光风险与闪光灯建议",
                     action: onFilmPreviewSelected
                 )
                 ModeCard(
-                    systemImage: "camera.metering.center.weighted",
-                    title: "专业测光",
-                    description: "完整测光、曝光组合与画幅控制",
-                    action: onProfessionalSelected
+                    systemImage: "camera.instant",
+                    title: "拍立得预览",
+                    description: "拍前曝光风险与档位建议",
+                    action: onInstantCameraSelected
                 )
             }
+            Spacer()
+        }
+        .padding(.horizontal, 24)
+        .padding(.vertical, 28)
+        .background(Color(uiColor: .systemBackground).ignoresSafeArea())
+    }
+}
+
+private struct InstantCameraEntryScreen: View {
+    let onExit: () -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Spacer()
+            Text("拍立得预览")
+                .font(.title.bold())
+            Text("机型预设正在准备中")
+                .font(.body)
+                .foregroundStyle(.secondary)
+                .padding(.top, 8)
+                .padding(.bottom, 20)
+            Button("返回", action: onExit)
+                .buttonStyle(.borderedProminent)
             Spacer()
         }
         .padding(.horizontal, 24)
