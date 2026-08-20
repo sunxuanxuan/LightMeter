@@ -1,6 +1,5 @@
 package com.lightmeter.app.ui
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -14,7 +13,6 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -30,7 +28,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.lightmeter.app.BuildConfig
 import com.lightmeter.app.filmpreview.FilmPreviewRoute
+import com.lightmeter.app.instantpreview.InstantPreviewRoute
 import com.lightmeter.app.settings.SharedPreferencesAppSettingsStore
 import com.lightmeter.app.ui.theme.AppThemeStyle
 
@@ -38,6 +38,7 @@ private enum class AppDestination {
     MODE_SELECTION,
     FILM_PREVIEW,
     INSTANT_CAMERA,
+    PROFESSIONAL_METERING,
 }
 
 @Composable
@@ -59,6 +60,11 @@ fun AppRoute(
         AppDestination.MODE_SELECTION -> ModeSelectionScreen(
             onFilmPreviewSelected = { destination = AppDestination.FILM_PREVIEW },
             onInstantCameraSelected = { destination = AppDestination.INSTANT_CAMERA },
+            onProfessionalMeteringSelected = if (BuildConfig.DEBUG) {
+                { destination = AppDestination.PROFESSIONAL_METERING }
+            } else {
+                null
+            },
         )
 
         AppDestination.FILM_PREVIEW -> FilmPreviewRoute(
@@ -69,13 +75,17 @@ fun AppRoute(
         )
 
         AppDestination.INSTANT_CAMERA -> {
-            BackHandler {
-                destination = AppDestination.MODE_SELECTION
-            }
-            InstantCameraEntryScreen(
+            InstantPreviewRoute(
                 onExit = { destination = AppDestination.MODE_SELECTION },
             )
         }
+
+        AppDestination.PROFESSIONAL_METERING -> MeteringRoute(
+            calibrationOffset = appSettings.calibrationOffset,
+            onExit = { destination = AppDestination.MODE_SELECTION },
+            themeStyle = themeStyle,
+            onThemeStyleChanged = onThemeStyleChanged,
+        )
     }
 }
 
@@ -83,6 +93,7 @@ fun AppRoute(
 private fun ModeSelectionScreen(
     onFilmPreviewSelected: () -> Unit,
     onInstantCameraSelected: () -> Unit,
+    onProfessionalMeteringSelected: (() -> Unit)?,
 ) {
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -132,42 +143,15 @@ private fun ModeSelectionScreen(
                     onClick = onInstantCameraSelected,
                     modifier = Modifier.fillMaxWidth(),
                 )
-            }
-        }
-    }
-}
-
-@Composable
-private fun InstantCameraEntryScreen(
-    onExit: () -> Unit,
-) {
-    Surface(
-        modifier = Modifier.fillMaxSize(),
-        color = MaterialTheme.colorScheme.background,
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .statusBarsPadding()
-                .navigationBarsPadding()
-                .padding(horizontal = 24.dp, vertical = 28.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
-        ) {
-            Text(
-                text = "拍立得预览",
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onBackground,
-            )
-            Text(
-                text = "机型预设正在准备中",
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 8.dp, bottom = 20.dp),
-            )
-            Button(onClick = onExit) {
-                Text("返回")
+                onProfessionalMeteringSelected?.let { onClick ->
+                    ModeCard(
+                        symbol = "◈",
+                        title = "专业模式",
+                        description = "高级测光与胶片宽容度分析",
+                        onClick = onClick,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
             }
         }
     }
