@@ -29,8 +29,8 @@ internal object FilmGrainModel {
     }
 
     const val MAX_BASE_INTENSITY = 0.1
-    const val MAX_GRAIN_INTENSITY = 0.065
+    const val MAX_GRAIN_INTENSITY = 0.055
     private const val MIN_BASE_INTENSITY = 0.004
-    private const val BASE_INTENSITY_AT_ISO_400 = 0.012
-    private const val UNDEREXPOSURE_GRAIN_PER_STOP = 0.012
+    private const val BASE_INTENSITY_AT_ISO_400 = 0.010
+    private const val UNDEREXPOSURE_GRAIN_PER_STOP = 0.010
 }

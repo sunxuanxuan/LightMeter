@@ -3,6 +3,7 @@ package com.lightmeter.app.metering
 enum class MeteringMode {
     SPOT,
     CENTER_AVERAGE,
+    CENTER_CROP_AVERAGE,
     CENTER_WEIGHTED,
     AVERAGE,
 }
@@ -88,6 +89,7 @@ data class MeteringConfig(
     val spotPoint: NormalizedPoint? = null,
     val spotAreaPercent: Int = 5,
     val centerAverageAreaPercent: Int = 20,
+    val centerCropPercent: Int = 60,
     val centerAreaPercent: Int = 25,
     val centerWeightPercent: Int = 70,
     val viewfinderRect: NormalizedMeteringRect = NormalizedMeteringRect.Full,
@@ -100,6 +102,7 @@ data class MeteringConfig(
     init {
         require(spotAreaPercent in 1..10)
         require(centerAverageAreaPercent in 1..20)
+        require(centerCropPercent in 10..100)
         require(centerAreaPercent in 5..80)
         require(centerWeightPercent in 50..95)
         require(previewAspectRatio > 0.0)

@@ -1847,7 +1847,9 @@ private fun AppSettingsDialog(
                 ) {
                     ControlLabel(text = "测光模式")
                     OptionRow {
-                        MeteringMode.entries.forEach { mode ->
+                        MeteringMode.entries
+                            .filter { it != MeteringMode.CENTER_CROP_AVERAGE }
+                            .forEach { mode ->
                             ChoiceButton(
                                 text = mode.displayName(),
                                 selected = selectedMeteringPreset == mode,
@@ -1901,6 +1903,8 @@ private fun AppSettingsDialog(
                                 )
                                 SettingHint("读取画面中央圆形区域的平均亮度，不计入外围区域。")
                             }
+
+                            MeteringMode.CENTER_CROP_AVERAGE -> Unit
 
                             MeteringMode.CENTER_WEIGHTED -> {
                                 PercentageControl(
@@ -2192,6 +2196,7 @@ private fun MeteringMode.displayName(): String {
     return when (this) {
         MeteringMode.SPOT -> "点测光"
         MeteringMode.CENTER_AVERAGE -> "中央区域平均"
+        MeteringMode.CENTER_CROP_AVERAGE -> "中央区域平均"
         MeteringMode.CENTER_WEIGHTED -> "中央重点"
         MeteringMode.AVERAGE -> "平均测光"
     }

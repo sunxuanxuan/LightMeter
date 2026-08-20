@@ -1,5 +1,6 @@
 package com.lightmeter.app.filmpreview
 
+import com.lightmeter.app.metering.ExposureMap
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -78,6 +79,34 @@ class FilmExposureSimulatorTest {
         outputValues.zipWithNext().forEach { (left, right) ->
             assertTrue("Expected monotonic per-pixel detail: $outputValues", right > left)
         }
+    }
+
+    @Test
+    fun fullResolutionExposureMapControlsEachMatchingSourcePixel() {
+        val source = intArrayOf(
+            argb(alpha = 255, value = 118),
+            argb(alpha = 255, value = 118),
+        )
+        val exposureMap = ExposureMap(
+            width = 2,
+            height = 1,
+            pixelEv100 = floatArrayOf(-1f, 1f),
+            cameraSettingEv100 = 0.0,
+            timestampNs = 1L,
+        )
+
+        val output = FilmExposureSimulator.renderPixels(
+            sourcePixels = source,
+            exposureMap = exposureMap,
+            cameraSettingEv100 = 0.0,
+            calibrationOffset = 0.0,
+            referenceEv100 = 0.0,
+            highlightLatitudeStops = 3.0,
+            shadowLatitudeStops = 2.0,
+            sourceWidth = 2,
+        )
+
+        assertTrue((output[0] and 0xFF) < (output[1] and 0xFF))
     }
 
     @Test

@@ -61,7 +61,7 @@ class FilmPreviewEngineTest {
     }
 
     @Test
-    fun latitudeBoundaryIsIncludedInRiskAdvice() {
+    fun cautionRangeUsesAmbientLightAdvice() {
         val reference = FilmPreviewEngine.presetEv100(quickSnap)
         val evaluation = FilmPreviewEngine.evaluate(
             reference - quickSnap.film.shadowLatitudeStops,
@@ -69,7 +69,39 @@ class FilmPreviewEngineTest {
         )
 
         assertEquals(PreviewSceneRating.CAUTION, evaluation.rating)
-        assertEquals(PreviewAdviceCode.USE_FLASH, evaluation.adviceCode)
+        assertEquals(PreviewAdviceCode.AMBIENT_TOO_DARK, evaluation.adviceCode)
+    }
+
+    @Test
+    fun normalRangeUsesGreenSuitableAdvice() {
+        val baseEv = FilmPreviewEngine.presetEv100(quickSnap)
+
+        val evaluation = FilmPreviewEngine.evaluate(baseEv + 1.0, quickSnap)
+
+        assertEquals(PreviewSceneRating.GOOD, evaluation.rating)
+        assertEquals(PreviewAdviceCode.SUITABLE, evaluation.adviceCode)
+        assertEquals(baseEv, evaluation.baseEv100, 1e-9)
+        assertEquals(baseEv + 1.0, evaluation.realEv100 ?: Double.NaN, 1e-9)
+    }
+
+    @Test
+    fun brightCautionRangeRecommendsSlightlyDarkerLocation() {
+        val baseEv = FilmPreviewEngine.presetEv100(quickSnap)
+
+        val evaluation = FilmPreviewEngine.evaluate(baseEv + 1.5, quickSnap)
+
+        assertEquals(PreviewSceneRating.CAUTION, evaluation.rating)
+        assertEquals(PreviewAdviceCode.AMBIENT_TOO_BRIGHT, evaluation.adviceCode)
+    }
+
+    @Test
+    fun severeBrightRangeRecommendsShade() {
+        val baseEv = FilmPreviewEngine.presetEv100(quickSnap)
+
+        val evaluation = FilmPreviewEngine.evaluate(baseEv + 2.1, quickSnap)
+
+        assertEquals(PreviewSceneRating.POOR, evaluation.rating)
+        assertEquals(PreviewAdviceCode.SEEK_SHADE, evaluation.adviceCode)
     }
 
     @Test

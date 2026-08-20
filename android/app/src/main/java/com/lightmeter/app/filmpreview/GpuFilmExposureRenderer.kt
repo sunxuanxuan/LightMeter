@@ -8,6 +8,7 @@ import android.opengl.EGLDisplay
 import android.opengl.EGLSurface
 import android.opengl.GLES20
 import android.opengl.GLUtils
+import com.lightmeter.app.metering.ExposureMap
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.FloatBuffer
@@ -15,25 +16,23 @@ import java.nio.FloatBuffer
 internal object GpuFilmExposureRenderer {
     fun render(
         source: Bitmap,
-        cameraSettingEv100: Double,
-        calibrationOffset: Double,
+        exposureMap: ExposureMap,
         referenceEv100: Double,
         highlightLatitudeStops: Double,
         shadowLatitudeStops: Double,
         baseGrainIntensity: Double = 0.0,
     ): Bitmap {
-        require(cameraSettingEv100.isFinite())
-        require(calibrationOffset.isFinite())
         require(referenceEv100.isFinite())
+        require(exposureMap.width == source.width)
+        require(exposureMap.height == source.height)
 
         val session = EglSession(source.width, source.height)
         return try {
             session.render(
                 source = source,
+                exposureMap = exposureMap,
                 simulationMode = FILM_RESPONSE_MODE,
                 exposureCompensation = 0f,
-                cameraSettingEv100 = cameraSettingEv100.toFloat(),
-                calibrationOffset = calibrationOffset.toFloat(),
                 referenceEv100 = referenceEv100.toFloat(),
                 highlightLatitudeStops = highlightLatitudeStops.toFloat(),
                 shadowLatitudeStops = shadowLatitudeStops.toFloat(),
@@ -54,10 +53,9 @@ internal object GpuFilmExposureRenderer {
         return try {
             session.render(
                 source = source,
+                exposureMap = null,
                 simulationMode = EXPOSURE_COMPENSATION_MODE,
                 exposureCompensation = exposureCompensation.toFloat(),
-                cameraSettingEv100 = 0f,
-                calibrationOffset = 0f,
                 referenceEv100 = 0f,
                 highlightLatitudeStops = 1f,
                 shadowLatitudeStops = 1f,
@@ -77,6 +75,7 @@ internal object GpuFilmExposureRenderer {
         private var surface: EGLSurface = EGL14.EGL_NO_SURFACE
         private var program = 0
         private var sourceTexture = 0
+        private var exposureMapTexture = 0
         private var outputTexture = 0
         private var framebuffer = 0
 
@@ -93,10 +92,9 @@ internal object GpuFilmExposureRenderer {
 
         fun render(
             source: Bitmap,
+            exposureMap: ExposureMap?,
             simulationMode: Int,
             exposureCompensation: Float,
-            cameraSettingEv100: Float,
-            calibrationOffset: Float,
             referenceEv100: Float,
             highlightLatitudeStops: Float,
             shadowLatitudeStops: Float,
@@ -108,12 +106,19 @@ internal object GpuFilmExposureRenderer {
             GLES20.glActiveTexture(GLES20.GL_TEXTURE0)
             GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, sourceTexture)
             GLUtils.texImage2D(GLES20.GL_TEXTURE_2D, 0, source, 0)
+            GLES20.glActiveTexture(GLES20.GL_TEXTURE1)
+            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, exposureMapTexture)
+            exposureMap?.let {
+                encodeExposureMap(it).also { mapBitmap ->
+                    GLUtils.texImage2D(GLES20.GL_TEXTURE_2D, 0, mapBitmap, 0)
+                    mapBitmap.recycle()
+                }
+            }
 
             GLES20.glUniform1i(uniform("uSource"), 0)
+            GLES20.glUniform1i(uniform("uExposureMap"), 1)
             GLES20.glUniform1i(uniform("uSimulationMode"), simulationMode)
             GLES20.glUniform1f(uniform("uExposureCompensation"), exposureCompensation)
-            GLES20.glUniform1f(uniform("uCameraSettingEv100"), cameraSettingEv100)
-            GLES20.glUniform1f(uniform("uCalibrationOffset"), calibrationOffset)
             GLES20.glUniform1f(uniform("uReferenceEv100"), referenceEv100)
             GLES20.glUniform1f(uniform("uHighlightLatitude"), highlightLatitudeStops)
             GLES20.glUniform1f(uniform("uShadowLatitude"), shadowLatitudeStops)
@@ -164,7 +169,8 @@ internal object GpuFilmExposureRenderer {
                 if (framebuffer != 0) {
                     GLES20.glDeleteFramebuffers(1, intArrayOf(framebuffer), 0)
                 }
-                val textures = intArrayOf(sourceTexture, outputTexture).filter { it != 0 }
+                val textures = intArrayOf(sourceTexture, exposureMapTexture, outputTexture)
+                    .filter { it != 0 }
                 if (textures.isNotEmpty()) {
                     GLES20.glDeleteTextures(
                         textures.size,
@@ -260,6 +266,18 @@ internal object GpuFilmExposureRenderer {
         private fun initializeGl() {
             program = createProgram(VERTEX_SHADER, FRAGMENT_SHADER)
             sourceTexture = createTexture()
+            exposureMapTexture = createTexture(filter = GLES20.GL_NEAREST)
+            GLES20.glTexImage2D(
+                GLES20.GL_TEXTURE_2D,
+                0,
+                GLES20.GL_RGBA,
+                1,
+                1,
+                0,
+                GLES20.GL_RGBA,
+                GLES20.GL_UNSIGNED_BYTE,
+                ByteBuffer.wrap(byteArrayOf(0, 0, 0, 0)),
+            )
             outputTexture = createTexture()
             GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, outputTexture)
             GLES20.glTexImage2D(
@@ -307,7 +325,7 @@ internal object GpuFilmExposureRenderer {
         }
     }
 
-    private fun createTexture(): Int {
+    private fun createTexture(filter: Int = GLES20.GL_LINEAR): Int {
         val textures = IntArray(1)
         GLES20.glGenTextures(1, textures, 0)
         check(textures[0] != 0) { "Unable to create OpenGL texture" }
@@ -315,12 +333,12 @@ internal object GpuFilmExposureRenderer {
         GLES20.glTexParameteri(
             GLES20.GL_TEXTURE_2D,
             GLES20.GL_TEXTURE_MIN_FILTER,
-            GLES20.GL_LINEAR,
+            filter,
         )
         GLES20.glTexParameteri(
             GLES20.GL_TEXTURE_2D,
             GLES20.GL_TEXTURE_MAG_FILTER,
-            GLES20.GL_LINEAR,
+            filter,
         )
         GLES20.glTexParameteri(
             GLES20.GL_TEXTURE_2D,
@@ -333,6 +351,30 @@ internal object GpuFilmExposureRenderer {
             GLES20.GL_CLAMP_TO_EDGE,
         )
         return textures[0]
+    }
+
+    private fun encodeExposureMap(exposureMap: ExposureMap): Bitmap {
+        val pixels = IntArray(exposureMap.pixelEv100.size) { index ->
+            val encoded = (
+                (
+                    (exposureMap.pixelEv100[index]
+                        .takeIf(Float::isFinite)
+                        ?.toDouble()
+                        ?: DEFAULT_ENCODED_EV100
+                        ).coerceIn(MIN_ENCODED_EV100, MAX_ENCODED_EV100) -
+                        MIN_ENCODED_EV100
+                    ) / (MAX_ENCODED_EV100 - MIN_ENCODED_EV100) * MAX_ENCODED_EV_VALUE
+                ).toInt().coerceIn(0, MAX_ENCODED_EV_VALUE)
+            0xFF000000.toInt() or
+                ((encoded ushr 8) shl 16) or
+                ((encoded and 0xFF) shl 8)
+        }
+        return Bitmap.createBitmap(
+            pixels,
+            exposureMap.width,
+            exposureMap.height,
+            Bitmap.Config.ARGB_8888,
+        )
     }
 
     private fun createProgram(vertexSource: String, fragmentSource: String): Int {
@@ -437,10 +479,9 @@ internal object GpuFilmExposureRenderer {
         precision highp float;
 
         uniform sampler2D uSource;
+        uniform sampler2D uExposureMap;
         uniform int uSimulationMode;
         uniform float uExposureCompensation;
-        uniform float uCameraSettingEv100;
-        uniform float uCalibrationOffset;
         uniform float uReferenceEv100;
         uniform float uHighlightLatitude;
         uniform float uShadowLatitude;
@@ -452,6 +493,8 @@ internal object GpuFilmExposureRenderer {
         const float DISPLAY_EXPOSURE_SCALE = 0.5;
         const float OUTSIDE_EXTENSION_STOPS = 2.0;
         const float LUMINANCE_EPSILON = 0.000001;
+        const float MIN_ENCODED_EV100 = -32.0;
+        const float MAX_ENCODED_EV100 = 32.0;
 
         vec3 srgbToLinear(vec3 value) {
             vec3 lower = value / 12.92;
@@ -509,6 +552,14 @@ internal object GpuFilmExposureRenderer {
             )) * 43758.5453) * 2.0 - 1.0;
         }
 
+        float exposureMapEv100(vec2 coordinate) {
+            vec4 encoded = texture2D(uExposureMap, coordinate);
+            float highByte = floor(encoded.r * 255.0 + 0.5);
+            float lowByte = floor(encoded.g * 255.0 + 0.5);
+            float normalizedEv = (highByte * 256.0 + lowByte) / 65535.0;
+            return mix(MIN_ENCODED_EV100, MAX_ENCODED_EV100, normalizedEv);
+        }
+
         void main() {
             vec4 source = texture2D(uSource, vTextureCoordinate);
             vec3 linearRgb = srgbToLinear(source.rgb);
@@ -524,16 +575,13 @@ internal object GpuFilmExposureRenderer {
                 linearRgb,
                 vec3(0.2126, 0.7152, 0.0722)
             );
-            float pixelEv100 =
-                uCameraSettingEv100 +
-                log2(max(sourceLuminance, LUMINANCE_EPSILON) / TARGET_LUMINANCE) +
-                uCalibrationOffset;
+            float pixelEv100 = exposureMapEv100(vTextureCoordinate);
             float targetLuminance = filmLuminance(pixelEv100 - uReferenceEv100);
             float gain = targetLuminance / max(sourceLuminance, LUMINANCE_EPSILON);
             float grainIntensity = min(
                 uBaseGrainIntensity +
-                    max(uReferenceEv100 - pixelEv100, 0.0) * 0.012,
-                0.065
+                    max(uReferenceEv100 - pixelEv100, 0.0) * 0.010,
+                0.055
             );
             vec3 grain = vec3(grainNoise(gl_FragCoord.xy) * grainIntensity);
             gl_FragColor = vec4(
@@ -545,4 +593,8 @@ internal object GpuFilmExposureRenderer {
 
     private const val FILM_RESPONSE_MODE = 0
     private const val EXPOSURE_COMPENSATION_MODE = 1
+    private const val MIN_ENCODED_EV100 = -32.0
+    private const val MAX_ENCODED_EV100 = 32.0
+    private const val DEFAULT_ENCODED_EV100 = 0.0
+    private const val MAX_ENCODED_EV_VALUE = 0xFFFF
 }

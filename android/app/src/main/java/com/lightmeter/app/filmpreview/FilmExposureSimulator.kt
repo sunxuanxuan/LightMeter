@@ -72,13 +72,14 @@ internal object FilmExposureSimulator {
         require(shadowLatitudeStops > 0.0)
         require(baseGrainIntensity in 0.0..FilmGrainModel.MAX_BASE_INTENSITY)
         require(exposureMap.cameraSettingEv100.isFinite())
+        require(exposureMap.width == source.width)
+        require(exposureMap.height == source.height)
 
         val startedAtMs = SystemClock.elapsedRealtime()
         val gpuResult = runCatching {
             GpuFilmExposureRenderer.render(
-                source,
-                cameraSettingEv100 = exposureMap.cameraSettingEv100,
-                calibrationOffset = exposureMap.calibrationOffset,
+                source = source,
+                exposureMap = exposureMap,
                 referenceEv100 = referenceEv100,
                 highlightLatitudeStops = highlightLatitudeStops,
                 shadowLatitudeStops = shadowLatitudeStops,
@@ -106,6 +107,7 @@ internal object FilmExposureSimulator {
         val result = Bitmap.createBitmap(
             renderPixels(
                 sourcePixels = sourcePixels,
+                exposureMap = exposureMap,
                 cameraSettingEv100 = exposureMap.cameraSettingEv100,
                 calibrationOffset = exposureMap.calibrationOffset,
                 referenceEv100 = referenceEv100,
@@ -124,6 +126,7 @@ internal object FilmExposureSimulator {
 
     internal fun renderPixels(
         sourcePixels: IntArray,
+        exposureMap: ExposureMap? = null,
         cameraSettingEv100: Double,
         calibrationOffset: Double,
         referenceEv100: Double,
@@ -139,11 +142,17 @@ internal object FilmExposureSimulator {
         require(shadowLatitudeStops > 0.0)
         require(baseGrainIntensity in 0.0..FilmGrainModel.MAX_BASE_INTENSITY)
         require(sourceWidth > 0)
+        require(sourcePixels.size % sourceWidth == 0)
+        exposureMap?.let {
+            require(it.width == sourceWidth)
+            require(it.height == sourcePixels.size / sourceWidth)
+        }
 
         val outputPixels = IntArray(sourcePixels.size)
         val renderPixel: (Int) -> Unit = { index ->
             outputPixels[index] = simulatePixel(
                 argb = sourcePixels[index],
+                exposureMapEv100 = exposureMap?.pixelEv100?.get(index),
                 cameraSettingEv100 = cameraSettingEv100,
                 calibrationOffset = calibrationOffset,
                 referenceEv100 = referenceEv100,
@@ -191,6 +200,7 @@ internal object FilmExposureSimulator {
 
     private fun simulatePixel(
         argb: Int,
+        exposureMapEv100: Float?,
         cameraSettingEv100: Double,
         calibrationOffset: Double,
         referenceEv100: Double,
@@ -206,9 +216,14 @@ internal object FilmExposureSimulator {
         val sourceLuminance = RED_LUMINANCE_WEIGHT * red +
             GREEN_LUMINANCE_WEIGHT * green +
             BLUE_LUMINANCE_WEIGHT * blue
-        val pixelEv100 = cameraSettingEv100 +
-            log2(sourceLuminance.coerceAtLeast(LUMINANCE_EPSILON) / TARGET_LUMINANCE) +
-            calibrationOffset
+        val pixelEv100 = exposureMapEv100
+            ?.takeIf(Float::isFinite)
+            ?.toDouble()
+            ?: (
+                cameraSettingEv100 +
+                    log2(sourceLuminance.coerceAtLeast(LUMINANCE_EPSILON) / TARGET_LUMINANCE) +
+                    calibrationOffset
+                )
         val targetLuminance = FilmResponseCurve.targetLuminance(
             deltaEv = pixelEv100 - referenceEv100,
             highlightLatitudeStops = highlightLatitudeStops,
