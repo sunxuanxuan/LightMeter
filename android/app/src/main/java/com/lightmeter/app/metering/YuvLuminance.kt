@@ -1,23 +1,49 @@
 package com.lightmeter.app.metering
 
+import android.hardware.DataSpace
 import kotlin.math.max
 import kotlin.math.pow
 
+internal enum class YuvLuminanceRange(
+    val blackLevel: Int,
+    val whiteLevel: Int,
+) {
+    FULL(0, 255),
+    LIMITED(16, 235),
+}
+
 internal object YuvLuminance {
-    fun normalized(raw: Int): Double {
-        return ((raw.coerceIn(BLACK_LEVEL, WHITE_LEVEL) - BLACK_LEVEL) / RANGE)
+    fun rangeForDataSpace(dataSpace: Int): YuvLuminanceRange? {
+        return when (DataSpace.getRange(dataSpace)) {
+            DataSpace.RANGE_FULL -> YuvLuminanceRange.FULL
+            DataSpace.RANGE_LIMITED -> YuvLuminanceRange.LIMITED
+            else -> null
+        }
+    }
+
+    fun normalized(
+        raw: Int,
+        range: YuvLuminanceRange = YuvLuminanceRange.LIMITED,
+    ): Double {
+        return (
+            (raw.coerceIn(range.blackLevel, range.whiteLevel) - range.blackLevel) /
+                (range.whiteLevel - range.blackLevel).toDouble()
+            )
             .coerceIn(0.0, 1.0)
     }
 
-    fun linear(raw: Int): Double {
-        return max(normalized(raw).pow(GAMMA), MIN_LINEAR_LUMINANCE)
+    fun linear(
+        raw: Int,
+        range: YuvLuminanceRange = YuvLuminanceRange.LIMITED,
+    ): Double {
+        return max(normalized(raw, range).pow(GAMMA), MIN_LINEAR_LUMINANCE)
     }
 
-    fun isHighlightClipped(raw: Int): Boolean = raw >= WHITE_LEVEL
+    fun isHighlightClipped(
+        raw: Int,
+        range: YuvLuminanceRange = YuvLuminanceRange.LIMITED,
+    ): Boolean = raw >= range.whiteLevel
 
-    private const val BLACK_LEVEL = 16
-    private const val WHITE_LEVEL = 235
-    private const val RANGE = (WHITE_LEVEL - BLACK_LEVEL).toDouble()
     private const val GAMMA = 2.2
     private const val MIN_LINEAR_LUMINANCE = 1e-6
 }

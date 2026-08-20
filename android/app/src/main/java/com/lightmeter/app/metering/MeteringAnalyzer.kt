@@ -3,6 +3,7 @@ package com.lightmeter.app.metering
 import android.graphics.Bitmap
 import android.graphics.Matrix
 import android.graphics.Rect
+import android.os.Build
 import android.hardware.camera2.CameraCaptureSession
 import android.hardware.camera2.CaptureRequest
 import android.hardware.camera2.CaptureResult
@@ -136,7 +137,8 @@ class MeteringAnalyzer(
             val metadata = metadataForTimestamp(timestampNs) ?: return
             val currentConfig = config.get()
             if (!currentConfig.isZoomReady) return
-            val luminance = measureLuminance(image, currentConfig) ?: return
+            val luminanceRange = luminanceRangeFor(image)
+            val luminance = measureLuminance(image, currentConfig, luminanceRange) ?: return
             val ev = calculateEv100(metadata, luminance, currentConfig.calibrationOffset)
             var mapDurationMs = 0L
             var bitmapDurationMs = 0L
@@ -145,7 +147,7 @@ class MeteringAnalyzer(
             if (captureRequestId > 0) {
                 val mapStartedAtNs = SystemClock.elapsedRealtimeNanos()
                 val currentExposureMap =
-                    createExposureMap(image, metadata, currentConfig) ?: return
+                    createExposureMap(image, metadata, currentConfig, luminanceRange) ?: return
                 mapDurationMs = (
                     SystemClock.elapsedRealtimeNanos() - mapStartedAtNs
                     ) / 1_000_000
@@ -287,6 +289,7 @@ class MeteringAnalyzer(
     private fun measureLuminance(
         image: ImageProxy,
         meteringConfig: MeteringConfig,
+        luminanceRange: YuvLuminanceRange,
     ): Double? {
         val plane = image.planes.firstOrNull() ?: return null
         val buffer = plane.buffer
@@ -378,7 +381,11 @@ class MeteringAnalyzer(
         }
 
         if (primarySampleCount < MIN_SAMPLE_COUNT) return null
-        val primaryLuminance = trimmedLinearMean(primaryHistogram, primarySampleCount)
+        val primaryLuminance = trimmedLinearMean(
+            histogram = primaryHistogram,
+            sampleCount = primarySampleCount,
+            luminanceRange = luminanceRange,
+        )
         if (meteringConfig.mode != MeteringMode.CENTER_WEIGHTED) {
             return primaryLuminance
         }
@@ -386,6 +393,7 @@ class MeteringAnalyzer(
         val secondaryLuminance = trimmedLinearMean(
             secondaryHistogram,
             secondarySampleCount,
+            luminanceRange,
         )
         val centerWeight = meteringConfig.centerWeightPercent / 100.0
         return primaryLuminance * centerWeight +
@@ -395,6 +403,7 @@ class MeteringAnalyzer(
     private fun trimmedLinearMean(
         histogram: IntArray,
         sampleCount: Int,
+        luminanceRange: YuvLuminanceRange,
     ): Double {
         val retainedHistogram = histogram.copyOf()
         var trimLow = (sampleCount * TRIM_RATIO).toInt()
@@ -419,7 +428,7 @@ class MeteringAnalyzer(
         var retained = 0
         var sum = 0.0
         retainedHistogram.forEachIndexed { value, count ->
-            sum += YuvLuminance.linear(value) * count
+            sum += YuvLuminance.linear(value, luminanceRange) * count
             retained += count
         }
         return sum / retained.coerceAtLeast(1)
@@ -439,6 +448,7 @@ class MeteringAnalyzer(
         image: ImageProxy,
         metadata: CameraExposureMetadata,
         meteringConfig: MeteringConfig,
+        luminanceRange: YuvLuminanceRange,
     ): ExposureMap? {
         val plane = image.planes.firstOrNull() ?: return null
         val cropRect = image.cropRect
@@ -492,8 +502,8 @@ class MeteringAnalyzer(
                         )
                         if (index !in 0 until buffer.limit()) continue
                         val rawLuminance = buffer.get(index).toInt() and 0xFF
-                        linearLuminanceSum += YuvLuminance.linear(rawLuminance)
-                        if (YuvLuminance.isHighlightClipped(rawLuminance)) {
+                        linearLuminanceSum += YuvLuminance.linear(rawLuminance, luminanceRange)
+                        if (YuvLuminance.isHighlightClipped(rawLuminance, luminanceRange)) {
                             clippedSampleCount++
                         }
                         sampleCount++
@@ -525,6 +535,16 @@ class MeteringAnalyzer(
             timestampNs = image.imageInfo.timestamp,
             revision = meteringConfig.revision,
         )
+    }
+
+    private fun luminanceRangeFor(image: ImageProxy): YuvLuminanceRange {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            image.image?.let { sourceImage ->
+                YuvLuminance.rangeForDataSpace(sourceImage.dataSpace)?.let { return it }
+            }
+        }
+        // Older Android APIs do not expose the producer data space on Image.
+        return YuvLuminanceRange.LIMITED
     }
 
     private fun cameraSettingEv100(

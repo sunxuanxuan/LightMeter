@@ -39,7 +39,7 @@
 | Kodak Power Flash / FunSaver | 31mm、ISO 800、1/100s、f/10、闪光 1.2–3.5m | App 合并为同一预设；采用 FunSaver 的保守曝光与闪光距离，界面使用 Power Flash 图标 |
 | Kodak EC35 | 25mm、f/10、1/100s；默认 Kodak Ultra Max 400，可选 ISO 100/200/400/800 胶卷 | 用户提供机身参数；无闪光参数时不输出闪光建议 |
 | Kodak Sport / Waterproof | 30mm、ISO 800、1/125s、f/10、无闪光灯 | ISO 与无闪光灯有官方依据；镜头和快门为同类机型保守近似 |
-| Fujifilm QuickSnap Flash 400 | 32mm、ISO 400、1/100s、f/10、闪光 1–3m | 富士官方美国版规格 |
+| Fujifilm QuickSnap Flash 400 | 32mm、ISO 400、1/140s、f/10、闪光 1–3m | App 采用国际规格版本；美国官方页存在 1/100s 地区差异 |
 | Fujifilm QuickSnap Waterproof / Marine | 32mm、ISO 800、1/125s、f/10、无闪光灯 | 富士官方规格 |
 | Fujifilm C400 果冻胶卷相机 | 31mm、ISO 400、1/125s、f/11、闪光 1–3m | 多个公开商品与媒体规格交叉确认 |
 
