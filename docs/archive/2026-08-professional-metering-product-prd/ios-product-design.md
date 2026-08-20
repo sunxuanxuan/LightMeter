@@ -9,7 +9,7 @@
 - Android 行为参考：当前 `android/app/`
 
 本文定义 iOS 首个可发布版本的功能范围、交互要求和验收标准。技术实现以
-[iOS 技术架构](technical-architecture.md)为准。
+[iOS 技术架构](../../ios/technical-architecture.md)为准。
 
 ## 2. 产品目标
 
@@ -123,7 +123,7 @@ iOS 使用相机视场角计算目标倍率，不假设系统公开传感器物�
 ### 5.4 胶片宽容度
 
 胶片预设与公共资料
-[胶片曝光宽容度参考](../shared/film-exposure-latitude-reference.md)保持一致。
+[胶片曝光宽容度参考](../../shared/film-exposure-latitude-reference.md)保持一致。
 用户可以关闭风险预览，或按 $1/3 EV$ 调整高光和暗部阈值。
 
 ### 5.5 设置持久化

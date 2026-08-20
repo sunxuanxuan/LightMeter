@@ -16,6 +16,7 @@ public enum EvidenceLevel: String, Codable, Sendable {
 
 public struct FilmProfile: Codable, Equatable, Sendable {
     public let name: String
+    public let id: String
     public let iso: Int
     public let highlightLatitudeStops: Double
     public let shadowLatitudeStops: Double
@@ -24,6 +25,7 @@ public struct FilmProfile: Codable, Equatable, Sendable {
 
     public init(
         name: String,
+        id: String? = nil,
         iso: Int,
         highlightLatitudeStops: Double,
         shadowLatitudeStops: Double,
@@ -35,6 +37,7 @@ public struct FilmProfile: Codable, Equatable, Sendable {
         precondition(shadowLatitudeStops > 0)
         precondition((0...0.1).contains(baseGrainIntensity))
         self.name = name
+        self.id = id ?? name
         self.iso = iso
         self.highlightLatitudeStops = highlightLatitudeStops
         self.shadowLatitudeStops = shadowLatitudeStops
@@ -89,6 +92,7 @@ public struct DisposableCameraPreset: Identifiable, Equatable, Sendable {
     public let flash: FlashProfile?
     public let exposureEvidence: EvidenceLevel
     public let displayNameOverride: String?
+    public let compatibleFilms: [FilmProfile]
 
     public init(
         id: String,
@@ -101,13 +105,17 @@ public struct DisposableCameraPreset: Identifiable, Equatable, Sendable {
         shutterSeconds: Double,
         flash: FlashProfile?,
         exposureEvidence: EvidenceLevel,
-        displayNameOverride: String? = nil
+        displayNameOverride: String? = nil,
+        compatibleFilms: [FilmProfile]? = nil
     ) {
         precondition(!id.isEmpty)
         precondition(presetVersion > 0)
         precondition(!brand.isEmpty)
         precondition(!model.isEmpty)
         precondition(shutterSeconds > 0)
+        let films = compatibleFilms ?? [film]
+        precondition(!films.isEmpty)
+        precondition(films.contains { $0.id == film.id })
         self.id = id
         self.presetVersion = presetVersion
         self.brand = brand
@@ -119,10 +127,35 @@ public struct DisposableCameraPreset: Identifiable, Equatable, Sendable {
         self.flash = flash
         self.exposureEvidence = exposureEvidence
         self.displayNameOverride = displayNameOverride
+        self.compatibleFilms = films
     }
 
     public var displayName: String {
         displayNameOverride ?? "\(brand) \(model)"
+    }
+
+    public var isFilmSelectable: Bool {
+        compatibleFilms.count > 1
+    }
+
+    public func withFilm(id: String) -> DisposableCameraPreset? {
+        guard let selectedFilm = compatibleFilms.first(where: { $0.id == id }) else {
+            return nil
+        }
+        return DisposableCameraPreset(
+            id: self.id,
+            presetVersion: presetVersion,
+            brand: brand,
+            model: model,
+            regionOrBatch: regionOrBatch,
+            film: selectedFilm,
+            optics: optics,
+            shutterSeconds: shutterSeconds,
+            flash: flash,
+            exposureEvidence: exposureEvidence,
+            displayNameOverride: displayNameOverride,
+            compatibleFilms: compatibleFilms
+        )
     }
 }
 
@@ -184,13 +217,52 @@ public struct ManualCameraConfig: Codable, Equatable, Sendable {
 }
 
 public enum BuiltInDisposableCameraRepository {
+    private static let kodakEC35Films = [
+        FilmProfile(
+            name: "通用 ISO 100 彩色负片",
+            id: "generic-color-100",
+            iso: 100,
+            highlightLatitudeStops: 3,
+            shadowLatitudeStops: 2,
+            baseGrainIntensity: 0.006,
+            evidence: .estimated
+        ),
+        FilmProfile(
+            name: "Kodak Gold 200",
+            id: "kodak-gold-200",
+            iso: 200,
+            highlightLatitudeStops: 3,
+            shadowLatitudeStops: 2,
+            baseGrainIntensity: 0.009,
+            evidence: .estimated
+        ),
+        FilmProfile(
+            name: "Kodak Ultra Max 400",
+            id: "kodak-ultra-max-400",
+            iso: 400,
+            highlightLatitudeStops: 3,
+            shadowLatitudeStops: 2,
+            baseGrainIntensity: 0.012,
+            evidence: .estimated
+        ),
+        FilmProfile(
+            name: "通用 ISO 800 彩色负片",
+            id: "generic-color-800",
+            iso: 800,
+            highlightLatitudeStops: 3,
+            shadowLatitudeStops: 2,
+            baseGrainIntensity: 0.018,
+            evidence: .estimated
+        )
+    ]
+
     public static let presets: [DisposableCameraPreset] = [
         DisposableCameraPreset(
-            id: "kodak-funsaver-800",
-            presetVersion: 1,
+            id: "kodak-power-flash-800",
+            presetVersion: 3,
             brand: "Kodak",
-            model: "FunSaver",
-            regionOrBatch: "31mm · 1/100s 代表版本",
+            model: "Power Flash / FunSaver",
+            regionOrBatch: "合并预设 · 31mm · f/10 · 1/100s · ISO 800",
             film: FilmProfile(
                 name: "Kodak ISO 800 彩色负片",
                 iso: 800,
@@ -208,32 +280,6 @@ public enum BuiltInDisposableCameraRepository {
             flash: FlashProfile(
                 effectiveDistanceMinMeters: 1.2,
                 effectiveDistanceMaxMeters: 3.5
-            ),
-            exposureEvidence: .estimated
-        ),
-        DisposableCameraPreset(
-            id: "kodak-power-flash-800",
-            presetVersion: 2,
-            brand: "Kodak",
-            model: "Power Flash",
-            regionOrBatch: "30mm · f/10 · 1/125s · ISO 800",
-            film: FilmProfile(
-                name: "Kodak ISO 800 彩色负片",
-                iso: 800,
-                highlightLatitudeStops: 3,
-                shadowLatitudeStops: 2,
-                baseGrainIntensity: 0.018,
-                evidence: .estimated
-            ),
-            optics: FixedOptics(
-                aperture: 10,
-                focalLengthMillimeters: 30,
-                minimumFocusMeters: 1
-            ),
-            shutterSeconds: 1 / 125,
-            flash: FlashProfile(
-                effectiveDistanceMinMeters: 1.2,
-                effectiveDistanceMaxMeters: 4.5
             ),
             exposureEvidence: .estimated
         ),
@@ -288,6 +334,23 @@ public enum BuiltInDisposableCameraRepository {
                 effectiveDistanceMaxMeters: 3
             ),
             exposureEvidence: .estimated
+        ),
+        DisposableCameraPreset(
+            id: "kodak-ec35-reusable",
+            presetVersion: 1,
+            brand: "Kodak",
+            model: "EC35",
+            regionOrBatch: "25mm · f/10 · 1/100s · 可换 135 胶卷",
+            film: kodakEC35Films[2],
+            optics: FixedOptics(
+                aperture: 10,
+                focalLengthMillimeters: 25,
+                minimumFocusMeters: 1
+            ),
+            shutterSeconds: 1 / 100,
+            flash: nil,
+            exposureEvidence: .estimated,
+            compatibleFilms: kodakEC35Films
         ),
     ]
 

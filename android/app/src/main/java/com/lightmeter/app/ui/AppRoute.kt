@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -35,8 +36,8 @@ import com.lightmeter.app.ui.theme.AppThemeStyle
 
 private enum class AppDestination {
     MODE_SELECTION,
-    PROFESSIONAL,
     FILM_PREVIEW,
+    INSTANT_CAMERA,
 }
 
 @Composable
@@ -56,23 +57,9 @@ fun AppRoute(
     }
     when (destination) {
         AppDestination.MODE_SELECTION -> ModeSelectionScreen(
-            onProfessionalSelected = {
-                destination = AppDestination.PROFESSIONAL
-            },
             onFilmPreviewSelected = { destination = AppDestination.FILM_PREVIEW },
+            onInstantCameraSelected = { destination = AppDestination.INSTANT_CAMERA },
         )
-
-        AppDestination.PROFESSIONAL -> {
-            BackHandler {
-                destination = AppDestination.MODE_SELECTION
-            }
-            MeteringRoute(
-                calibrationOffset = appSettings.calibrationOffset,
-                onExit = { destination = AppDestination.MODE_SELECTION },
-                themeStyle = themeStyle,
-                onThemeStyleChanged = onThemeStyleChanged,
-            )
-        }
 
         AppDestination.FILM_PREVIEW -> FilmPreviewRoute(
             onExit = { destination = AppDestination.MODE_SELECTION },
@@ -80,13 +67,22 @@ fun AppRoute(
             themeStyle = themeStyle,
             onThemeStyleChanged = onThemeStyleChanged,
         )
+
+        AppDestination.INSTANT_CAMERA -> {
+            BackHandler {
+                destination = AppDestination.MODE_SELECTION
+            }
+            InstantCameraEntryScreen(
+                onExit = { destination = AppDestination.MODE_SELECTION },
+            )
+        }
     }
 }
 
 @Composable
 private fun ModeSelectionScreen(
-    onProfessionalSelected: () -> Unit,
     onFilmPreviewSelected: () -> Unit,
+    onInstantCameraSelected: () -> Unit,
 ) {
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -124,18 +120,54 @@ private fun ModeSelectionScreen(
             ) {
                 ModeCard(
                     symbol = "▣",
-                    title = "胶片预览",
-                    description = "固定参数下的曝光效果与宽容度风险",
+                    title = "胶片模拟",
+                    description = "拍前曝光风险与闪光灯建议",
                     onClick = onFilmPreviewSelected,
                     modifier = Modifier.fillMaxWidth(),
                 )
                 ModeCard(
                     symbol = "◎",
-                    title = "专业测光",
-                    description = "完整测光、曝光组合与画幅控制",
-                    onClick = onProfessionalSelected,
+                    title = "拍立得预览",
+                    description = "拍前曝光风险与档位建议",
+                    onClick = onInstantCameraSelected,
                     modifier = Modifier.fillMaxWidth(),
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun InstantCameraEntryScreen(
+    onExit: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxSize(),
+        color = MaterialTheme.colorScheme.background,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .navigationBarsPadding()
+                .padding(horizontal = 24.dp, vertical = 28.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            Text(
+                text = "拍立得预览",
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onBackground,
+            )
+            Text(
+                text = "机型预设正在准备中",
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 8.dp, bottom = 20.dp),
+            )
+            Button(onClick = onExit) {
+                Text("返回")
             }
         }
     }

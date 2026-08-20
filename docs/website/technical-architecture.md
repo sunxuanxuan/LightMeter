@@ -7,7 +7,7 @@
 - 日期：2026-08-15
 - 状态：实施前技术基线
 - 关联文档：
-  - [官网产品方案](./product-design.md)
+  - [产品需求文档](../product-requirements.md)
   - [离线激活凭证协议](../shared/offline-activation-protocol.md)
 
 ## 2. 技术目标

@@ -66,4 +66,5 @@ xcodebuild \
 ```
 
 真机运行前还需要在 Xcode 的 Signing & Capabilities 中选择 Apple Developer
-Team。测光精度必须按[产品设计](product-design.md)中的灰卡验收流程执行。
+Team。旧专业测光灰卡验收要求仅适用于历史实现；当前功能验收以
+[产品需求文档](../product-requirements.md)为准。

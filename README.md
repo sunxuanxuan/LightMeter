@@ -1,7 +1,7 @@
 # FilmLightMeter
 
-面向胶片摄影的跨平台测光 App。Android 版本已经可运行，iOS 版本处于设计和
-迁移阶段。
+面向一次性胶片相机和拍立得的跨平台拍前曝光决策 App。Android 与 iOS 版本正
+在完成产品重定位。
 
 ## 仓库结构
 
@@ -41,10 +41,10 @@ cd android
 
 ## iOS
 
-iOS 版本采用 SwiftUI、AVFoundation 和原生 Swift 实现。开始编码前以以下
-文档作为实现和验收基线：
+iOS 版本采用 SwiftUI、AVFoundation 和原生 Swift 实现。产品需求以统一 PRD 为
+准；平台架构和迁移状态见以下文档：
 
-- [iOS 产品设计](docs/ios/product-design.md)
+- [产品需求文档](docs/product-requirements.md)
 - [iOS 技术架构](docs/ios/technical-architecture.md)
 - [iOS 迁移实施计划](docs/ios/migration-plan.md)
 - [iOS 实施状态](docs/ios/implementation-status.md)
@@ -65,11 +65,11 @@ npm run dev
 
 ## 公共资料
 
-- [双模式产品方案](docs/shared/dual-mode-product-design.md)
+- [产品需求文档](docs/product-requirements.md)
 - [胶片预览模式技术方案](docs/shared/film-preview-technical-design.md)
 - [胶片曝光宽容度参考](docs/shared/film-exposure-latitude-reference.md)
-- [官网产品方案](docs/website/product-design.md)
 - [官网技术方案](docs/website/technical-architecture.md)
+- [已归档的专业测光产品方案](docs/archive/2026-08-professional-metering-product-prd/README.md)
 
 ## License
 

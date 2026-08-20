@@ -9,11 +9,14 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class FilmPreviewEngineTest {
-    private val funSaver = requireNotNull(
-        BuiltInDisposableCameraRepository.find("kodak-funsaver-800"),
+    private val kodakPowerFlashFunSaver = requireNotNull(
+        BuiltInDisposableCameraRepository.find("kodak-power-flash-800"),
     )
     private val quickSnap = requireNotNull(
         BuiltInDisposableCameraRepository.find("fujifilm-quicksnap-flash-400"),
+    )
+    private val kodakEc35 = requireNotNull(
+        BuiltInDisposableCameraRepository.find("kodak-ec35-reusable"),
     )
 
     @Test
@@ -84,18 +87,11 @@ class FilmPreviewEngineTest {
         val presets = BuiltInDisposableCameraRepository.presets().associateBy { it.id }
 
         assertCameraParameters(
-            requireNotNull(presets["kodak-funsaver-800"]),
+            requireNotNull(presets["kodak-power-flash-800"]),
             iso = 800,
             aperture = 10.0,
             focalLengthMm = 31.0,
             shutterSeconds = 1.0 / 100.0,
-        )
-        assertCameraParameters(
-            requireNotNull(presets["kodak-power-flash-800"]),
-            iso = 800,
-            aperture = 10.0,
-            focalLengthMm = 30.0,
-            shutterSeconds = 1.0 / 125.0,
         )
         assertCameraParameters(
             requireNotNull(presets["fujifilm-quicksnap-flash-400"]),
@@ -111,6 +107,38 @@ class FilmPreviewEngineTest {
             focalLengthMm = 32.0,
             shutterSeconds = 1.0 / 125.0,
         )
+        assertCameraParameters(
+            requireNotNull(presets["kodak-ec35-reusable"]),
+            iso = 400,
+            aperture = 10.0,
+            focalLengthMm = 25.0,
+            shutterSeconds = 1.0 / 100.0,
+        )
+    }
+
+    @Test
+    fun reusableEc35CanSwitchCompatibleFilmAndRestoreTheSelection() {
+        assertTrue(kodakEc35.isFilmSelectable)
+        assertEquals(4, kodakEc35.compatibleFilms.size)
+        assertEquals("kodak-ultra-max-400", kodakEc35.film.id)
+
+        val store = InMemoryFilmPreviewSettingsStore()
+        val viewModel = FilmPreviewViewModel(settingsStore = store)
+        viewModel.selectPreset(kodakEc35.id)
+        viewModel.selectFilm("generic-color-800")
+
+        val selected = requireNotNull(viewModel.state.value.selectedPreset)
+        assertEquals(kodakEc35.id, selected.id)
+        assertEquals(800, selected.film.iso)
+        assertEquals(
+            FilmPreviewEngine.presetEv100(kodakEc35) - 1.0,
+            FilmPreviewEngine.presetEv100(selected),
+            1e-9,
+        )
+
+        val restored = FilmPreviewViewModel(settingsStore = store).state.value
+        assertEquals(kodakEc35.id, restored.selectedPreset?.id)
+        assertEquals("generic-color-800", restored.selectedPreset?.film?.id)
     }
 
     @Test
@@ -118,14 +146,14 @@ class FilmPreviewEngineTest {
         val viewModel = FilmPreviewViewModel()
         viewModel.onMeteringResult(
             MeteringResult(
-                ev100 = FilmPreviewEngine.presetEv100(funSaver),
+                ev100 = FilmPreviewEngine.presetEv100(kodakPowerFlashFunSaver),
                 measuredLuminance = 0.18,
                 timestampNs = 1L,
             ),
         )
 
         val state = viewModel.state.value
-        assertEquals(funSaver.id, state.selectedPreset?.id)
+        assertEquals(kodakPowerFlashFunSaver.id, state.selectedPreset?.id)
         assertEquals(0.0, state.evaluation?.sceneDeltaEv ?: Double.NaN, 0.0001)
         assertEquals(PreviewSceneRating.GOOD, state.evaluation?.rating)
     }
@@ -135,7 +163,7 @@ class FilmPreviewEngineTest {
         val state = FilmPreviewViewModel().state.value
 
         assertEquals(ManualCameraConfig.MANUAL_PRESET_ID, state.presets.first().id)
-        assertEquals(funSaver.id, state.selectedPreset?.id)
+        assertEquals(kodakPowerFlashFunSaver.id, state.selectedPreset?.id)
     }
 
     @Test
@@ -216,9 +244,29 @@ class FilmPreviewEngineTest {
     }
 
     @Test
+    fun cameraResumeClearsStaleMeteringUntilTheNewSessionIsReady() {
+        val viewModel = FilmPreviewViewModel()
+        viewModel.onCameraReady()
+        viewModel.onMeteringResult(
+            MeteringResult(
+                ev100 = FilmPreviewEngine.presetEv100(kodakPowerFlashFunSaver),
+                measuredLuminance = 0.18,
+                timestampNs = 1L,
+            ),
+        )
+
+        viewModel.prepareForCameraResume()
+
+        val resumed = viewModel.state.value
+        assertTrue(!resumed.isCameraReady)
+        assertNull(resumed.meteredEv100)
+        assertEquals(PreviewSceneRating.UNAVAILABLE, resumed.evaluation?.rating)
+    }
+
+    @Test
     fun freezeUsesCapturedSnapshotAndIgnoresLiveResults() {
         val viewModel = FilmPreviewViewModel()
-        val initialEv = FilmPreviewEngine.presetEv100(funSaver)
+        val initialEv = FilmPreviewEngine.presetEv100(kodakPowerFlashFunSaver)
         viewModel.onCameraReady()
         viewModel.onMeteringResult(
             MeteringResult(
