@@ -580,7 +580,7 @@ internal object GpuFilmExposureRenderer {
             float gain = targetLuminance / max(sourceLuminance, LUMINANCE_EPSILON);
             float grainIntensity = min(
                 uBaseGrainIntensity +
-                    max(uReferenceEv100 - pixelEv100, 0.0) * 0.010,
+                    max(uReferenceEv100 - pixelEv100 - 1.0, 0.0) * 0.010,
                 0.055
             );
             vec3 grain = vec3(grainNoise(gl_FragCoord.xy) * grainIntensity);

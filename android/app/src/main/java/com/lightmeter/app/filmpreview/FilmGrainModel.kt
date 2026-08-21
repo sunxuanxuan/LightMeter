@@ -7,7 +7,7 @@ internal object FilmGrainModel {
         require(baseGrainIntensity in 0.0..MAX_BASE_INTENSITY)
         require(deltaEv.isFinite())
 
-        val underexposureStops = max(-deltaEv, 0.0)
+        val underexposureStops = max(-deltaEv - GRAIN_THRESHOLD_STOPS, 0.0)
         return (
             baseGrainIntensity +
                 underexposureStops * UNDEREXPOSURE_GRAIN_PER_STOP
@@ -32,5 +32,6 @@ internal object FilmGrainModel {
     const val MAX_GRAIN_INTENSITY = 0.055
     private const val MIN_BASE_INTENSITY = 0.004
     private const val BASE_INTENSITY_AT_ISO_400 = 0.010
+    private const val GRAIN_THRESHOLD_STOPS = 1.0
     private const val UNDEREXPOSURE_GRAIN_PER_STOP = 0.010
 }

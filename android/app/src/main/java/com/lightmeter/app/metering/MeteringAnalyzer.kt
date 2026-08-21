@@ -136,7 +136,6 @@ class MeteringAnalyzer(
 
             val metadata = metadataForTimestamp(timestampNs) ?: return
             val currentConfig = config.get()
-            if (!currentConfig.isZoomReady) return
             val luminanceRange = luminanceRangeFor(image)
             val luminance = measureLuminance(image, currentConfig, luminanceRange) ?: return
             val ev = calculateEv100(metadata, luminance, currentConfig.calibrationOffset)

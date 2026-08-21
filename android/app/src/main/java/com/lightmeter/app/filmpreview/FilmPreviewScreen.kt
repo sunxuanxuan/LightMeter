@@ -49,6 +49,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.CameraAlt
 import androidx.compose.material.icons.outlined.MoreHoriz
+import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -608,8 +609,6 @@ private fun FilmPreviewWorkspace(
 
             ExposureAdvicePanel(
                 text = previewGuidance(
-                    isFrozen = state.isFrozen,
-                    isSimulationReady = simulatedFrame != null,
                     adviceCode = state.evaluation?.adviceCode,
                     preset = preset,
                 ),
@@ -635,8 +634,7 @@ private fun FilmPreviewWorkspace(
                 captureEnabled = state.isFrozen ||
                     (
                         state.isCameraReady &&
-                            state.meteredEv100 != null &&
-                            isZoomReady
+                            state.meteredEv100 != null
                         ),
                 onCameraClick = { selector = PreviewSelector.CAMERA },
                 onCaptureClick = if (state.isFrozen) onResumeLive else onFreezePreview,
@@ -1187,7 +1185,7 @@ private fun PreviewFreezeButton(
         ) {
             Box(contentAlignment = Alignment.Center) {
                 Icon(
-                    imageVector = Icons.Outlined.ArrowBack,
+                    imageVector = Icons.Outlined.Refresh,
                     contentDescription = "退出冻结，恢复取景",
                     tint = Color.Gray,
                     modifier = Modifier.size(30.dp),
@@ -1541,14 +1539,9 @@ private fun formatEv(value: Double): String {
 }
 
 private fun previewGuidance(
-    isFrozen: Boolean,
-    isSimulationReady: Boolean,
     adviceCode: PreviewAdviceCode?,
     preset: DisposableCameraPreset,
 ): String {
-    if (isFrozen && !isSimulationReady) {
-        return "正在根据当前机型和底片生成成片模拟。"
-    }
     return when (adviceCode) {
         PreviewAdviceCode.USE_FLASH -> preset.flash?.let {
             "画面过暗，建议开启闪光灯，并让主体保持在 " +
