@@ -20,7 +20,6 @@ internal object GpuFilmExposureRenderer {
         referenceEv100: Double,
         highlightLatitudeStops: Double,
         shadowLatitudeStops: Double,
-        baseGrainIntensity: Double = 0.0,
     ): Bitmap {
         require(referenceEv100.isFinite())
         require(exposureMap.width == source.width)
@@ -36,7 +35,6 @@ internal object GpuFilmExposureRenderer {
                 referenceEv100 = referenceEv100.toFloat(),
                 highlightLatitudeStops = highlightLatitudeStops.toFloat(),
                 shadowLatitudeStops = shadowLatitudeStops.toFloat(),
-                baseGrainIntensity = baseGrainIntensity.toFloat(),
             )
         } finally {
             session.close()
@@ -59,7 +57,6 @@ internal object GpuFilmExposureRenderer {
                 referenceEv100 = 0f,
                 highlightLatitudeStops = 1f,
                 shadowLatitudeStops = 1f,
-                baseGrainIntensity = 0f,
             )
         } finally {
             session.close()
@@ -98,7 +95,6 @@ internal object GpuFilmExposureRenderer {
             referenceEv100: Float,
             highlightLatitudeStops: Float,
             shadowLatitudeStops: Float,
-            baseGrainIntensity: Float,
         ): Bitmap {
             GLES20.glViewport(0, 0, width, height)
             GLES20.glUseProgram(program)
@@ -122,7 +118,6 @@ internal object GpuFilmExposureRenderer {
             GLES20.glUniform1f(uniform("uReferenceEv100"), referenceEv100)
             GLES20.glUniform1f(uniform("uHighlightLatitude"), highlightLatitudeStops)
             GLES20.glUniform1f(uniform("uShadowLatitude"), shadowLatitudeStops)
-            GLES20.glUniform1f(uniform("uBaseGrainIntensity"), baseGrainIntensity)
 
             val positionLocation = attribute("aPosition")
             val textureCoordinateLocation = attribute("aTextureCoordinate")
@@ -485,12 +480,11 @@ internal object GpuFilmExposureRenderer {
         uniform float uReferenceEv100;
         uniform float uHighlightLatitude;
         uniform float uShadowLatitude;
-        uniform float uBaseGrainIntensity;
         varying vec2 vTextureCoordinate;
 
         const float TARGET_LUMINANCE = 0.18;
         const float MIDDLE_GRAY_LUMINANCE = 0.18;
-        const float DISPLAY_EXPOSURE_SCALE = 0.5;
+        const float DISPLAY_SHOULDER_START_STOPS = 2.0;
         const float OUTSIDE_EXTENSION_STOPS = 2.0;
         const float LUMINANCE_EPSILON = 0.000001;
         const float MIN_ENCODED_EV100 = -32.0;
@@ -518,38 +512,35 @@ internal object GpuFilmExposureRenderer {
             return from + (to - from) * smoothUnit(progress);
         }
 
-        float displayLuminance(float deltaEv) {
-            return MIDDLE_GRAY_LUMINANCE *
-                exp2(deltaEv * DISPLAY_EXPOSURE_SCALE);
+        float linearLuminance(float deltaEv) {
+            return MIDDLE_GRAY_LUMINANCE * exp2(deltaEv);
         }
 
         float filmLuminance(float deltaEv) {
+            float shoulderStart = min(
+                uHighlightLatitude,
+                DISPLAY_SHOULDER_START_STOPS
+            );
             if (deltaEv < -uShadowLatitude) {
                 float progress =
                     (-deltaEv - uShadowLatitude) / OUTSIDE_EXTENSION_STOPS;
                 return interpolateLuminance(
-                    displayLuminance(-uShadowLatitude),
+                    linearLuminance(-uShadowLatitude),
                     0.0,
                     progress
                 );
             }
-            if (deltaEv > uHighlightLatitude) {
+            if (deltaEv > shoulderStart) {
                 float progress =
-                    (deltaEv - uHighlightLatitude) / OUTSIDE_EXTENSION_STOPS;
+                    (deltaEv - shoulderStart) /
+                    (uHighlightLatitude + OUTSIDE_EXTENSION_STOPS - shoulderStart);
                 return interpolateLuminance(
-                    displayLuminance(uHighlightLatitude),
+                    linearLuminance(shoulderStart),
                     1.0,
                     progress
                 );
             }
-            return displayLuminance(deltaEv);
-        }
-
-        float grainNoise(vec2 coordinate) {
-            return fract(sin(dot(
-                coordinate,
-                vec2(12.9898, 78.233)
-            )) * 43758.5453) * 2.0 - 1.0;
+            return linearLuminance(deltaEv);
         }
 
         float exposureMapEv100(vec2 coordinate) {
@@ -578,14 +569,8 @@ internal object GpuFilmExposureRenderer {
             float pixelEv100 = exposureMapEv100(vTextureCoordinate);
             float targetLuminance = filmLuminance(pixelEv100 - uReferenceEv100);
             float gain = targetLuminance / max(sourceLuminance, LUMINANCE_EPSILON);
-            float grainIntensity = min(
-                uBaseGrainIntensity +
-                    max(uReferenceEv100 - pixelEv100 - 1.0, 0.0) * 0.010,
-                0.055
-            );
-            vec3 grain = vec3(grainNoise(gl_FragCoord.xy) * grainIntensity);
             gl_FragColor = vec4(
-                linearToSrgb(linearRgb * gain + grain),
+                linearToSrgb(linearRgb * gain),
                 source.a
             );
         }

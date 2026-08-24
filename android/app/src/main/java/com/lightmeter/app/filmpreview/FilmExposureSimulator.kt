@@ -65,12 +65,10 @@ internal object FilmExposureSimulator {
         referenceEv100: Double,
         highlightLatitudeStops: Double,
         shadowLatitudeStops: Double,
-        baseGrainIntensity: Double,
     ): Bitmap {
         require(referenceEv100.isFinite())
         require(highlightLatitudeStops > 0.0)
         require(shadowLatitudeStops > 0.0)
-        require(baseGrainIntensity in 0.0..FilmGrainModel.MAX_BASE_INTENSITY)
         require(exposureMap.cameraSettingEv100.isFinite())
         require(exposureMap.width == source.width)
         require(exposureMap.height == source.height)
@@ -83,7 +81,6 @@ internal object FilmExposureSimulator {
                 referenceEv100 = referenceEv100,
                 highlightLatitudeStops = highlightLatitudeStops,
                 shadowLatitudeStops = shadowLatitudeStops,
-                baseGrainIntensity = baseGrainIntensity,
             )
         }
         gpuResult.getOrNull()?.let { result ->
@@ -113,7 +110,6 @@ internal object FilmExposureSimulator {
                 referenceEv100 = referenceEv100,
                 highlightLatitudeStops = highlightLatitudeStops,
                 shadowLatitudeStops = shadowLatitudeStops,
-                baseGrainIntensity = baseGrainIntensity,
                 sourceWidth = source.width,
             ),
             source.width,
@@ -132,7 +128,6 @@ internal object FilmExposureSimulator {
         referenceEv100: Double,
         highlightLatitudeStops: Double,
         shadowLatitudeStops: Double,
-        baseGrainIntensity: Double = 0.0,
         sourceWidth: Int = sourcePixels.size,
     ): IntArray {
         require(cameraSettingEv100.isFinite())
@@ -140,7 +135,6 @@ internal object FilmExposureSimulator {
         require(referenceEv100.isFinite())
         require(highlightLatitudeStops > 0.0)
         require(shadowLatitudeStops > 0.0)
-        require(baseGrainIntensity in 0.0..FilmGrainModel.MAX_BASE_INTENSITY)
         require(sourceWidth > 0)
         require(sourcePixels.size % sourceWidth == 0)
         exposureMap?.let {
@@ -158,9 +152,6 @@ internal object FilmExposureSimulator {
                 referenceEv100 = referenceEv100,
                 highlightLatitudeStops = highlightLatitudeStops,
                 shadowLatitudeStops = shadowLatitudeStops,
-                baseGrainIntensity = baseGrainIntensity,
-                x = index % sourceWidth,
-                y = index / sourceWidth,
             )
         }
         if (sourcePixels.size >= PARALLEL_PIXEL_THRESHOLD) {
@@ -206,9 +197,6 @@ internal object FilmExposureSimulator {
         referenceEv100: Double,
         highlightLatitudeStops: Double,
         shadowLatitudeStops: Double,
-        baseGrainIntensity: Double,
-        x: Int,
-        y: Int,
     ): Int {
         val red = SRGB_TO_LINEAR[(argb ushr 16) and 0xFF]
         val green = SRGB_TO_LINEAR[(argb ushr 8) and 0xFF]
@@ -231,14 +219,10 @@ internal object FilmExposureSimulator {
         )
         val gain = targetLuminance / sourceLuminance.coerceAtLeast(LUMINANCE_EPSILON)
 
-        val grain = FilmGrainModel.noise(x, y) * FilmGrainModel.intensity(
-            baseGrainIntensity = baseGrainIntensity,
-            deltaEv = pixelEv100 - referenceEv100,
-        )
         return (argb and -0x1000000) or
-            (linearToByte(red * gain + grain) shl 16) or
-            (linearToByte(green * gain + grain) shl 8) or
-            linearToByte(blue * gain + grain)
+            (linearToByte(red * gain) shl 16) or
+            (linearToByte(green * gain) shl 8) or
+            linearToByte(blue * gain)
     }
 
     private fun linearToByte(value: Double): Int {

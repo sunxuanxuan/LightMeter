@@ -3,20 +3,25 @@ package com.lightmeter.app.filmpreview
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import kotlin.math.pow
 
 class FilmResponseCurveTest {
     @Test
-    fun curveUsesCompressedDisplayExposureWithinFilmLatitude() {
-        assertEquals(0.09, luminance(-2.0), 0.0001)
+    fun curvePreservesLinearMiddleTonesBeforeShoulderAndToe() {
+        assertEquals(0.045, luminance(-2.0), 0.0001)
+        assertEquals(0.09, luminance(-1.0), 0.0001)
         assertEquals(0.18, luminance(0.0), 0.0001)
-        assertEquals(0.18 * 2.0.pow(1.5), luminance(3.0), 0.0001)
+        assertEquals(0.36, luminance(1.0), 0.0001)
+        assertEquals(0.72, luminance(2.0), 0.0001)
     }
 
     @Test
-    fun plusOrMinusOnePointSevenStopsStaysVisiblyModerate() {
-        assertEquals(0.18 * 2.0.pow(-0.85), luminance(-1.7), 0.0001)
-        assertEquals(0.18 * 2.0.pow(0.85), luminance(1.7), 0.0001)
+    fun shoulderAndToeOnlyCompressOutsideLinearCore() {
+        assertEquals(0.0225, luminance(-3.0), 0.0001)
+        assertEquals(
+            0.72 + (1.0 - 0.72) * smoothstep(1.0 / 3.0),
+            luminance(3.0),
+            0.0001,
+        )
     }
 
     @Test
@@ -47,5 +52,9 @@ class FilmResponseCurveTest {
             highlightLatitudeStops = 3.0,
             shadowLatitudeStops = 2.0,
         )
+    }
+
+    private fun smoothstep(value: Double): Double {
+        return value * value * (3.0 - 2.0 * value)
     }
 }

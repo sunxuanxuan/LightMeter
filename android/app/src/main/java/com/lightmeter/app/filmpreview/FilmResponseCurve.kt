@@ -13,41 +13,44 @@ internal object FilmResponseCurve {
         require(highlightLatitudeStops > 0.0)
         require(shadowLatitudeStops > 0.0)
 
+        val shoulderStartStops = minOf(
+            highlightLatitudeStops,
+            DISPLAY_SHOULDER_START_STOPS,
+        )
         return when {
             deltaEv < -shadowLatitudeStops -> {
                 val progress = (
                     (-deltaEv - shadowLatitudeStops) / OUTSIDE_EXTENSION_STOPS
                     ).coerceIn(0.0, 1.0)
                 interpolate(
-                    from = displayLuminance(-shadowLatitudeStops),
+                    from = linearLuminance(-shadowLatitudeStops),
                     to = 0.0,
                     progress = progress,
                 )
             }
 
-            deltaEv > highlightLatitudeStops -> {
+            deltaEv > shoulderStartStops -> {
                 val progress = (
-                    (deltaEv - highlightLatitudeStops) / OUTSIDE_EXTENSION_STOPS
+                    (deltaEv - shoulderStartStops) /
+                        (highlightLatitudeStops + OUTSIDE_EXTENSION_STOPS - shoulderStartStops)
                     ).coerceIn(0.0, 1.0)
                 interpolate(
-                    from = displayLuminance(highlightLatitudeStops),
+                    from = linearLuminance(shoulderStartStops),
                     to = 1.0,
                     progress = progress,
                 )
             }
 
             else -> {
-                displayLuminance(deltaEv)
+                linearLuminance(deltaEv)
             }
         }.let {
             if (abs(it) < LUMINANCE_EPSILON) 0.0 else it.coerceIn(0.0, 1.0)
         }
     }
 
-    private fun displayLuminance(deltaEv: Double): Double {
-        return MIDDLE_GRAY_LUMINANCE * 2.0.pow(
-            deltaEv * DISPLAY_EXPOSURE_SCALE,
-        )
+    private fun linearLuminance(deltaEv: Double): Double {
+        return MIDDLE_GRAY_LUMINANCE * 2.0.pow(deltaEv)
     }
 
     private fun interpolate(from: Double, to: Double, progress: Double): Double {
@@ -60,7 +63,7 @@ internal object FilmResponseCurve {
     }
 
     private const val MIDDLE_GRAY_LUMINANCE = 0.18
-    private const val DISPLAY_EXPOSURE_SCALE = 0.5
+    private const val DISPLAY_SHOULDER_START_STOPS = 2.0
     private const val OUTSIDE_EXTENSION_STOPS = 2.0
     private const val LUMINANCE_EPSILON = 1e-9
 }

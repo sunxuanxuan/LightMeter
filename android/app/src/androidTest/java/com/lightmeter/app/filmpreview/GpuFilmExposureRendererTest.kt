@@ -2,6 +2,7 @@ package com.lightmeter.app.filmpreview
 
 import android.graphics.Bitmap
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.lightmeter.app.metering.ExposureMap
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -27,8 +28,13 @@ class GpuFilmExposureRendererTest {
 
         val gpu = GpuFilmExposureRenderer.render(
             source = source,
-            cameraSettingEv100 = 0.0,
-            calibrationOffset = 0.0,
+            exposureMap = ExposureMap(
+                width = 2,
+                height = 2,
+                pixelEv100 = floatArrayOf(0f, 0f, 0f, 0f),
+                cameraSettingEv100 = 0.0,
+                timestampNs = 1L,
+            ),
             referenceEv100 = 0.0,
             highlightLatitudeStops = 3.0,
             shadowLatitudeStops = 2.0,
