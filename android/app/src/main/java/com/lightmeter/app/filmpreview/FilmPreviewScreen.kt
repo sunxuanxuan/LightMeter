@@ -441,7 +441,6 @@ private fun FilmPreviewWorkspace(
                         referenceEv100 = presetReferenceEv100,
                         highlightLatitudeStops = preset.film.highlightLatitudeStops,
                         shadowLatitudeStops = preset.film.shadowLatitudeStops,
-                        baseGrainIntensity = preset.film.baseGrainIntensity,
                     )
                 }.getOrNull()
             }
@@ -665,6 +664,7 @@ private fun FilmPreviewWorkspace(
     if (showsSettings) {
         PresetSettingsDialog(
             manualConfig = state.manualConfig,
+            selectedPresetId = preset.id,
             themeStyle = themeStyle,
             onThemeStyleChanged = onThemeStyleChanged,
             onSave = { presetId, config ->
@@ -1259,6 +1259,7 @@ private fun ReadOnlyParameter(
 @Composable
 private fun PresetSettingsDialog(
     manualConfig: ManualCameraConfig,
+    selectedPresetId: String,
     themeStyle: AppThemeStyle,
     onThemeStyleChanged: (AppThemeStyle) -> Unit,
     onSave: (String, ManualCameraConfig) -> Unit,
@@ -1326,7 +1327,6 @@ private fun PresetSettingsDialog(
                             }
                         }
                 }
-                Spacer(modifier = Modifier.height(6.dp))
                 Text(
                     text = "内置机型请在底部“机型”按钮中选择。",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1361,7 +1361,7 @@ private fun PresetSettingsDialog(
             TextButton(
                 onClick = {
                     onSave(
-                        ManualCameraConfig.MANUAL_PRESET_ID,
+                        selectedPresetId,
                         manualConfigToSave,
                     )
                 },

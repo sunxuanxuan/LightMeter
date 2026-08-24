@@ -120,40 +120,6 @@ class FilmExposureSimulatorTest {
         assertTrue("Expected $middleGraySrgb, got $result", kotlin.math.abs(result - middleGraySrgb) <= 2)
     }
 
-    @Test
-    fun grainIsDeterministicAndStrengthensForUnderexposure() {
-        val baseGrain = 0.012
-
-        assertEquals(
-            FilmGrainModel.noise(x = 17, y = 23),
-            FilmGrainModel.noise(x = 17, y = 23),
-            0.0,
-        )
-        assertEquals(
-            baseGrain,
-            FilmGrainModel.intensity(baseGrain, deltaEv = 0.0),
-            1e-12,
-        )
-        assertEquals(
-            baseGrain,
-            FilmGrainModel.intensity(baseGrain, deltaEv = -1.0),
-            1e-12,
-        )
-        assertEquals(
-            baseGrain + 0.010,
-            FilmGrainModel.intensity(baseGrain, deltaEv = -2.0),
-            1e-12,
-        )
-        assertTrue(
-            FilmGrainModel.intensity(baseGrain, deltaEv = -2.0) > baseGrain,
-        )
-        assertEquals(
-            FilmGrainModel.MAX_GRAIN_INTENSITY,
-            FilmGrainModel.intensity(baseGrain, deltaEv = -10.0),
-            1e-12,
-        )
-    }
-
     private fun render(source: IntArray): IntArray {
         return FilmExposureSimulator.renderPixels(
             sourcePixels = source,
