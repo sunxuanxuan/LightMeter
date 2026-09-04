@@ -20,6 +20,7 @@ internal object GpuFilmExposureRenderer {
         referenceEv100: Double,
         highlightLatitudeStops: Double,
         shadowLatitudeStops: Double,
+        filmLook: NegativeFilmLookProfile,
     ): Bitmap {
         require(referenceEv100.isFinite())
         require(exposureMap.width == source.width)
@@ -35,6 +36,7 @@ internal object GpuFilmExposureRenderer {
                 referenceEv100 = referenceEv100.toFloat(),
                 highlightLatitudeStops = highlightLatitudeStops.toFloat(),
                 shadowLatitudeStops = shadowLatitudeStops.toFloat(),
+                filmLook = filmLook,
             )
         } finally {
             session.close()
@@ -57,6 +59,7 @@ internal object GpuFilmExposureRenderer {
                 referenceEv100 = 0f,
                 highlightLatitudeStops = 1f,
                 shadowLatitudeStops = 1f,
+                filmLook = NegativeFilmLooks.NEUTRAL,
             )
         } finally {
             session.close()
@@ -95,6 +98,7 @@ internal object GpuFilmExposureRenderer {
             referenceEv100: Float,
             highlightLatitudeStops: Float,
             shadowLatitudeStops: Float,
+            filmLook: NegativeFilmLookProfile,
         ): Bitmap {
             GLES20.glViewport(0, 0, width, height)
             GLES20.glUseProgram(program)
@@ -118,6 +122,52 @@ internal object GpuFilmExposureRenderer {
             GLES20.glUniform1f(uniform("uReferenceEv100"), referenceEv100)
             GLES20.glUniform1f(uniform("uHighlightLatitude"), highlightLatitudeStops)
             GLES20.glUniform1f(uniform("uShadowLatitude"), shadowLatitudeStops)
+            GLES20.glUniform1f(uniform("uToneGamma"), filmLook.toneGamma.toFloat())
+            GLES20.glUniform3f(
+                uniform("uResponseGamma"),
+                filmLook.responseGamma.red.toFloat(),
+                filmLook.responseGamma.green.toFloat(),
+                filmLook.responseGamma.blue.toFloat(),
+            )
+            GLES20.glUniform3f(
+                uniform("uExposureBiasEv"),
+                filmLook.exposureBiasEv.red.toFloat(),
+                filmLook.exposureBiasEv.green.toFloat(),
+                filmLook.exposureBiasEv.blue.toFloat(),
+            )
+            val matrix = filmLook.colorMatrix
+            GLES20.glUniformMatrix3fv(
+                uniform("uColorMatrix"),
+                1,
+                false,
+                floatArrayOf(
+                    matrix.redFromRed.toFloat(),
+                    matrix.greenFromRed.toFloat(),
+                    matrix.blueFromRed.toFloat(),
+                    matrix.redFromGreen.toFloat(),
+                    matrix.greenFromGreen.toFloat(),
+                    matrix.blueFromGreen.toFloat(),
+                    matrix.redFromBlue.toFloat(),
+                    matrix.greenFromBlue.toFloat(),
+                    matrix.blueFromBlue.toFloat(),
+                ),
+                0,
+            )
+            GLES20.glUniform1f(uniform("uSaturation"), filmLook.saturation.toFloat())
+            GLES20.glUniform1f(uniform("uGrainAmount"), filmLook.grainAmount.toFloat())
+            GLES20.glUniform1f(
+                uniform("uGrainRadiusPxAt1080"),
+                filmLook.grainRadiusPxAt1080.toFloat(),
+            )
+            GLES20.glUniform1f(
+                uniform("uGrainChromaFraction"),
+                filmLook.grainChromaFraction.toFloat(),
+            )
+            GLES20.glUniform1f(
+                uniform("uGrainSeed"),
+                filmLook.grainSeedForFrame(exposureMap?.timestampNs ?: 0L).toFloat(),
+            )
+            GLES20.glUniform2f(uniform("uOutputSize"), width.toFloat(), height.toFloat())
 
             val positionLocation = attribute("aPosition")
             val textureCoordinateLocation = attribute("aTextureCoordinate")
@@ -480,6 +530,16 @@ internal object GpuFilmExposureRenderer {
         uniform float uReferenceEv100;
         uniform float uHighlightLatitude;
         uniform float uShadowLatitude;
+        uniform float uToneGamma;
+        uniform vec3 uResponseGamma;
+        uniform vec3 uExposureBiasEv;
+        uniform mat3 uColorMatrix;
+        uniform float uSaturation;
+        uniform float uGrainAmount;
+        uniform float uGrainRadiusPxAt1080;
+        uniform float uGrainChromaFraction;
+        uniform float uGrainSeed;
+        uniform vec2 uOutputSize;
         varying vec2 vTextureCoordinate;
 
         const float TARGET_LUMINANCE = 0.18;
@@ -489,6 +549,11 @@ internal object GpuFilmExposureRenderer {
         const float LUMINANCE_EPSILON = 0.000001;
         const float MIN_ENCODED_EV100 = -32.0;
         const float MAX_ENCODED_EV100 = 32.0;
+        const float GRAIN_REFERENCE_WIDTH = 1080.0;
+        const float MIN_GRAIN_RADIUS_PX = 0.65;
+        const float GRAIN_EV_SCALE = 0.16;
+        const float GRAIN_FLOOR = 0.20;
+        const float GRAIN_SHADOW_BIAS = 0.10;
 
         vec3 srgbToLinear(vec3 value) {
             vec3 lower = value / 12.92;
@@ -543,6 +608,55 @@ internal object GpuFilmExposureRenderer {
             return linearLuminance(deltaEv);
         }
 
+        float channelResponseFactor(
+            float deltaEv,
+            float gamma,
+            float meanGamma,
+            float biasEv,
+            float targetLuminance
+        ) {
+            if (targetLuminance <= LUMINANCE_EPSILON) {
+                return 1.0;
+            }
+            float response = filmLuminance(
+                deltaEv * gamma / meanGamma + biasEv
+            );
+            float grayAnchor = filmLuminance(biasEv);
+            float normalizedResponse =
+                response * TARGET_LUMINANCE / max(grayAnchor, LUMINANCE_EPSILON);
+            return normalizedResponse / targetLuminance;
+        }
+
+        float randomValue(vec2 coordinate, float seed) {
+            float value = sin(
+                dot(coordinate, vec2(12.9898, 78.233)) + seed * 0.017
+            ) * 43758.5453;
+            return fract(value) * 2.0 - 1.0;
+        }
+
+        float valueNoise(vec2 coordinate, float seed) {
+            vec2 cell = floor(coordinate);
+            vec2 progress = fract(coordinate);
+            progress = progress * progress * (3.0 - 2.0 * progress);
+            float top = mix(
+                randomValue(cell, seed),
+                randomValue(cell + vec2(1.0, 0.0), seed),
+                progress.x
+            );
+            float bottom = mix(
+                randomValue(cell + vec2(0.0, 1.0), seed),
+                randomValue(cell + vec2(1.0, 1.0), seed),
+                progress.x
+            );
+            return mix(top, bottom, progress.y);
+        }
+
+        float fractalNoise(vec2 pixel, float radius, float seed) {
+            float fine = valueNoise(pixel / radius, seed);
+            float coarse = valueNoise(pixel / (radius * 2.0), seed + 97.0);
+            return (fine + 0.5 * coarse) / 1.5;
+        }
+
         float exposureMapEv100(vec2 coordinate) {
             vec4 encoded = texture2D(uExposureMap, coordinate);
             float highByte = floor(encoded.r * 255.0 + 0.5);
@@ -567,10 +681,85 @@ internal object GpuFilmExposureRenderer {
                 vec3(0.2126, 0.7152, 0.0722)
             );
             float pixelEv100 = exposureMapEv100(vTextureCoordinate);
-            float targetLuminance = filmLuminance(pixelEv100 - uReferenceEv100);
+            float deltaEv = pixelEv100 - uReferenceEv100;
+            float toneDeltaEv = deltaEv * uToneGamma;
+            float targetLuminance = filmLuminance(toneDeltaEv);
             float gain = targetLuminance / max(sourceLuminance, LUMINANCE_EPSILON);
+            float meanGamma =
+                (uResponseGamma.r + uResponseGamma.g + uResponseGamma.b) / 3.0;
+            vec3 responseFactor = vec3(
+                channelResponseFactor(
+                    toneDeltaEv,
+                    uResponseGamma.r,
+                    meanGamma,
+                    uExposureBiasEv.r,
+                    targetLuminance
+                ),
+                channelResponseFactor(
+                    toneDeltaEv,
+                    uResponseGamma.g,
+                    meanGamma,
+                    uExposureBiasEv.g,
+                    targetLuminance
+                ),
+                channelResponseFactor(
+                    toneDeltaEv,
+                    uResponseGamma.b,
+                    meanGamma,
+                    uExposureBiasEv.b,
+                    targetLuminance
+                )
+            );
+            vec3 styled = max(
+                uColorMatrix * (linearRgb * gain * responseFactor),
+                vec3(0.0)
+            );
+            float responseLuminance = dot(
+                styled,
+                vec3(0.2126, 0.7152, 0.0722)
+            );
+            styled *= targetLuminance / max(responseLuminance, LUMINANCE_EPSILON);
+
+            float saturationCenter = dot(
+                styled,
+                vec3(0.2126, 0.7152, 0.0722)
+            );
+            styled = vec3(saturationCenter) +
+                (styled - vec3(saturationCenter)) * uSaturation;
+
+            if (uGrainAmount > 0.0) {
+                float densityPosition = clamp(
+                    (deltaEv + uShadowLatitude) /
+                        (uShadowLatitude + uHighlightLatitude) +
+                        GRAIN_SHADOW_BIAS,
+                    0.0,
+                    1.0
+                );
+                float densityEnvelope = GRAIN_FLOOR +
+                    4.0 * densityPosition * (1.0 - densityPosition);
+                float radius = max(
+                    uGrainRadiusPxAt1080 * uOutputSize.x /
+                        GRAIN_REFERENCE_WIDTH,
+                    MIN_GRAIN_RADIUS_PX
+                );
+                vec2 pixel = gl_FragCoord.xy;
+                float sharedNoise = fractalNoise(pixel, radius, uGrainSeed);
+                vec3 independentNoise = vec3(
+                    fractalNoise(pixel, radius, uGrainSeed + 17.0),
+                    fractalNoise(pixel, radius, uGrainSeed + 37.0),
+                    fractalNoise(pixel, radius, uGrainSeed + 67.0)
+                );
+                vec3 grainNoise = mix(
+                    vec3(sharedNoise),
+                    independentNoise,
+                    uGrainChromaFraction
+                );
+                float amplitude =
+                    GRAIN_EV_SCALE * uGrainAmount * densityEnvelope;
+                styled *= exp2(grainNoise * amplitude);
+            }
             gl_FragColor = vec4(
-                linearToSrgb(linearRgb * gain),
+                linearToSrgb(max(styled, vec3(0.0))),
                 source.a
             );
         }

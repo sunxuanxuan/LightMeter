@@ -115,6 +115,21 @@ class FilmPreviewEngineTest {
     }
 
     @Test
+    fun builtInFilmsUseStableIdsAndExpectedLookProfiles() {
+        assertEquals("kodak-disposable-800", kodakPowerFlashFunSaver.film.id)
+        assertEquals(
+            NegativeFilmLooks.KODAK_DISPOSABLE_800,
+            kodakPowerFlashFunSaver.film.look,
+        )
+        assertEquals("fuji-superia-xtra-400", quickSnap.film.id)
+        assertEquals(NegativeFilmLooks.FUJI_SUPERIA_XTRA_400, quickSnap.film.look)
+        assertEquals(
+            NegativeFilmLooks.KODAK_ULTRA_MAX_400,
+            kodakEc35.film.look,
+        )
+    }
+
+    @Test
     fun builtInPresetParametersMatchDisposableCameraReference() {
         val presets = BuiltInDisposableCameraRepository.presets().associateBy { it.id }
 

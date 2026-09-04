@@ -13,6 +13,7 @@ data class FilmProfile(
     val highlightLatitudeStops: Double,
     val shadowLatitudeStops: Double,
     val evidence: EvidenceLevel,
+    val look: NegativeFilmLookProfile = NegativeFilmLooks.genericForIso(iso),
 ) {
     init {
         require(id.isNotBlank())
@@ -96,6 +97,7 @@ object BuiltInDisposableCameraRepository : DisposableCameraRepository {
             highlightLatitudeStops = 3.0,
             shadowLatitudeStops = 2.0,
             evidence = EvidenceLevel.ESTIMATED,
+            look = NegativeFilmLooks.GENERIC_COLOR_100,
         ),
         FilmProfile(
             id = "kodak-gold-200",
@@ -104,6 +106,7 @@ object BuiltInDisposableCameraRepository : DisposableCameraRepository {
             highlightLatitudeStops = 3.0,
             shadowLatitudeStops = 2.0,
             evidence = EvidenceLevel.ESTIMATED,
+            look = NegativeFilmLooks.KODAK_GOLD_200,
         ),
         FilmProfile(
             id = KODAK_ULTRA_MAX_400_ID,
@@ -112,6 +115,7 @@ object BuiltInDisposableCameraRepository : DisposableCameraRepository {
             highlightLatitudeStops = 3.0,
             shadowLatitudeStops = 2.0,
             evidence = EvidenceLevel.ESTIMATED,
+            look = NegativeFilmLooks.KODAK_ULTRA_MAX_400,
         ),
         FilmProfile(
             id = "generic-color-800",
@@ -120,6 +124,7 @@ object BuiltInDisposableCameraRepository : DisposableCameraRepository {
             highlightLatitudeStops = 3.0,
             shadowLatitudeStops = 2.0,
             evidence = EvidenceLevel.ESTIMATED,
+            look = NegativeFilmLooks.GENERIC_COLOR_800,
         ),
     )
 
@@ -131,11 +136,13 @@ object BuiltInDisposableCameraRepository : DisposableCameraRepository {
             model = "Power Flash / FunSaver",
             regionOrBatch = "合并预设 · 31mm · f/10 · 1/100s · ISO 800",
             film = FilmProfile(
+                id = "kodak-disposable-800",
                 name = "Kodak ISO 800 彩色负片",
                 iso = 800,
                 highlightLatitudeStops = 3.0,
                 shadowLatitudeStops = 2.0,
                 evidence = EvidenceLevel.ESTIMATED,
+                look = NegativeFilmLooks.KODAK_DISPOSABLE_800,
             ),
             optics = FixedOptics(
                 aperture = 10.0,
@@ -156,11 +163,13 @@ object BuiltInDisposableCameraRepository : DisposableCameraRepository {
             model = "QuickSnap Flash 400",
             regionOrBatch = "32mm · f/10 · 1/140s · ISO 400",
             film = FilmProfile(
+                id = "fuji-superia-xtra-400",
                 name = "FUJICOLOR SUPERIA X-TRA 400",
                 iso = 400,
                 highlightLatitudeStops = 3.0,
                 shadowLatitudeStops = 5.0 / 3.0,
                 evidence = EvidenceLevel.ESTIMATED,
+                look = NegativeFilmLooks.FUJI_SUPERIA_XTRA_400,
             ),
             optics = FixedOptics(
                 aperture = 10.0,
@@ -181,11 +190,13 @@ object BuiltInDisposableCameraRepository : DisposableCameraRepository {
             model = "C400 果冻胶卷相机",
             regionOrBatch = "32mm · f/11 · 1/125s · ISO 400 · 单次 36 张",
             film = FilmProfile(
+                id = "fuji-c400-400",
                 name = "Fujifilm C400 ISO 400 彩色负片",
                 iso = 400,
                 highlightLatitudeStops = 3.0,
                 shadowLatitudeStops = 2.0,
                 evidence = EvidenceLevel.ESTIMATED,
+                look = NegativeFilmLooks.FUJI_C400_400,
             ),
             optics = FixedOptics(
                 aperture = 11.0,

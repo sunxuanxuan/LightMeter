@@ -1,22 +1,45 @@
 package com.lightmeter.app.ui
 
-import androidx.compose.foundation.BorderStroke
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowForward
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -24,11 +47,19 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.core.view.WindowCompat
 import com.lightmeter.app.BuildConfig
+import com.lightmeter.app.R
 import com.lightmeter.app.filmpreview.FilmPreviewRoute
 import com.lightmeter.app.instantpreview.InstantPreviewRoute
 import com.lightmeter.app.settings.SharedPreferencesAppSettingsStore
@@ -60,6 +91,8 @@ fun AppRoute(
         AppDestination.MODE_SELECTION -> ModeSelectionScreen(
             onFilmPreviewSelected = { destination = AppDestination.FILM_PREVIEW },
             onInstantCameraSelected = { destination = AppDestination.INSTANT_CAMERA },
+            themeStyle = themeStyle,
+            onThemeStyleChanged = onThemeStyleChanged,
             onProfessionalMeteringSelected = if (BuildConfig.DEBUG) {
                 { destination = AppDestination.PROFESSIONAL_METERING }
             } else {
@@ -93,64 +126,204 @@ fun AppRoute(
 private fun ModeSelectionScreen(
     onFilmPreviewSelected: () -> Unit,
     onInstantCameraSelected: () -> Unit,
+    themeStyle: AppThemeStyle,
+    onThemeStyleChanged: (AppThemeStyle) -> Unit,
     onProfessionalMeteringSelected: (() -> Unit)?,
 ) {
+    var showsSettings by rememberSaveable { mutableStateOf(false) }
+    val view = LocalView.current
+    DisposableEffect(view, themeStyle) {
+        val window = view.context.findActivity()?.window
+        val controller = window?.let { WindowCompat.getInsetsController(it, view) }
+        controller?.isAppearanceLightStatusBars = true
+        controller?.isAppearanceLightNavigationBars = true
+        onDispose {
+            val usesLightSystemBars = themeStyle == AppThemeStyle.LIGHT
+            controller?.isAppearanceLightStatusBars = usesLightSystemBars
+            controller?.isAppearanceLightNavigationBars = usesLightSystemBars
+        }
+    }
     Surface(
         modifier = Modifier.fillMaxSize(),
-        color = MaterialTheme.colorScheme.background,
+        color = HomeBackground,
     ) {
-        Column(
+        BoxWithConstraints(
             modifier = Modifier
                 .fillMaxSize()
                 .statusBarsPadding()
-                .navigationBarsPadding()
-                .padding(horizontal = 24.dp, vertical = 28.dp),
-            verticalArrangement = Arrangement.Center,
+                .navigationBarsPadding(),
         ) {
-            Text(
-                text = "FilmLightMeter",
-                style = MaterialTheme.typography.displaySmall,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Text(
-                text = "体验胶片摄影魅力",
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onBackground,
-                textAlign = TextAlign.Center,
+            val compact = maxHeight < 720.dp
+            val cardHeight = if (compact) 164.dp else 188.dp
+            Column(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 10.dp, bottom = 32.dp),
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 24.dp)
+                    .padding(bottom = 36.dp),
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 14.dp),
+                    horizontalArrangement = Arrangement.End,
+                ) {
+                    IconButton(
+                        onClick = { showsSettings = true },
+                        modifier = Modifier
+                            .size(46.dp)
+                            .clip(CircleShape)
+                            .background(HomeGreen),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Settings,
+                            contentDescription = "设置",
+                            tint = Color.White,
+                            modifier = Modifier.size(24.dp),
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(if (compact) 38.dp else 72.dp))
+                Text(
+                    text = "FilmLightMeter",
+                    color = HomeGreen,
+                    fontSize = 36.sp,
+                    lineHeight = 42.sp,
+                    letterSpacing = 0.sp,
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Text(
+                    text = "胶片成像预览",
+                    color = HomeInk,
+                    fontSize = 19.sp,
+                    lineHeight = 26.sp,
+                    letterSpacing = 0.sp,
+                    fontWeight = FontWeight.Medium,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp),
+                )
+
+                Spacer(modifier = Modifier.height(if (compact) 34.dp else 44.dp))
+                HomeFeatureCard(
+                    imageResource = R.drawable.home_film_roll,
+                    title = "胶片模拟",
+                    description = "多胶片预设\n预见成片效果",
+                    containerColor = HomeSecondaryCard,
+                    contentColor = HomeInk,
+                    secondaryContentColor = HomeMutedInk,
+                    arrowContainerColor = HomeGreen,
+                    arrowContentColor = Color.White,
+                    onClick = onFilmPreviewSelected,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(cardHeight),
+                )
+                Spacer(modifier = Modifier.height(if (compact) 18.dp else 24.dp))
+                HomeFeatureCard(
+                    imageResource = R.drawable.home_instant_camera,
+                    title = "拍立得预览",
+                    description = "多种拍立得相纸\n即时成像模拟",
+                    containerColor = HomeSecondaryCard,
+                    contentColor = HomeInk,
+                    secondaryContentColor = HomeMutedInk,
+                    arrowContainerColor = HomeGreen,
+                    arrowContentColor = Color.White,
+                    onClick = onInstantCameraSelected,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(cardHeight),
+                )
+            }
+        }
+    }
+
+    if (showsSettings) {
+        HomeSettingsDialog(
+            themeStyle = themeStyle,
+            onThemeStyleChanged = onThemeStyleChanged,
+            onProfessionalMeteringSelected = onProfessionalMeteringSelected,
+            onDismiss = { showsSettings = false },
+        )
+    }
+}
+
+@Composable
+private fun HomeFeatureCard(
+    imageResource: Int,
+    title: String,
+    description: String,
+    containerColor: Color,
+    contentColor: Color,
+    secondaryContentColor: Color,
+    arrowContainerColor: Color,
+    arrowContentColor: Color,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier
+            .clickable(onClick = onClick),
+        color = containerColor,
+        shape = RoundedCornerShape(8.dp),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 18.dp, vertical = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Image(
+                painter = painterResource(imageResource),
+                contentDescription = null,
+                contentScale = ContentScale.Fit,
+                modifier = Modifier
+                    .weight(0.43f)
+                    .fillMaxHeight()
+                    .padding(end = 12.dp),
             )
             Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(14.dp),
+                modifier = Modifier
+                    .weight(0.57f)
+                    .fillMaxHeight(),
             ) {
-                ModeCard(
-                    symbol = "▣",
-                    title = "胶片模拟",
-                    description = "拍前曝光风险与闪光灯建议",
-                    onClick = onFilmPreviewSelected,
-                    modifier = Modifier.fillMaxWidth(),
+                Spacer(modifier = Modifier.weight(1f))
+                Text(
+                    text = title,
+                    color = contentColor,
+                    fontSize = 22.sp,
+                    lineHeight = 28.sp,
+                    letterSpacing = 0.sp,
+                    fontWeight = FontWeight.SemiBold,
                 )
-                ModeCard(
-                    symbol = "◎",
-                    title = "拍立得预览",
-                    description = "拍前曝光风险与档位建议",
-                    onClick = onInstantCameraSelected,
-                    modifier = Modifier.fillMaxWidth(),
+                Text(
+                    text = description,
+                    color = secondaryContentColor,
+                    fontSize = 15.sp,
+                    lineHeight = 22.sp,
+                    letterSpacing = 0.sp,
+                    modifier = Modifier.padding(top = 10.dp),
                 )
-                onProfessionalMeteringSelected?.let { onClick ->
-                    ModeCard(
-                        symbol = "◈",
-                        title = "专业模式",
-                        description = "高级测光与胶片宽容度分析",
-                        onClick = onClick,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
+                Spacer(modifier = Modifier.weight(0.7f))
+                Surface(
+                    color = arrowContainerColor,
+                    contentColor = arrowContentColor,
+                    shape = CircleShape,
+                    modifier = Modifier
+                        .align(Alignment.End)
+                        .size(42.dp),
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Rounded.ArrowForward,
+                            contentDescription = null,
+                            modifier = Modifier.size(24.dp),
+                        )
+                    }
                 }
             }
         }
@@ -158,57 +331,68 @@ private fun ModeSelectionScreen(
 }
 
 @Composable
-private fun ModeCard(
-    symbol: String,
-    title: String,
-    description: String,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
+private fun HomeSettingsDialog(
+    themeStyle: AppThemeStyle,
+    onThemeStyleChanged: (AppThemeStyle) -> Unit,
+    onProfessionalMeteringSelected: (() -> Unit)?,
+    onDismiss: () -> Unit,
 ) {
-    Surface(
-        modifier = modifier
-            .heightIn(min = 116.dp)
-            .clickable(onClick = onClick),
-        color = MaterialTheme.colorScheme.surface,
-        shape = RoundedCornerShape(12.dp),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        shadowElevation = 1.dp,
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 18.dp, vertical = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Surface(
-                color = MaterialTheme.colorScheme.primaryContainer,
-                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                shape = RoundedCornerShape(8.dp),
-            ) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("设置") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(
-                    text = symbol,
-                    style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.padding(horizontal = 13.dp, vertical = 10.dp),
+                    text = "界面主题",
+                    style = MaterialTheme.typography.labelLarge,
                 )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    AppThemeStyle.entries
+                        .filter(AppThemeStyle::available)
+                        .forEach { style ->
+                            FilterChip(
+                                selected = themeStyle == style,
+                                onClick = { onThemeStyleChanged(style) },
+                                label = { Text(style.displayName) },
+                            )
+                        }
+                }
+                onProfessionalMeteringSelected?.let { onSelected ->
+                    HorizontalDivider()
+                    TextButton(
+                        onClick = {
+                            onDismiss()
+                            onSelected()
+                        },
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Tune,
+                            contentDescription = null,
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("专业测光")
+                    }
+                }
             }
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-                Text(
-                    text = description,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 5.dp),
-                )
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("完成")
             }
-            Text(
-                text = "进入  →",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.primary,
-            )
-        }
+        },
+    )
+}
+
+private val HomeBackground = Color(0xFFF7F8F4)
+private val HomeGreen = Color(0xFF123C30)
+private val HomeInk = Color(0xFF12251F)
+private val HomeMutedInk = Color(0xFF53645E)
+private val HomeSecondaryCard = Color(0xFFE9EEEA)
+
+private tailrec fun Context.findActivity(): Activity? {
+    return when (this) {
+        is Activity -> this
+        is ContextWrapper -> baseContext.findActivity()
+        else -> null
     }
 }
