@@ -36,6 +36,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -46,11 +47,11 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.CameraAlt
-import androidx.compose.material.icons.outlined.MoreHoriz
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.WbSunny
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -73,12 +74,14 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -364,12 +367,6 @@ private fun FilmPreviewWorkspace(
     val preset = state.selectedPreset ?: return
     var showsSettings by rememberSaveable { mutableStateOf(false) }
     var selector by rememberSaveable { mutableStateOf<PreviewSelector?>(null) }
-    var hasSelectedCameraImage by rememberSaveable {
-        mutableStateOf(state.hasSavedPresetSelection)
-    }
-    var hasSelectedFilmImage by rememberSaveable {
-        mutableStateOf(state.hasSavedPresetSelection)
-    }
     var frozenFrame by remember { mutableStateOf<Bitmap?>(null) }
     var simulatedFrame by remember { mutableStateOf<Bitmap?>(null) }
     var frozenSnapshot by remember { mutableStateOf<ExposureSnapshot?>(null) }
@@ -427,6 +424,7 @@ private fun FilmPreviewWorkspace(
         presetReferenceEv100,
         preset.film.highlightLatitudeStops,
         preset.film.shadowLatitudeStops,
+        preset.film.look,
     ) {
         val source = frozenFrame
         val snapshot = frozenSnapshot
@@ -441,6 +439,7 @@ private fun FilmPreviewWorkspace(
                         referenceEv100 = presetReferenceEv100,
                         highlightLatitudeStops = preset.film.highlightLatitudeStops,
                         shadowLatitudeStops = preset.film.shadowLatitudeStops,
+                        filmLook = preset.film.look,
                     )
                 }.getOrNull()
             }
@@ -461,9 +460,7 @@ private fun FilmPreviewWorkspace(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .statusBarsPadding()
-            .navigationBarsPadding(),
+            .background(PREVIEW_PANEL_COLOR),
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
             PreviewTopControls(
@@ -471,174 +468,152 @@ private fun FilmPreviewWorkspace(
                 onOpenSettings = { showsSettings = true },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 12.dp),
+                    .background(PREVIEW_TOOLBAR_GREEN)
+                    .statusBarsPadding()
+                    .padding(horizontal = 24.dp, vertical = 12.dp),
             )
             BoxWithConstraints(
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f)
-                    .padding(horizontal = 20.dp, vertical = 4.dp),
-                contentAlignment = Alignment.Center,
+                    .background(PREVIEW_PANEL_COLOR),
             ) {
-            val availableAspectRatio = if (maxHeight.value > 0f) {
-                maxWidth.value / maxHeight.value
-            } else {
-                PREVIEW_ASPECT_RATIO
-            }
-            val previewModifier = if (availableAspectRatio > PREVIEW_ASPECT_RATIO) {
-                Modifier
-                    .fillMaxHeight()
-                    .aspectRatio(PREVIEW_ASPECT_RATIO)
-            } else {
-                Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(PREVIEW_ASPECT_RATIO)
-            }
-            val previewShape = RoundedCornerShape(8.dp)
+                val compact = maxHeight < 650.dp
+                val controlPanelHeight = if (compact) 184.dp else 196.dp
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(2.dp)
+                        .background(PREVIEW_TOOLBAR_GREEN),
+                )
 
                 Box(
-                    modifier = previewModifier
-                        .background(Color.Black, previewShape)
-                        .clip(previewShape)
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(PREVIEW_ASPECT_RATIO)
+                        .offset(y = (-1).dp)
+                        .background(Color.Black)
                         .onSizeChanged { previewSize = it }
-                        .border(
-                            1.dp,
-                            Color(0xFFD3AA5F).copy(alpha = 0.72f),
-                            previewShape,
-                        ),
                 ) {
-                when (permissionState) {
-                    CameraPermissionState.GRANTED -> key(cameraSessionId) {
-                        CameraPreviewView(
-                        meteringConfig = MeteringConfig(
-                            mode = MeteringMode.CENTER_CROP_AVERAGE,
-                            centerCropPercent = 60,
-                            viewfinderRect = normalizedViewfinder,
-                            previewAspectRatio = PREVIEW_ASPECT_RATIO.toDouble(),
-                            targetZoomRatio = effectiveZoomRatio.toDouble(),
-                            isZoomReady = isZoomReady,
-                            revision = presetRevision,
-                            calibrationOffset = calibrationOffset,
-                        ),
-                        targetZoomRatio = if (state.isFrozen) {
-                            cameraZoomState.zoomRatio
-                        } else {
-                            targetZoomRatio
-                        },
-                        freezeRequestId = state.freezeRequestId,
-                        shouldCaptureFrame = state.isFrozen,
-                        onMeteringResult = {
-                            if (it.revision == presetRevision) {
-                                onMeteringResult(it)
-                            }
-                        },
-                        onFrameCaptured = { capturedFrame ->
-                            val requestId = capturedFrame?.requestId
-                            val bitmap = capturedFrame?.bitmap
-                            val snapshot = capturedFrame?.snapshot
-                            if (
-                                requestId == null ||
-                                bitmap == null ||
-                                snapshot == null ||
-                                snapshot.revision != presetRevision
-                            ) {
-                                onFreezeCaptureFailed()
-                            } else {
-                                onFrozenSnapshot(requestId, snapshot)
-                                frozenFrame = bitmap
-                                simulatedFrame = null
-                                frozenSnapshot = snapshot
-                            }
-                        },
-                        onOpticsAvailable = { cameraOptics = it },
-                        onZoomStateChanged = { cameraZoomState = it },
-                        onReady = onCameraReady,
-                        onError = onCameraError,
-                            modifier = Modifier.fillMaxSize(),
+                    when (permissionState) {
+                        CameraPermissionState.GRANTED -> key(cameraSessionId) {
+                            CameraPreviewView(
+                                meteringConfig = MeteringConfig(
+                                    mode = MeteringMode.CENTER_CROP_AVERAGE,
+                                    centerCropPercent = 60,
+                                    viewfinderRect = normalizedViewfinder,
+                                    previewAspectRatio = PREVIEW_ASPECT_RATIO.toDouble(),
+                                    targetZoomRatio = effectiveZoomRatio.toDouble(),
+                                    isZoomReady = isZoomReady,
+                                    revision = presetRevision,
+                                    calibrationOffset = calibrationOffset,
+                                ),
+                                targetZoomRatio = if (state.isFrozen) {
+                                    cameraZoomState.zoomRatio
+                                } else {
+                                    targetZoomRatio
+                                },
+                                freezeRequestId = state.freezeRequestId,
+                                shouldCaptureFrame = state.isFrozen,
+                                onMeteringResult = {
+                                    if (it.revision == presetRevision) {
+                                        onMeteringResult(it)
+                                    }
+                                },
+                                onFrameCaptured = { capturedFrame ->
+                                    val requestId = capturedFrame?.requestId
+                                    val bitmap = capturedFrame?.bitmap
+                                    val snapshot = capturedFrame?.snapshot
+                                    if (
+                                        requestId == null ||
+                                        bitmap == null ||
+                                        snapshot == null ||
+                                        snapshot.revision != presetRevision
+                                    ) {
+                                        onFreezeCaptureFailed()
+                                    } else {
+                                        onFrozenSnapshot(requestId, snapshot)
+                                        frozenFrame = bitmap
+                                        simulatedFrame = null
+                                        frozenSnapshot = snapshot
+                                    }
+                                },
+                                onOpticsAvailable = { cameraOptics = it },
+                                onZoomStateChanged = { cameraZoomState = it },
+                                onReady = onCameraReady,
+                                onError = onCameraError,
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                        }
+
+                        CameraPermissionState.PERMANENTLY_DENIED -> PreviewPermissionContent(
+                            buttonText = "打开系统设置",
+                            onClick = onOpenSettings,
+                        )
+
+                        CameraPermissionState.UNKNOWN,
+                        CameraPermissionState.DENIED,
+                        -> PreviewPermissionContent(
+                            buttonText = "授予相机权限",
+                            onClick = onRequestPermission,
                         )
                     }
 
-                    CameraPermissionState.PERMANENTLY_DENIED -> PreviewPermissionContent(
-                        buttonText = "打开系统设置",
-                        onClick = onOpenSettings,
-                    )
+                    if (state.isFrozen) {
+                        val source = frozenFrame
+                        val simulated = simulatedFrame
+                        when {
+                            source != null && simulated != null -> {
+                                FilmSimulationComparison(
+                                    source = source,
+                                    simulated = simulated,
+                                    splitFraction = comparisonSplit,
+                                    onSplitChanged = { comparisonSplit = it },
+                                    modifier = Modifier.fillMaxSize(),
+                                )
+                            }
 
-                    CameraPermissionState.UNKNOWN,
-                    CameraPermissionState.DENIED,
-                    -> PreviewPermissionContent(
-                        buttonText = "授予相机权限",
-                        onClick = onRequestPermission,
-                    )
-                }
-
-                if (state.isFrozen) {
-                    val source = frozenFrame
-                    val simulated = simulatedFrame
-                    when {
-                        source != null && simulated != null -> {
-                            FilmSimulationComparison(
-                                source = source,
-                                simulated = simulated,
-                                splitFraction = comparisonSplit,
-                                onSplitChanged = { comparisonSplit = it },
-                                modifier = Modifier.fillMaxSize(),
-                            )
+                            source != null -> {
+                                Image(
+                                    bitmap = source.asImageBitmap(),
+                                    contentDescription = "冻结的手机画面",
+                                    contentScale = ContentScale.FillBounds,
+                                    filterQuality = FilterQuality.High,
+                                    modifier = Modifier.fillMaxSize(),
+                                )
+                                SimulationLoadingOverlay(modifier = Modifier.fillMaxSize())
+                            }
                         }
-
-                        source != null -> {
-                            Image(
-                                bitmap = source.asImageBitmap(),
-                                contentDescription = "冻结的手机画面",
-                                contentScale = ContentScale.FillBounds,
-                                filterQuality = FilterQuality.High,
-                                modifier = Modifier.fillMaxSize(),
-                            )
-                            SimulationLoadingOverlay(modifier = Modifier.fillMaxSize())
-                        }
+                    } else {
+                        CameraViewfinderMask(
+                            viewfinder = normalizedViewfinder,
+                            modifier = Modifier.fillMaxSize(),
+                        )
                     }
-                } else {
-                    CameraViewfinderMask(
-                        viewfinder = normalizedViewfinder,
-                        modifier = Modifier.fillMaxSize(),
-                    )
                 }
 
-                }
-            }
-
-            ExposureAdvicePanel(
-                text = previewGuidance(
-                    adviceCode = state.evaluation?.adviceCode,
+                PreviewControlPanel(
                     preset = preset,
-                ),
-                statusPrefix = adviceStatusPrefix(state.evaluation?.rating),
-                textColor = adviceTextColor(state.evaluation?.rating),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 24.dp, vertical = 8.dp),
-            )
-
-            SimulationBottomBar(
-                cameraImageResource = if (hasSelectedCameraImage) {
-                    presetImageResource(preset) ?: R.drawable.bottom_camera_left
-                } else {
-                    R.drawable.bottom_camera_left
-                },
-                filmImageResource = if (hasSelectedFilmImage) {
-                    filmImageResource(preset.film)
-                } else {
-                    R.drawable.bottom_film_right
-                },
-                isFrozen = state.isFrozen,
-                captureEnabled = state.isFrozen ||
-                    (
-                        state.isCameraReady &&
-                            state.meteredEv100 != null
-                        ),
-                onCameraClick = { selector = PreviewSelector.CAMERA },
-                onCaptureClick = if (state.isFrozen) onResumeLive else onFreezePreview,
-                onFilmClick = { selector = PreviewSelector.FILM },
-            )
+                    cameraImageResource = presetImageResource(preset)
+                        ?: R.drawable.bottom_camera_left,
+                    filmImageResource = filmImageResource(preset.film),
+                    isFrozen = state.isFrozen,
+                    captureEnabled = state.isFrozen ||
+                        (
+                            state.isCameraReady &&
+                                state.meteredEv100 != null
+                            ),
+                    environmentText = environmentLightText(state.evaluation),
+                    onCameraClick = { selector = PreviewSelector.CAMERA },
+                    onCaptureClick = if (state.isFrozen) onResumeLive else onFreezePreview,
+                    onFilmClick = { selector = PreviewSelector.FILM },
+                    compact = compact,
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .height(controlPanelHeight),
+                )
+            }
         }
 
         selector?.let { activeSelector ->
@@ -649,12 +624,10 @@ private fun FilmPreviewWorkspace(
                 onDismiss = { selector = null },
                 onPresetSelected = { selected ->
                     onPresetSelected(selected.id)
-                    hasSelectedCameraImage = true
                     selector = null
                 },
                 onFilmSelected = { film ->
                     onFilmSelected(film.id)
-                    hasSelectedFilmImage = true
                     selector = null
                 },
             )
@@ -678,102 +651,121 @@ private fun FilmPreviewWorkspace(
 }
 
 @Composable
-private fun SimulationBottomBar(
+private fun PreviewControlPanel(
+    preset: DisposableCameraPreset,
     cameraImageResource: Int,
     filmImageResource: Int,
     isFrozen: Boolean,
     captureEnabled: Boolean,
+    environmentText: String,
     onCameraClick: () -> Unit,
     onCaptureClick: () -> Unit,
     onFilmClick: () -> Unit,
+    compact: Boolean,
+    modifier: Modifier = Modifier,
 ) {
     Surface(
-        modifier = Modifier.fillMaxWidth(),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f),
-        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)),
+        modifier = modifier,
+        color = PREVIEW_PANEL_COLOR,
+        shape = RoundedCornerShape(topStart = 30.dp, topEnd = 30.dp),
+        shadowElevation = 8.dp,
     ) {
-        Row(
+        Column(
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 24.dp, vertical = 18.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
+                .fillMaxSize()
+                .navigationBarsPadding()
+                .padding(
+                    start = 18.dp,
+                    top = if (compact) 14.dp else 18.dp,
+                    end = 18.dp,
+                    bottom = 12.dp,
+                ),
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            BottomPresetButton(
-                imageResource = cameraImageResource,
-                label = "机型",
-                onClick = onCameraClick,
-                modifier = Modifier.weight(1f),
-            )
-            PreviewFreezeButton(
-                isFrozen = isFrozen,
-                enabled = captureEnabled,
-                onClick = onCaptureClick,
-                modifier = Modifier.padding(horizontal = 20.dp),
-            )
-            BottomPresetButton(
-                imageResource = filmImageResource,
-                label = "底片",
-                onClick = onFilmClick,
-                modifier = Modifier.weight(1f),
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                PreviewSelectionTile(
+                    imageResource = cameraImageResource,
+                    contentDescription = "选择机型：${preset.controlLabel()}",
+                    onClick = onCameraClick,
+                )
+                PreviewFreezeButton(
+                    isFrozen = isFrozen,
+                    enabled = captureEnabled,
+                    onClick = onCaptureClick,
+                )
+                PreviewSelectionTile(
+                    imageResource = filmImageResource,
+                    contentDescription = "选择底片：${preset.film.controlLabel()}",
+                    onClick = onFilmClick,
+                )
+            }
+            Spacer(modifier = Modifier.weight(1f))
+            EnvironmentLightPill(text = environmentText)
+        }
+    }
+}
+
+@Composable
+private fun PreviewSelectionTile(
+    imageResource: Int,
+    contentDescription: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier
+            .size(72.dp)
+            .clickable(onClick = onClick),
+        color = PREVIEW_SELECTOR_COLOR,
+        shape = RoundedCornerShape(12.dp),
+    ) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier.padding(8.dp),
+        ) {
+            Image(
+                painter = painterResource(imageResource),
+                contentDescription = contentDescription,
+                contentScale = ContentScale.Fit,
+                modifier = Modifier.fillMaxSize(),
             )
         }
     }
 }
 
 @Composable
-private fun BottomPresetButton(
-    imageResource: Int,
-    label: String,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Column(
-        modifier = modifier
-            .heightIn(min = 78.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 4.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-    ) {
-        Image(
-            painter = painterResource(imageResource),
-            contentDescription = label,
-            contentScale = ContentScale.Fit,
-            modifier = Modifier.size(42.dp),
-        )
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-}
-
-@Composable
-private fun ExposureAdvicePanel(
+private fun EnvironmentLightPill(
     text: String,
-    statusPrefix: String,
-    textColor: Color,
     modifier: Modifier = Modifier,
 ) {
     Surface(
-        modifier = modifier,
-        color = MaterialTheme.colorScheme.surfaceVariant,
-        shape = RoundedCornerShape(8.dp),
+        modifier = modifier.height(38.dp),
+        color = PREVIEW_LIGHT_STATUS_COLOR,
+        shape = RoundedCornerShape(20.dp),
     ) {
-        Text(
-            text = statusPrefix + text,
-            color = textColor,
-            style = MaterialTheme.typography.bodySmall,
-            fontWeight = FontWeight.Bold,
-            textAlign = TextAlign.Left,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 10.dp),
-        )
+        Row(
+            modifier = Modifier.padding(horizontal = 18.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.WbSunny,
+                contentDescription = null,
+                tint = PREVIEW_SUN_COLOR,
+                modifier = Modifier.size(20.dp),
+            )
+            Text(
+                text = text,
+                color = PREVIEW_TEXT_COLOR,
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+            )
+        }
     }
 }
 
@@ -1114,41 +1106,45 @@ private fun PreviewTopControls(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Surface(
-            color = MaterialTheme.colorScheme.surfaceVariant,
-            shape = CircleShape,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-            modifier = Modifier
-                .size(48.dp)
-                .clickable(onClick = onBack),
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                Icon(
-                    imageVector = Icons.Outlined.ArrowBack,
-                    contentDescription = "返回",
-                    tint = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.size(25.dp),
-                )
-            }
-        }
+        PreviewToolbarAction(
+            icon = Icons.AutoMirrored.Outlined.ArrowBack,
+            label = "返回",
+            onClick = onBack,
+        )
+        PreviewToolbarAction(
+            icon = Icons.Outlined.Settings,
+            label = "设置",
+            onClick = onOpenSettings,
+        )
+    }
+}
 
-        Surface(
-            color = MaterialTheme.colorScheme.surfaceVariant,
-            shape = CircleShape,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-            modifier = Modifier
-                .size(48.dp)
-                .clickable(onClick = onOpenSettings),
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                Icon(
-                    imageVector = Icons.Outlined.MoreHoriz,
-                    contentDescription = "设置",
-                    tint = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.size(25.dp),
-                )
-            }
-        }
+@Composable
+private fun PreviewToolbarAction(
+    icon: ImageVector,
+    label: String,
+    onClick: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .size(width = 64.dp, height = 54.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .clickable(onClick = onClick),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = label,
+            tint = Color.White,
+            modifier = Modifier.size(26.dp),
+        )
+        Text(
+            text = label,
+            color = Color.White.copy(alpha = 0.82f),
+            style = MaterialTheme.typography.labelSmall,
+            modifier = Modifier.padding(top = 2.dp),
+        )
     }
 }
 
@@ -1176,9 +1172,9 @@ private fun PreviewFreezeButton(
 
     if (isFrozen) {
         Surface(
-            color = MaterialTheme.colorScheme.surfaceVariant,
+            color = PREVIEW_SELECTOR_COLOR,
             shape = CircleShape,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+            border = BorderStroke(2.dp, PREVIEW_SHUTTER_RED),
             modifier = modifier
                 .size(CONTROL_BUTTON_SIZE)
                 .clickable(onClick = onClick),
@@ -1187,7 +1183,7 @@ private fun PreviewFreezeButton(
                 Icon(
                     imageVector = Icons.Outlined.Refresh,
                     contentDescription = "退出冻结，恢复取景",
-                    tint = Color.Gray,
+                    tint = PREVIEW_TOOLBAR_GREEN,
                     modifier = Modifier.size(30.dp),
                 )
             }
@@ -1197,13 +1193,9 @@ private fun PreviewFreezeButton(
             contentAlignment = Alignment.Center,
             modifier = modifier
                 .size(CONTROL_BUTTON_SIZE)
+                .alpha(if (enabled) 1f else 0.45f)
                 .background(
-                    color = CAPTURE_RED,
-                    shape = CircleShape,
-                )
-                .border(
-                    width = 3.dp,
-                    color = Color.White,
+                    color = PREVIEW_SHUTTER_RED,
                     shape = CircleShape,
                 )
                 .clip(CircleShape)
@@ -1213,10 +1205,18 @@ private fun PreviewFreezeButton(
         ) {
             Box(
                 modifier = Modifier
-                    .size(53.dp)
-                    .scale(innerRingScale)
+                    .size(76.dp)
                     .background(
                         color = Color.White,
+                        shape = CircleShape,
+                    ),
+            )
+            Box(
+                modifier = Modifier
+                    .size(68.dp)
+                    .scale(innerRingScale)
+                    .background(
+                        color = PREVIEW_SHUTTER_RED,
                         shape = CircleShape,
                     ),
             )
@@ -1530,55 +1530,48 @@ private fun formatDecimal(value: Double): String {
     }
 }
 
-private fun formatSignedStops(value: Double): String {
-    return String.format(Locale.US, "%+.1f EV", value)
-}
-
-private fun formatEv(value: Double): String {
-    return String.format(Locale.US, "%.1f EV", value)
-}
-
-private fun previewGuidance(
-    adviceCode: PreviewAdviceCode?,
-    preset: DisposableCameraPreset,
-): String {
-    return when (adviceCode) {
-        PreviewAdviceCode.USE_FLASH -> preset.flash?.let {
-            "画面过暗，建议开启闪光灯，并让主体保持在 " +
-                "${formatDecimal(it.effectiveDistanceMinMeters)}-" +
-                "${formatDecimal(it.effectiveDistanceMaxMeters)} m 内。"
-        } ?: "画面过暗，建议到光线更充足的地方拍摄。"
-
-        PreviewAdviceCode.AMBIENT_TOO_DARK -> "画面偏暗，建议到光线更充足的地方拍摄。"
-        PreviewAdviceCode.AMBIENT_TOO_BRIGHT -> "画面偏亮，建议到光线稍暗的地方拍摄。"
-        PreviewAdviceCode.SEEK_SHADE -> "画面过亮，建议移到阴影处拍摄。"
-        PreviewAdviceCode.SUITABLE -> "画面亮度合适，可以正常拍摄。"
-        PreviewAdviceCode.UNAVAILABLE,
-        null,
-        -> "正在分析画面亮度。"
+private fun DisposableCameraPreset.controlLabel(): String {
+    return when (id) {
+        ManualCameraConfig.MANUAL_PRESET_ID -> "自定义机型"
+        "kodak-power-flash-800" -> "FunSaver 800"
+        "fujifilm-quicksnap-flash-400" -> "QuickSnap 400"
+        "fujifilm-c400-jelly" -> "Fujifilm C400"
+        "kodak-ec35-reusable" -> "Kodak EC35"
+        else -> displayName
     }
 }
 
-private fun adviceStatusPrefix(rating: PreviewSceneRating?): String {
-    return when (rating) {
-        PreviewSceneRating.GOOD -> "✅ "
-        PreviewSceneRating.CAUTION -> "！ "
-        PreviewSceneRating.POOR -> "❌ "
-        PreviewSceneRating.UNAVAILABLE,
-        null,
-        -> ""
+private fun FilmProfile.controlLabel(): String {
+    return when (id) {
+        "generic-color-100" -> "ISO 100 彩负"
+        "kodak-gold-200" -> "Kodak Gold 200"
+        "kodak-ultra-max-400" -> "UltraMax 400"
+        "generic-color-800" -> "ISO 800 彩负"
+        "kodak-disposable-800" -> "Kodak 800"
+        "fuji-superia-xtra-400" -> "Superia 400"
+        "fuji-c400-400" -> "Fujifilm C400"
+        else -> name
     }
 }
 
-@Composable
-private fun adviceTextColor(rating: PreviewSceneRating?): Color {
-    return when (rating) {
-        PreviewSceneRating.GOOD -> Color(0xFF3FAE5A)
-        PreviewSceneRating.CAUTION -> Color(0xFFE08A19)
-        PreviewSceneRating.POOR -> Color(0xFFD84343)
+private fun environmentLightText(evaluation: FilmPreviewEvaluation?): String {
+    return when (evaluation?.rating) {
+        PreviewSceneRating.GOOD -> "当前光线：适宜"
+        PreviewSceneRating.CAUTION -> if ((evaluation.sceneDeltaEv ?: 0.0) < 0.0) {
+            "当前光线：偏暗"
+        } else {
+            "当前光线：偏亮"
+        }
+
+        PreviewSceneRating.POOR -> if ((evaluation.sceneDeltaEv ?: 0.0) < 0.0) {
+            "当前光线：过暗"
+        } else {
+            "当前光线：过亮"
+        }
+
         PreviewSceneRating.UNAVAILABLE,
         null,
-        -> MaterialTheme.colorScheme.onSurfaceVariant
+        -> "当前光线：分析中"
     }
 }
 
@@ -1586,9 +1579,16 @@ private const val PREVIEW_ASPECT_RATIO = 2f / 3f
 private const val PREVIEW_ZOOM_TOLERANCE = 0.02f
 private const val COMPARISON_MIN_SPLIT = 0f
 private const val COMPARISON_MAX_SPLIT = 1f
-private val CONTROL_BUTTON_SIZE = 75.dp
+private val CONTROL_BUTTON_SIZE = 88.dp
 private const val CAPTURE_FEEDBACK_DURATION_MS = 140L
-private val CAPTURE_RED = Color(0xFFD84343)
+private val PREVIEW_TOOLBAR_GREEN = Color(0xFF10372C)
+private val PREVIEW_PANEL_COLOR = Color(0xFFFBFCF9)
+private val PREVIEW_SELECTOR_COLOR = Color(0xFFF0F2EF)
+private val PREVIEW_LIGHT_STATUS_COLOR = Color(0xFFF8F3E7)
+private val PREVIEW_TEXT_COLOR = Color(0xFF17251F)
+private val PREVIEW_MUTED_TEXT_COLOR = Color(0xFF69756F)
+private val PREVIEW_SUN_COLOR = Color(0xFFD3A52B)
+private val PREVIEW_SHUTTER_RED = Color(0xFFE45649)
 
 private fun Context.hasCameraPermission(): Boolean {
     return ContextCompat.checkSelfPermission(
