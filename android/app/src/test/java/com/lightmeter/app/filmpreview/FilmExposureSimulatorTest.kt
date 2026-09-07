@@ -279,7 +279,49 @@ class FilmExposureSimulatorTest {
         )
         val redValues = result.map(::red)
 
-        assertTrue(redValues.max() - redValues.min() >= 8)
+        assertTrue(redValues.max() - redValues.min() >= 12)
+        assertTrue(
+            redValues.zipWithNext().count { (left, right) ->
+                kotlin.math.abs(right - left) >= 2
+            } >= 100,
+        )
+    }
+
+    @Test
+    fun lowPassReducesContrastAcrossASharpEdge() {
+        val source = IntArray(1080) { index ->
+            argb(alpha = 255, value = if (index < 540) 48 else 208)
+        }
+        val sharp = render(
+            source = source,
+            sourceWidth = 1080,
+            filmLook = NegativeFilmLooks.NEUTRAL,
+        )
+        val softened = render(
+            source = source,
+            sourceWidth = 1080,
+            filmLook = NegativeFilmLooks.NEUTRAL.copy(lowPassSigmaPxAt1080 = 1.0),
+        )
+
+        val sharpEdgeContrast = red(sharp[540]) - red(sharp[539])
+        val softenedEdgeContrast = red(softened[540]) - red(softened[539])
+
+        assertTrue(softenedEdgeContrast in 1 until sharpEdgeContrast)
+    }
+
+    @Test
+    fun lowPassPreservesAUniformField() {
+        val source = IntArray(1080) { argb(alpha = 255, value = 118) }
+
+        val result = render(
+            source = source,
+            sourceWidth = 1080,
+            filmLook = NegativeFilmLooks.NEUTRAL.copy(lowPassSigmaPxAt1080 = 1.0),
+        )
+
+        result.forEach { pixel ->
+            assertTrue(kotlin.math.abs(red(pixel) - 118) <= 2)
+        }
     }
 
     private fun render(source: IntArray): IntArray {

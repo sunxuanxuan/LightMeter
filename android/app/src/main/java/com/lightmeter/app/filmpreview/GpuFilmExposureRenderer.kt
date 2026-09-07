@@ -12,6 +12,7 @@ import com.lightmeter.app.metering.ExposureMap
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.FloatBuffer
+import kotlin.math.exp
 
 internal object GpuFilmExposureRenderer {
     fun render(
@@ -77,6 +78,8 @@ internal object GpuFilmExposureRenderer {
         private var sourceTexture = 0
         private var exposureMapTexture = 0
         private var filmResponseLutTexture = 0
+        private var filmTexture = 0
+        private var horizontalBlurTexture = 0
         private var outputTexture = 0
         private var framebuffer = 0
 
@@ -137,7 +140,6 @@ internal object GpuFilmExposureRenderer {
             GLES20.glUniform1i(uniform("uSource"), 0)
             GLES20.glUniform1i(uniform("uExposureMap"), 1)
             GLES20.glUniform1i(uniform("uFilmResponseLut"), 2)
-            GLES20.glUniform1i(uniform("uSimulationMode"), simulationMode)
             GLES20.glUniform1f(uniform("uExposureCompensation"), exposureCompensation)
             GLES20.glUniform1f(uniform("uReferenceEv100"), referenceEv100)
             GLES20.glUniform1f(uniform("uHighlightLatitude"), highlightLatitudeStops)
@@ -175,6 +177,20 @@ internal object GpuFilmExposureRenderer {
                 filmLook.grainSeedForFrame(exposureMap?.timestampNs ?: 0L).toFloat(),
             )
             GLES20.glUniform2f(uniform("uOutputSize"), width.toFloat(), height.toFloat())
+            GLES20.glUniform2f(
+                uniform("uTexelSize"),
+                1f / width.toFloat(),
+                1f / height.toFloat(),
+            )
+            val gaussianWeights = gaussian5TapWeights(
+                filmLook.lowPassSigmaPxAt1080 * width / GRAIN_REFERENCE_WIDTH,
+            )
+            GLES20.glUniform3f(
+                uniform("uGaussianWeights"),
+                gaussianWeights[0],
+                gaussianWeights[1],
+                gaussianWeights[2],
+            )
 
             val positionLocation = attribute("aPosition")
             val textureCoordinateLocation = attribute("aTextureCoordinate")
@@ -196,7 +212,29 @@ internal object GpuFilmExposureRenderer {
                 0,
                 TEXTURE_COORDINATES.duplicate().apply { position(0) },
             )
-            GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
+            if (simulationMode == EXPOSURE_COMPENSATION_MODE) {
+                drawPass(
+                    inputTexture = sourceTexture,
+                    targetTexture = outputTexture,
+                    renderPass = EXPOSURE_COMPENSATION_PASS,
+                )
+            } else {
+                drawPass(
+                    inputTexture = sourceTexture,
+                    targetTexture = filmTexture,
+                    renderPass = FILM_RESPONSE_PASS,
+                )
+                drawPass(
+                    inputTexture = filmTexture,
+                    targetTexture = horizontalBlurTexture,
+                    renderPass = HORIZONTAL_BLUR_PASS,
+                )
+                drawPass(
+                    inputTexture = horizontalBlurTexture,
+                    targetTexture = outputTexture,
+                    renderPass = VERTICAL_BLUR_AND_GRAIN_PASS,
+                )
+            }
             GLES20.glDisableVertexAttribArray(positionLocation)
             GLES20.glDisableVertexAttribArray(textureCoordinateLocation)
             checkGlError("render")
@@ -225,6 +263,8 @@ internal object GpuFilmExposureRenderer {
                     sourceTexture,
                     exposureMapTexture,
                     filmResponseLutTexture,
+                    filmTexture,
+                    horizontalBlurTexture,
                     outputTexture,
                 )
                     .filter { it != 0 }
@@ -336,8 +376,21 @@ internal object GpuFilmExposureRenderer {
                 ByteBuffer.wrap(byteArrayOf(0, 0, 0, 0)),
             )
             filmResponseLutTexture = createTexture(filter = GLES20.GL_NEAREST)
-            outputTexture = createTexture()
-            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, outputTexture)
+            filmTexture = createRenderTexture()
+            horizontalBlurTexture = createRenderTexture()
+            outputTexture = createRenderTexture()
+
+            val framebuffers = IntArray(1)
+            GLES20.glGenFramebuffers(1, framebuffers, 0)
+            framebuffer = framebuffers[0]
+            GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, framebuffer)
+            attachOutputTexture(outputTexture)
+            checkGlError("initialize")
+        }
+
+        private fun createRenderTexture(): Int {
+            val texture = createTexture()
+            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, texture)
             GLES20.glTexImage2D(
                 GLES20.GL_TEXTURE_2D,
                 0,
@@ -349,16 +402,29 @@ internal object GpuFilmExposureRenderer {
                 GLES20.GL_UNSIGNED_BYTE,
                 null,
             )
+            return texture
+        }
 
-            val framebuffers = IntArray(1)
-            GLES20.glGenFramebuffers(1, framebuffers, 0)
-            framebuffer = framebuffers[0]
+        private fun drawPass(
+            inputTexture: Int,
+            targetTexture: Int,
+            renderPass: Int,
+        ) {
+            attachOutputTexture(targetTexture)
+            GLES20.glActiveTexture(GLES20.GL_TEXTURE0)
+            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, inputTexture)
+            GLES20.glUniform1i(uniform("uRenderPass"), renderPass)
+            GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
+            checkGlError("render pass $renderPass")
+        }
+
+        private fun attachOutputTexture(texture: Int) {
             GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, framebuffer)
             GLES20.glFramebufferTexture2D(
                 GLES20.GL_FRAMEBUFFER,
                 GLES20.GL_COLOR_ATTACHMENT0,
                 GLES20.GL_TEXTURE_2D,
-                outputTexture,
+                texture,
                 0,
             )
             check(
@@ -367,7 +433,6 @@ internal object GpuFilmExposureRenderer {
             ) {
                 "Incomplete OpenGL framebuffer"
             }
-            checkGlError("initialize")
         }
 
         private fun uniform(name: String): Int {
@@ -409,6 +474,20 @@ internal object GpuFilmExposureRenderer {
             GLES20.GL_CLAMP_TO_EDGE,
         )
         return textures[0]
+    }
+
+    private fun gaussian5TapWeights(sigma: Double): FloatArray {
+        if (sigma < MIN_LOW_PASS_SIGMA_PX) {
+            return floatArrayOf(1f, 0f, 0f)
+        }
+        val adjacent = exp(-1.0 / (2.0 * sigma * sigma))
+        val outer = exp(-4.0 / (2.0 * sigma * sigma))
+        val sum = 1.0 + 2.0 * adjacent + 2.0 * outer
+        return floatArrayOf(
+            (1.0 / sum).toFloat(),
+            (adjacent / sum).toFloat(),
+            (outer / sum).toFloat(),
+        )
     }
 
     private fun encodeExposureMap(exposureMap: ExposureMap): Bitmap {
@@ -539,7 +618,7 @@ internal object GpuFilmExposureRenderer {
         uniform sampler2D uSource;
         uniform sampler2D uExposureMap;
         uniform sampler2D uFilmResponseLut;
-        uniform int uSimulationMode;
+        uniform int uRenderPass;
         uniform float uExposureCompensation;
         uniform float uReferenceEv100;
         uniform float uHighlightLatitude;
@@ -551,6 +630,8 @@ internal object GpuFilmExposureRenderer {
         uniform float uGrainChromaFraction;
         uniform float uGrainSeed;
         uniform vec2 uOutputSize;
+        uniform vec2 uTexelSize;
+        uniform vec3 uGaussianWeights;
         varying vec2 vTextureCoordinate;
 
         const float TARGET_LUMINANCE = 0.18;
@@ -562,7 +643,7 @@ internal object GpuFilmExposureRenderer {
         const float LUT_SAMPLE_COUNT = 256.0;
         const float GRAIN_REFERENCE_WIDTH = 1080.0;
         const float MIN_GRAIN_RADIUS_PX = 0.65;
-        const float GRAIN_EV_SCALE = 0.16;
+        const float GRAIN_EV_SCALE = 0.22;
         const float GRAIN_FLOOR = 0.20;
         const float GRAIN_SHADOW_BIAS = 0.10;
 
@@ -634,9 +715,10 @@ internal object GpuFilmExposureRenderer {
         }
 
         float fractalNoise(vec2 pixel, float radius, float seed) {
-            float fine = valueNoise(pixel / radius, seed);
-            float coarse = valueNoise(pixel / (radius * 2.0), seed + 97.0);
-            return (fine + 0.5 * coarse) / 1.5;
+            float micro = valueNoise(pixel / (radius * 0.55), seed);
+            float fine = valueNoise(pixel / radius, seed + 97.0);
+            float coarse = valueNoise(pixel / (radius * 2.0), seed + 193.0);
+            return 0.55 * micro + 0.30 * fine + 0.15 * coarse;
         }
 
         float exposureMapEv100(vec2 coordinate) {
@@ -647,13 +729,86 @@ internal object GpuFilmExposureRenderer {
             return mix(MIN_ENCODED_EV100, MAX_ENCODED_EV100, normalizedEv);
         }
 
+        vec3 gaussian5Tap(vec2 direction) {
+            vec3 result =
+                srgbToLinear(texture2D(uSource, vTextureCoordinate).rgb) *
+                uGaussianWeights.x;
+            result += (
+                srgbToLinear(texture2D(
+                    uSource,
+                    vTextureCoordinate + direction
+                ).rgb) +
+                srgbToLinear(texture2D(
+                    uSource,
+                    vTextureCoordinate - direction
+                ).rgb)
+            ) * uGaussianWeights.y;
+            result += (
+                srgbToLinear(texture2D(
+                    uSource,
+                    vTextureCoordinate + direction * 2.0
+                ).rgb) +
+                srgbToLinear(texture2D(
+                    uSource,
+                    vTextureCoordinate - direction * 2.0
+                ).rgb)
+            ) * uGaussianWeights.z;
+            return result;
+        }
+
         void main() {
             vec4 source = texture2D(uSource, vTextureCoordinate);
             vec3 linearRgb = srgbToLinear(source.rgb);
-            if (uSimulationMode == 1) {
+            if (uRenderPass == 1) {
                 float exposureGain = exp2(uExposureCompensation);
                 gl_FragColor = vec4(
                     linearToSrgb(linearRgb * exposureGain),
+                    source.a
+                );
+                return;
+            }
+            if (uRenderPass == 2) {
+                vec3 horizontal = gaussian5Tap(vec2(uTexelSize.x, 0.0));
+                gl_FragColor = vec4(linearToSrgb(horizontal), source.a);
+                return;
+            }
+            if (uRenderPass == 3) {
+                vec3 styled = gaussian5Tap(vec2(0.0, uTexelSize.y));
+                float pixelEv100 = exposureMapEv100(vTextureCoordinate);
+                float deltaEv = pixelEv100 - uReferenceEv100;
+                if (uGrainAmount > 0.0) {
+                    float densityPosition = clamp(
+                        (deltaEv + uShadowLatitude) /
+                            (uShadowLatitude + uHighlightLatitude) +
+                            GRAIN_SHADOW_BIAS,
+                        0.0,
+                        1.0
+                    );
+                    float densityEnvelope = GRAIN_FLOOR +
+                        4.0 * densityPosition * (1.0 - densityPosition);
+                    float radius = max(
+                        uGrainRadiusPxAt1080 * uOutputSize.x /
+                            GRAIN_REFERENCE_WIDTH,
+                        MIN_GRAIN_RADIUS_PX
+                    );
+                    vec2 pixel = gl_FragCoord.xy;
+                    float sharedNoise = fractalNoise(pixel, radius, uGrainSeed);
+                    vec3 independentNoise = vec3(
+                        fractalNoise(pixel, radius, uGrainSeed + 17.0),
+                        fractalNoise(pixel, radius, uGrainSeed + 37.0),
+                        fractalNoise(pixel, radius, uGrainSeed + 67.0)
+                    );
+                    vec3 grainNoise = mix(
+                        vec3(sharedNoise),
+                        independentNoise,
+                        uGrainChromaFraction
+                    );
+                    float amplitude =
+                        GRAIN_EV_SCALE * uGrainAmount * densityEnvelope;
+                    styled *= exp2(grainNoise * amplitude);
+                }
+                gl_FragColor = vec4(
+                    linearToSrgb(max(styled, vec3(0.0))),
                     source.a
                 );
                 return;
@@ -681,38 +836,6 @@ internal object GpuFilmExposureRenderer {
             );
             styled = vec3(saturationCenter) +
                 (styled - vec3(saturationCenter)) * uSaturation;
-
-            if (uGrainAmount > 0.0) {
-                float densityPosition = clamp(
-                    (deltaEv + uShadowLatitude) /
-                        (uShadowLatitude + uHighlightLatitude) +
-                        GRAIN_SHADOW_BIAS,
-                    0.0,
-                    1.0
-                );
-                float densityEnvelope = GRAIN_FLOOR +
-                    4.0 * densityPosition * (1.0 - densityPosition);
-                float radius = max(
-                    uGrainRadiusPxAt1080 * uOutputSize.x /
-                        GRAIN_REFERENCE_WIDTH,
-                    MIN_GRAIN_RADIUS_PX
-                );
-                vec2 pixel = gl_FragCoord.xy;
-                float sharedNoise = fractalNoise(pixel, radius, uGrainSeed);
-                vec3 independentNoise = vec3(
-                    fractalNoise(pixel, radius, uGrainSeed + 17.0),
-                    fractalNoise(pixel, radius, uGrainSeed + 37.0),
-                    fractalNoise(pixel, radius, uGrainSeed + 67.0)
-                );
-                vec3 grainNoise = mix(
-                    vec3(sharedNoise),
-                    independentNoise,
-                    uGrainChromaFraction
-                );
-                float amplitude =
-                    GRAIN_EV_SCALE * uGrainAmount * densityEnvelope;
-                styled *= exp2(grainNoise * amplitude);
-            }
             gl_FragColor = vec4(
                 linearToSrgb(max(styled, vec3(0.0))),
                 source.a
@@ -722,6 +845,12 @@ internal object GpuFilmExposureRenderer {
 
     private const val FILM_RESPONSE_MODE = 0
     private const val EXPOSURE_COMPENSATION_MODE = 1
+    private const val FILM_RESPONSE_PASS = 0
+    private const val EXPOSURE_COMPENSATION_PASS = 1
+    private const val HORIZONTAL_BLUR_PASS = 2
+    private const val VERTICAL_BLUR_AND_GRAIN_PASS = 3
+    private const val GRAIN_REFERENCE_WIDTH = 1080.0
+    private const val MIN_LOW_PASS_SIGMA_PX = 0.05
     private const val MIN_ENCODED_EV100 = -32.0
     private const val MAX_ENCODED_EV100 = 32.0
     private const val DEFAULT_ENCODED_EV100 = 0.0

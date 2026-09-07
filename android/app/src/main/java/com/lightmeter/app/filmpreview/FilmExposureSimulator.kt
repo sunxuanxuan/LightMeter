@@ -6,6 +6,7 @@ import android.util.Log
 import com.lightmeter.app.BuildConfig
 import com.lightmeter.app.metering.ExposureMap
 import java.util.stream.IntStream
+import kotlin.math.exp
 import kotlin.math.floor
 import kotlin.math.log2
 import kotlin.math.pow
@@ -154,14 +155,38 @@ internal object FilmExposureSimulator {
             sourceWidth = sourceWidth,
             frameTimestampNs = exposureMap?.timestampNs ?: 0L,
         )
-        val outputPixels = IntArray(sourcePixels.size)
-        val renderPixel: (Int) -> Unit = { index ->
-            outputPixels[index] = simulatePixel(
+        val sourceHeight = sourcePixels.size / sourceWidth
+        val linearFilmPixels = FloatArray(sourcePixels.size * RGB_CHANNEL_COUNT)
+        val deltaEvByPixel = FloatArray(sourcePixels.size)
+        val renderFilmPixel: (Int) -> Unit = { index ->
+            simulateLinearPixel(
                 argb = sourcePixels[index],
                 exposureMapEv100 = exposureMap?.pixelEv100?.get(index),
                 cameraSettingEv100 = cameraSettingEv100,
                 calibrationOffset = calibrationOffset,
                 referenceEv100 = referenceEv100,
+                filmLook = filmLook,
+                preparedFilmLook = preparedFilmLook,
+                output = linearFilmPixels,
+                outputOffset = index * RGB_CHANNEL_COUNT,
+                deltaEvByPixel = deltaEvByPixel,
+                pixelIndex = index,
+            )
+        }
+        forEachPixel(sourcePixels.size, renderFilmPixel)
+        val spatialPixels = separableGaussian5Tap(
+            source = linearFilmPixels,
+            width = sourceWidth,
+            height = sourceHeight,
+            sigma = preparedFilmLook.lowPassSigma,
+        )
+        val outputPixels = IntArray(sourcePixels.size)
+        val packPixel: (Int) -> Unit = { index ->
+            outputPixels[index] = addGrainAndPack(
+                alpha = sourcePixels[index] and -0x1000000,
+                linearPixels = spatialPixels,
+                linearOffset = index * RGB_CHANNEL_COUNT,
+                deltaEv = deltaEvByPixel[index].toDouble(),
                 highlightLatitudeStops = highlightLatitudeStops,
                 shadowLatitudeStops = shadowLatitudeStops,
                 filmLook = filmLook,
@@ -170,11 +195,7 @@ internal object FilmExposureSimulator {
                 y = index / sourceWidth,
             )
         }
-        if (sourcePixels.size >= PARALLEL_PIXEL_THRESHOLD) {
-            IntStream.range(0, sourcePixels.size).parallel().forEach(renderPixel)
-        } else {
-            sourcePixels.indices.forEach(renderPixel)
-        }
+        forEachPixel(sourcePixels.size, packPixel)
         return outputPixels
     }
 
@@ -205,19 +226,19 @@ internal object FilmExposureSimulator {
         return outputPixels
     }
 
-    private fun simulatePixel(
+    private fun simulateLinearPixel(
         argb: Int,
         exposureMapEv100: Float?,
         cameraSettingEv100: Double,
         calibrationOffset: Double,
         referenceEv100: Double,
-        highlightLatitudeStops: Double,
-        shadowLatitudeStops: Double,
         filmLook: NegativeFilmLookProfile,
         preparedFilmLook: PreparedFilmLook,
-        x: Int,
-        y: Int,
-    ): Int {
+        output: FloatArray,
+        outputOffset: Int,
+        deltaEvByPixel: FloatArray,
+        pixelIndex: Int,
+    ) {
         val red = SRGB_TO_LINEAR[(argb ushr 16) and 0xFF]
         val green = SRGB_TO_LINEAR[(argb ushr 8) and 0xFF]
         val blue = SRGB_TO_LINEAR[argb and 0xFF]
@@ -235,34 +256,27 @@ internal object FilmExposureSimulator {
         val deltaEv = pixelEv100 - referenceEv100
         val relativeExposure = TARGET_LUMINANCE * 2.0.pow(deltaEv)
         val gain = relativeExposure / sourceLuminance.coerceAtLeast(LUMINANCE_EPSILON)
-        return applyFilmLookAndPack(
-            alpha = argb and -0x1000000,
+        applyFilmLook(
             red = red * gain,
             green = green * gain,
             blue = blue * gain,
-            deltaEv = deltaEv,
-            highlightLatitudeStops = highlightLatitudeStops,
-            shadowLatitudeStops = shadowLatitudeStops,
             filmLook = filmLook,
             preparedFilmLook = preparedFilmLook,
-            x = x,
-            y = y,
+            output = output,
+            outputOffset = outputOffset,
         )
+        deltaEvByPixel[pixelIndex] = deltaEv.toFloat()
     }
 
-    private fun applyFilmLookAndPack(
-        alpha: Int,
+    private fun applyFilmLook(
         red: Double,
         green: Double,
         blue: Double,
-        deltaEv: Double,
-        highlightLatitudeStops: Double,
-        shadowLatitudeStops: Double,
         filmLook: NegativeFilmLookProfile,
         preparedFilmLook: PreparedFilmLook,
-        x: Int,
-        y: Int,
-    ): Int {
+        output: FloatArray,
+        outputOffset: Int,
+    ) {
         val matrix = filmLook.colorMatrix
         val layerRed = (
             matrix.redFromRed * red +
@@ -287,7 +301,26 @@ internal object FilmExposureSimulator {
         styledRed = saturationCenter + (styledRed - saturationCenter) * filmLook.saturation
         styledGreen = saturationCenter + (styledGreen - saturationCenter) * filmLook.saturation
         styledBlue = saturationCenter + (styledBlue - saturationCenter) * filmLook.saturation
+        output[outputOffset] = styledRed.toFloat()
+        output[outputOffset + 1] = styledGreen.toFloat()
+        output[outputOffset + 2] = styledBlue.toFloat()
+    }
 
+    private fun addGrainAndPack(
+        alpha: Int,
+        linearPixels: FloatArray,
+        linearOffset: Int,
+        deltaEv: Double,
+        highlightLatitudeStops: Double,
+        shadowLatitudeStops: Double,
+        filmLook: NegativeFilmLookProfile,
+        preparedFilmLook: PreparedFilmLook,
+        x: Int,
+        y: Int,
+    ): Int {
+        var styledRed = linearPixels[linearOffset].toDouble()
+        var styledGreen = linearPixels[linearOffset + 1].toDouble()
+        var styledBlue = linearPixels[linearOffset + 2].toDouble()
         if (filmLook.grainAmount > 0.0) {
             val densityPosition = (
                 (deltaEv + shadowLatitudeStops) /
@@ -344,6 +377,63 @@ internal object FilmExposureSimulator {
             linearToByte(styledBlue.coerceAtLeast(0.0))
     }
 
+    private fun separableGaussian5Tap(
+        source: FloatArray,
+        width: Int,
+        height: Int,
+        sigma: Double,
+    ): FloatArray {
+        if (sigma < MIN_LOW_PASS_SIGMA_PX) return source
+        val weights = gaussian5TapWeights(sigma)
+        val horizontal = FloatArray(source.size)
+        IntStream.range(0, height).parallel().forEach { y ->
+            for (x in 0 until width) {
+                val outputOffset = (y * width + x) * RGB_CHANNEL_COUNT
+                for (channel in 0 until RGB_CHANNEL_COUNT) {
+                    var value = 0.0
+                    for (offset in -GAUSSIAN_RADIUS..GAUSSIAN_RADIUS) {
+                        val sampleX = (x + offset).coerceIn(0, width - 1)
+                        val sampleOffset = (y * width + sampleX) * RGB_CHANNEL_COUNT + channel
+                        value += source[sampleOffset] * weights[offset + GAUSSIAN_RADIUS]
+                    }
+                    horizontal[outputOffset + channel] = value.toFloat()
+                }
+            }
+        }
+        IntStream.range(0, height).parallel().forEach { y ->
+            for (x in 0 until width) {
+                val outputOffset = (y * width + x) * RGB_CHANNEL_COUNT
+                for (channel in 0 until RGB_CHANNEL_COUNT) {
+                    var value = 0.0
+                    for (offset in -GAUSSIAN_RADIUS..GAUSSIAN_RADIUS) {
+                        val sampleY = (y + offset).coerceIn(0, height - 1)
+                        val sampleOffset = (sampleY * width + x) * RGB_CHANNEL_COUNT + channel
+                        value += horizontal[sampleOffset] * weights[offset + GAUSSIAN_RADIUS]
+                    }
+                    source[outputOffset + channel] = value.toFloat()
+                }
+            }
+        }
+        return source
+    }
+
+    private fun gaussian5TapWeights(sigma: Double): DoubleArray {
+        val weights = DoubleArray(GAUSSIAN_KERNEL_SIZE) { index ->
+            val offset = index - GAUSSIAN_RADIUS
+            exp(-(offset * offset) / (2.0 * sigma * sigma))
+        }
+        val sum = weights.sum()
+        return DoubleArray(weights.size) { index -> weights[index] / sum }
+    }
+
+    private fun forEachPixel(pixelCount: Int, action: (Int) -> Unit) {
+        if (pixelCount >= PARALLEL_PIXEL_THRESHOLD) {
+            IntStream.range(0, pixelCount).parallel().forEach(action)
+        } else {
+            repeat(pixelCount, action)
+        }
+    }
+
     private fun exposureEv(layerExposure: Double): Double {
         return log2(layerExposure.coerceAtLeast(LUMINANCE_EPSILON) / TARGET_LUMINANCE)
     }
@@ -364,6 +454,8 @@ internal object FilmExposureSimulator {
             grainRadius = (
                 filmLook.grainRadiusPxAt1080 * sourceWidth / GRAIN_REFERENCE_WIDTH
                 ).coerceAtLeast(MIN_GRAIN_RADIUS_PX),
+            lowPassSigma = filmLook.lowPassSigmaPxAt1080 *
+                sourceWidth / GRAIN_REFERENCE_WIDTH,
             grainSeed = filmLook.grainSeedForFrame(frameTimestampNs),
         )
     }
@@ -374,9 +466,16 @@ internal object FilmExposureSimulator {
         radius: Double,
         seed: Int,
     ): Double {
-        val fine = valueNoise(x / radius, y / radius, seed)
-        val coarse = valueNoise(x / (radius * 2.0), y / (radius * 2.0), seed + 97)
-        return (fine + 0.5 * coarse) / 1.5
+        val micro = valueNoise(
+            x / (radius * GRAIN_MICRO_SCALE),
+            y / (radius * GRAIN_MICRO_SCALE),
+            seed,
+        )
+        val fine = valueNoise(x / radius, y / radius, seed + 97)
+        val coarse = valueNoise(x / (radius * 2.0), y / (radius * 2.0), seed + 193)
+        return GRAIN_MICRO_WEIGHT * micro +
+            GRAIN_FINE_WEIGHT * fine +
+            GRAIN_COARSE_WEIGHT * coarse
     }
 
     private fun valueNoise(x: Double, y: Double, seed: Int): Double {
@@ -426,6 +525,7 @@ internal object FilmExposureSimulator {
     private data class PreparedFilmLook(
         val responseLut: FilmResponseLut,
         val grainRadius: Double,
+        val lowPassSigma: Double,
         val grainSeed: Int,
     )
 
@@ -481,11 +581,19 @@ internal object FilmExposureSimulator {
     private const val GREEN_LUMINANCE_WEIGHT = 0.7152
     private const val BLUE_LUMINANCE_WEIGHT = 0.0722
     private const val LUMINANCE_EPSILON = 1e-6
+    private const val RGB_CHANNEL_COUNT = 3
+    private const val GAUSSIAN_RADIUS = 2
+    private const val GAUSSIAN_KERNEL_SIZE = GAUSSIAN_RADIUS * 2 + 1
+    private const val MIN_LOW_PASS_SIGMA_PX = 0.05
     private const val GRAIN_REFERENCE_WIDTH = 1080.0
     private const val MIN_GRAIN_RADIUS_PX = 0.65
-    private const val GRAIN_EV_SCALE = 0.16
+    private const val GRAIN_EV_SCALE = 0.22
     private const val GRAIN_FLOOR = 0.20
     private const val GRAIN_SHADOW_BIAS = 0.10
+    private const val GRAIN_MICRO_SCALE = 0.55
+    private const val GRAIN_MICRO_WEIGHT = 0.55
+    private const val GRAIN_FINE_WEIGHT = 0.30
+    private const val GRAIN_COARSE_WEIGHT = 0.15
     private const val RED_GRAIN_SEED_OFFSET = 17
     private const val GREEN_GRAIN_SEED_OFFSET = 37
     private const val BLUE_GRAIN_SEED_OFFSET = 67
