@@ -8,7 +8,9 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.net.Uri
+import android.os.Build
 import android.provider.Settings
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -49,11 +51,11 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.CameraAlt
+import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.WbSunny
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -69,6 +71,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -114,6 +117,7 @@ import com.lightmeter.app.ui.CameraViewfinderMask
 import com.lightmeter.app.ui.theme.AppThemeStyle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.Locale
 import kotlin.math.abs
@@ -180,7 +184,11 @@ fun FilmPreviewRoute(
     }
 
     BackHandler {
-        onExit()
+        if (state.isFrozen) {
+            viewModel.resumeLivePreview()
+        } else {
+            onExit()
+        }
     }
 
     FilmPreviewWorkspace(
@@ -364,6 +372,8 @@ private fun FilmPreviewWorkspace(
     themeStyle: AppThemeStyle,
     onThemeStyleChanged: (AppThemeStyle) -> Unit,
 ) {
+    val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     val preset = state.selectedPreset ?: return
     var showsSettings by rememberSaveable { mutableStateOf(false) }
     var selector by rememberSaveable { mutableStateOf<PreviewSelector?>(null) }
@@ -374,6 +384,53 @@ private fun FilmPreviewWorkspace(
     var previewSize by remember { mutableStateOf(IntSize.Zero) }
     var cameraOptics by remember { mutableStateOf<CameraOptics?>(null) }
     var cameraZoomState by remember { mutableStateOf(CameraZoomState()) }
+    var isSavingPhoto by remember { mutableStateOf(false) }
+    var pendingLegacySave by remember { mutableStateOf<Bitmap?>(null) }
+
+    fun savePhoto(bitmap: Bitmap) {
+        if (isSavingPhoto) return
+        isSavingPhoto = true
+        coroutineScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                FilmPhotoSaver.save(context.applicationContext, bitmap)
+            }
+            isSavingPhoto = false
+            if (result.isSuccess) {
+                Toast.makeText(context, "照片已保存到相册", Toast.LENGTH_SHORT).show()
+                onResumeLive()
+            } else {
+                Toast.makeText(context, "照片保存失败，请重试", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    val storagePermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        val bitmap = pendingLegacySave
+        pendingLegacySave = null
+        if (granted && bitmap != null) {
+            savePhoto(bitmap)
+        } else if (!granted) {
+            Toast.makeText(context, "需要存储权限才能保存照片", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun requestPhotoSave() {
+        val bitmap = simulatedFrame ?: return
+        val needsLegacyPermission = Build.VERSION.SDK_INT < Build.VERSION_CODES.Q &&
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.WRITE_EXTERNAL_STORAGE,
+            ) != PackageManager.PERMISSION_GRANTED
+        if (needsLegacyPermission) {
+            pendingLegacySave = bitmap
+            storagePermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+        } else {
+            savePhoto(bitmap)
+        }
+    }
+
     LaunchedEffect(cameraSessionId) {
         cameraOptics = null
         cameraZoomState = CameraZoomState()
@@ -464,7 +521,7 @@ private fun FilmPreviewWorkspace(
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
             PreviewTopControls(
-                onBack = onBack,
+                onBack = if (state.isFrozen) onResumeLive else onBack,
                 onOpenSettings = { showsSettings = true },
                 modifier = Modifier
                     .fillMaxWidth()
@@ -598,6 +655,8 @@ private fun FilmPreviewWorkspace(
                         ?: R.drawable.bottom_camera_left,
                     filmImageResource = filmImageResource(preset.film),
                     isFrozen = state.isFrozen,
+                    isResultReady = simulatedFrame != null,
+                    isSavingPhoto = isSavingPhoto,
                     captureEnabled = state.isFrozen ||
                         (
                             state.isCameraReady &&
@@ -607,6 +666,8 @@ private fun FilmPreviewWorkspace(
                     onCameraClick = { selector = PreviewSelector.CAMERA },
                     onCaptureClick = if (state.isFrozen) onResumeLive else onFreezePreview,
                     onFilmClick = { selector = PreviewSelector.FILM },
+                    onReturnClick = onResumeLive,
+                    onDownloadClick = ::requestPhotoSave,
                     compact = compact,
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
@@ -656,11 +717,15 @@ private fun PreviewControlPanel(
     cameraImageResource: Int,
     filmImageResource: Int,
     isFrozen: Boolean,
+    isResultReady: Boolean,
+    isSavingPhoto: Boolean,
     captureEnabled: Boolean,
     environmentText: String,
     onCameraClick: () -> Unit,
     onCaptureClick: () -> Unit,
     onFilmClick: () -> Unit,
+    onReturnClick: () -> Unit,
+    onDownloadClick: () -> Unit,
     compact: Boolean,
     modifier: Modifier = Modifier,
 ) {
@@ -682,26 +747,36 @@ private fun PreviewControlPanel(
                 ),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                PreviewSelectionTile(
-                    imageResource = cameraImageResource,
-                    contentDescription = "选择机型：${preset.controlLabel()}",
-                    onClick = onCameraClick,
+            if (isFrozen && isResultReady) {
+                PreviewResultActions(
+                    isSavingPhoto = isSavingPhoto,
+                    onReturnClick = onReturnClick,
+                    onDownloadClick = onDownloadClick,
                 )
-                PreviewFreezeButton(
-                    isFrozen = isFrozen,
-                    enabled = captureEnabled,
-                    onClick = onCaptureClick,
-                )
-                PreviewSelectionTile(
-                    imageResource = filmImageResource,
-                    contentDescription = "选择底片：${preset.film.controlLabel()}",
-                    onClick = onFilmClick,
-                )
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    PreviewSelectionTile(
+                        imageResource = cameraImageResource,
+                        contentDescription = "选择机型：${preset.controlLabel()}",
+                        enabled = !isFrozen,
+                        onClick = onCameraClick,
+                    )
+                    PreviewFreezeButton(
+                        isFrozen = isFrozen,
+                        enabled = captureEnabled,
+                        onClick = onCaptureClick,
+                    )
+                    PreviewSelectionTile(
+                        imageResource = filmImageResource,
+                        contentDescription = "选择底片：${preset.film.controlLabel()}",
+                        enabled = !isFrozen,
+                        onClick = onFilmClick,
+                    )
+                }
             }
             Spacer(modifier = Modifier.weight(1f))
             EnvironmentLightPill(text = environmentText)
@@ -713,13 +788,15 @@ private fun PreviewControlPanel(
 private fun PreviewSelectionTile(
     imageResource: Int,
     contentDescription: String,
+    enabled: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Surface(
         modifier = modifier
             .size(72.dp)
-            .clickable(onClick = onClick),
+            .alpha(if (enabled) 1f else 0.45f)
+            .clickable(enabled = enabled, onClick = onClick),
         color = PREVIEW_SELECTOR_COLOR,
         shape = RoundedCornerShape(12.dp),
     ) {
@@ -733,6 +810,50 @@ private fun PreviewSelectionTile(
                 contentScale = ContentScale.Fit,
                 modifier = Modifier.fillMaxSize(),
             )
+        }
+    }
+}
+
+@Composable
+private fun PreviewResultActions(
+    isSavingPhoto: Boolean,
+    onReturnClick: () -> Unit,
+    onDownloadClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceEvenly,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        PreviewFreezeButton(
+            isFrozen = true,
+            enabled = !isSavingPhoto,
+            onClick = onReturnClick,
+        )
+        Surface(
+            color = PREVIEW_SHUTTER_RED,
+            shape = CircleShape,
+            modifier = Modifier
+                .size(CONTROL_BUTTON_SIZE)
+                .alpha(if (isSavingPhoto) 0.6f else 1f)
+                .clickable(enabled = !isSavingPhoto, onClick = onDownloadClick),
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                if (isSavingPhoto) {
+                    CircularProgressIndicator(
+                        color = Color.White,
+                        strokeWidth = 2.dp,
+                        modifier = Modifier.size(28.dp),
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Outlined.Check,
+                        contentDescription = "下载模拟成片",
+                        tint = Color.White,
+                        modifier = Modifier.size(36.dp),
+                    )
+                }
+            }
         }
     }
 }
@@ -1177,7 +1298,8 @@ private fun PreviewFreezeButton(
             border = BorderStroke(2.dp, PREVIEW_SHUTTER_RED),
             modifier = modifier
                 .size(CONTROL_BUTTON_SIZE)
-                .clickable(onClick = onClick),
+                .alpha(if (enabled) 1f else 0.6f)
+                .clickable(enabled = enabled, onClick = onClick),
         ) {
             Box(contentAlignment = Alignment.Center) {
                 Icon(

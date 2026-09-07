@@ -20,7 +20,7 @@ internal object GpuFilmExposureRenderer {
         referenceEv100: Double,
         highlightLatitudeStops: Double,
         shadowLatitudeStops: Double,
-        filmLook: NegativeFilmLookProfile,
+        filmLook: NegativeFilmLookProfile = NegativeFilmLooks.NEUTRAL,
     ): Bitmap {
         require(referenceEv100.isFinite())
         require(exposureMap.width == source.width)
@@ -76,6 +76,7 @@ internal object GpuFilmExposureRenderer {
         private var program = 0
         private var sourceTexture = 0
         private var exposureMapTexture = 0
+        private var filmResponseLutTexture = 0
         private var outputTexture = 0
         private var framebuffer = 0
 
@@ -114,30 +115,36 @@ internal object GpuFilmExposureRenderer {
                     mapBitmap.recycle()
                 }
             }
+            val responseLut = FilmResponseLut.create(
+                filmLook = filmLook,
+                highlightLatitudeStops = highlightLatitudeStops.toDouble(),
+                shadowLatitudeStops = shadowLatitudeStops.toDouble(),
+            )
+            GLES20.glActiveTexture(GLES20.GL_TEXTURE2)
+            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, filmResponseLutTexture)
+            GLES20.glTexImage2D(
+                GLES20.GL_TEXTURE_2D,
+                0,
+                GLES20.GL_RGBA,
+                FilmResponseLut.SAMPLE_COUNT,
+                FilmResponseLut.TEXTURE_ROWS,
+                0,
+                GLES20.GL_RGBA,
+                GLES20.GL_UNSIGNED_BYTE,
+                responseLut.toRgb16TextureBuffer(),
+            )
 
             GLES20.glUniform1i(uniform("uSource"), 0)
             GLES20.glUniform1i(uniform("uExposureMap"), 1)
+            GLES20.glUniform1i(uniform("uFilmResponseLut"), 2)
             GLES20.glUniform1i(uniform("uSimulationMode"), simulationMode)
             GLES20.glUniform1f(uniform("uExposureCompensation"), exposureCompensation)
             GLES20.glUniform1f(uniform("uReferenceEv100"), referenceEv100)
             GLES20.glUniform1f(uniform("uHighlightLatitude"), highlightLatitudeStops)
             GLES20.glUniform1f(uniform("uShadowLatitude"), shadowLatitudeStops)
-            GLES20.glUniform1f(uniform("uToneGamma"), filmLook.toneGamma.toFloat())
-            GLES20.glUniform3f(
-                uniform("uResponseGamma"),
-                filmLook.responseGamma.red.toFloat(),
-                filmLook.responseGamma.green.toFloat(),
-                filmLook.responseGamma.blue.toFloat(),
-            )
-            GLES20.glUniform3f(
-                uniform("uExposureBiasEv"),
-                filmLook.exposureBiasEv.red.toFloat(),
-                filmLook.exposureBiasEv.green.toFloat(),
-                filmLook.exposureBiasEv.blue.toFloat(),
-            )
             val matrix = filmLook.colorMatrix
             GLES20.glUniformMatrix3fv(
-                uniform("uColorMatrix"),
+                uniform("uLayerMixMatrix"),
                 1,
                 false,
                 floatArrayOf(
@@ -214,7 +221,12 @@ internal object GpuFilmExposureRenderer {
                 if (framebuffer != 0) {
                     GLES20.glDeleteFramebuffers(1, intArrayOf(framebuffer), 0)
                 }
-                val textures = intArrayOf(sourceTexture, exposureMapTexture, outputTexture)
+                val textures = intArrayOf(
+                    sourceTexture,
+                    exposureMapTexture,
+                    filmResponseLutTexture,
+                    outputTexture,
+                )
                     .filter { it != 0 }
                 if (textures.isNotEmpty()) {
                     GLES20.glDeleteTextures(
@@ -323,6 +335,7 @@ internal object GpuFilmExposureRenderer {
                 GLES20.GL_UNSIGNED_BYTE,
                 ByteBuffer.wrap(byteArrayOf(0, 0, 0, 0)),
             )
+            filmResponseLutTexture = createTexture(filter = GLES20.GL_NEAREST)
             outputTexture = createTexture()
             GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, outputTexture)
             GLES20.glTexImage2D(
@@ -525,15 +538,13 @@ internal object GpuFilmExposureRenderer {
 
         uniform sampler2D uSource;
         uniform sampler2D uExposureMap;
+        uniform sampler2D uFilmResponseLut;
         uniform int uSimulationMode;
         uniform float uExposureCompensation;
         uniform float uReferenceEv100;
         uniform float uHighlightLatitude;
         uniform float uShadowLatitude;
-        uniform float uToneGamma;
-        uniform vec3 uResponseGamma;
-        uniform vec3 uExposureBiasEv;
-        uniform mat3 uColorMatrix;
+        uniform mat3 uLayerMixMatrix;
         uniform float uSaturation;
         uniform float uGrainAmount;
         uniform float uGrainRadiusPxAt1080;
@@ -543,12 +554,12 @@ internal object GpuFilmExposureRenderer {
         varying vec2 vTextureCoordinate;
 
         const float TARGET_LUMINANCE = 0.18;
-        const float MIDDLE_GRAY_LUMINANCE = 0.18;
-        const float DISPLAY_SHOULDER_START_STOPS = 2.0;
-        const float OUTSIDE_EXTENSION_STOPS = 2.0;
         const float LUMINANCE_EPSILON = 0.000001;
         const float MIN_ENCODED_EV100 = -32.0;
         const float MAX_ENCODED_EV100 = 32.0;
+        const float LUT_MIN_EXPOSURE_EV = -6.0;
+        const float LUT_MAX_EXPOSURE_EV = 8.0;
+        const float LUT_SAMPLE_COUNT = 256.0;
         const float GRAIN_REFERENCE_WIDTH = 1080.0;
         const float MIN_GRAIN_RADIUS_PX = 0.65;
         const float GRAIN_EV_SCALE = 0.16;
@@ -568,63 +579,34 @@ internal object GpuFilmExposureRenderer {
             return mix(lower, upper, step(vec3(0.0031308), value));
         }
 
-        float smoothUnit(float value) {
-            value = clamp(value, 0.0, 1.0);
-            return value * value * (3.0 - 2.0 * value);
+        vec3 responseLutTexel(float index) {
+            float x = (index + 0.5) / LUT_SAMPLE_COUNT;
+            vec3 highBytes = texture2D(uFilmResponseLut, vec2(x, 0.25)).rgb;
+            vec3 lowBytes = texture2D(uFilmResponseLut, vec2(x, 0.75)).rgb;
+            return (highBytes * 65280.0 + lowBytes * 255.0) / 65535.0;
         }
 
-        float interpolateLuminance(float from, float to, float progress) {
-            return from + (to - from) * smoothUnit(progress);
-        }
-
-        float linearLuminance(float deltaEv) {
-            return MIDDLE_GRAY_LUMINANCE * exp2(deltaEv);
-        }
-
-        float filmLuminance(float deltaEv) {
-            float shoulderStart = min(
-                uHighlightLatitude,
-                DISPLAY_SHOULDER_START_STOPS
+        vec3 sampleResponseLut(vec3 exposureEv) {
+            vec3 normalized = clamp(
+                (exposureEv - LUT_MIN_EXPOSURE_EV) /
+                    (LUT_MAX_EXPOSURE_EV - LUT_MIN_EXPOSURE_EV),
+                0.0,
+                1.0
             );
-            if (deltaEv < -uShadowLatitude) {
-                float progress =
-                    (-deltaEv - uShadowLatitude) / OUTSIDE_EXTENSION_STOPS;
-                return interpolateLuminance(
-                    linearLuminance(-uShadowLatitude),
-                    0.0,
-                    progress
-                );
-            }
-            if (deltaEv > shoulderStart) {
-                float progress =
-                    (deltaEv - shoulderStart) /
-                    (uHighlightLatitude + OUTSIDE_EXTENSION_STOPS - shoulderStart);
-                return interpolateLuminance(
-                    linearLuminance(shoulderStart),
-                    1.0,
-                    progress
-                );
-            }
-            return linearLuminance(deltaEv);
-        }
-
-        float channelResponseFactor(
-            float deltaEv,
-            float gamma,
-            float meanGamma,
-            float biasEv,
-            float targetLuminance
-        ) {
-            if (targetLuminance <= LUMINANCE_EPSILON) {
-                return 1.0;
-            }
-            float response = filmLuminance(
-                deltaEv * gamma / meanGamma + biasEv
+            vec3 position = normalized * (LUT_SAMPLE_COUNT - 1.0);
+            vec3 lowerIndex = floor(position);
+            vec3 fraction = position - lowerIndex;
+            vec3 lower = vec3(
+                responseLutTexel(lowerIndex.r).r,
+                responseLutTexel(lowerIndex.g).g,
+                responseLutTexel(lowerIndex.b).b
             );
-            float grayAnchor = filmLuminance(biasEv);
-            float normalizedResponse =
-                response * TARGET_LUMINANCE / max(grayAnchor, LUMINANCE_EPSILON);
-            return normalizedResponse / targetLuminance;
+            vec3 upper = vec3(
+                responseLutTexel(min(lowerIndex.r + 1.0, LUT_SAMPLE_COUNT - 1.0)).r,
+                responseLutTexel(min(lowerIndex.g + 1.0, LUT_SAMPLE_COUNT - 1.0)).g,
+                responseLutTexel(min(lowerIndex.b + 1.0, LUT_SAMPLE_COUNT - 1.0)).b
+            );
+            return mix(lower, upper, fraction);
         }
 
         float randomValue(vec2 coordinate, float seed) {
@@ -682,43 +664,16 @@ internal object GpuFilmExposureRenderer {
             );
             float pixelEv100 = exposureMapEv100(vTextureCoordinate);
             float deltaEv = pixelEv100 - uReferenceEv100;
-            float toneDeltaEv = deltaEv * uToneGamma;
-            float targetLuminance = filmLuminance(toneDeltaEv);
-            float gain = targetLuminance / max(sourceLuminance, LUMINANCE_EPSILON);
-            float meanGamma =
-                (uResponseGamma.r + uResponseGamma.g + uResponseGamma.b) / 3.0;
-            vec3 responseFactor = vec3(
-                channelResponseFactor(
-                    toneDeltaEv,
-                    uResponseGamma.r,
-                    meanGamma,
-                    uExposureBiasEv.r,
-                    targetLuminance
-                ),
-                channelResponseFactor(
-                    toneDeltaEv,
-                    uResponseGamma.g,
-                    meanGamma,
-                    uExposureBiasEv.g,
-                    targetLuminance
-                ),
-                channelResponseFactor(
-                    toneDeltaEv,
-                    uResponseGamma.b,
-                    meanGamma,
-                    uExposureBiasEv.b,
-                    targetLuminance
-                )
+            float relativeExposure = TARGET_LUMINANCE * exp2(deltaEv);
+            float gain = relativeExposure / max(sourceLuminance, LUMINANCE_EPSILON);
+            vec3 layerExposure = max(
+                uLayerMixMatrix * (linearRgb * gain),
+                vec3(LUMINANCE_EPSILON)
             );
-            vec3 styled = max(
-                uColorMatrix * (linearRgb * gain * responseFactor),
-                vec3(0.0)
+            vec3 layerExposureEv = log2(
+                layerExposure / vec3(TARGET_LUMINANCE)
             );
-            float responseLuminance = dot(
-                styled,
-                vec3(0.2126, 0.7152, 0.0722)
-            );
-            styled *= targetLuminance / max(responseLuminance, LUMINANCE_EPSILON);
+            vec3 styled = sampleResponseLut(layerExposureEv);
 
             float saturationCenter = dot(
                 styled,

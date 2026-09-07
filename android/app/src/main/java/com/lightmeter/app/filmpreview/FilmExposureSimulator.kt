@@ -233,21 +233,14 @@ internal object FilmExposureSimulator {
                     calibrationOffset
                 )
         val deltaEv = pixelEv100 - referenceEv100
-        val toneDeltaEv = deltaEv * filmLook.toneGamma
-        val targetLuminance = FilmResponseCurve.targetLuminance(
-            deltaEv = toneDeltaEv,
-            highlightLatitudeStops = highlightLatitudeStops,
-            shadowLatitudeStops = shadowLatitudeStops,
-        )
-        val gain = targetLuminance / sourceLuminance.coerceAtLeast(LUMINANCE_EPSILON)
+        val relativeExposure = TARGET_LUMINANCE * 2.0.pow(deltaEv)
+        val gain = relativeExposure / sourceLuminance.coerceAtLeast(LUMINANCE_EPSILON)
         return applyFilmLookAndPack(
             alpha = argb and -0x1000000,
             red = red * gain,
             green = green * gain,
             blue = blue * gain,
-            targetLuminance = targetLuminance,
             deltaEv = deltaEv,
-            toneDeltaEv = toneDeltaEv,
             highlightLatitudeStops = highlightLatitudeStops,
             shadowLatitudeStops = shadowLatitudeStops,
             filmLook = filmLook,
@@ -262,9 +255,7 @@ internal object FilmExposureSimulator {
         red: Double,
         green: Double,
         blue: Double,
-        targetLuminance: Double,
         deltaEv: Double,
-        toneDeltaEv: Double,
         highlightLatitudeStops: Double,
         shadowLatitudeStops: Double,
         filmLook: NegativeFilmLookProfile,
@@ -272,62 +263,25 @@ internal object FilmExposureSimulator {
         x: Int,
         y: Int,
     ): Int {
-        val redFactor = channelResponseFactor(
-            deltaEv = toneDeltaEv,
-            gamma = filmLook.responseGamma.red,
-            meanGamma = preparedFilmLook.meanGamma,
-            biasEv = filmLook.exposureBiasEv.red,
-            grayAnchor = preparedFilmLook.redGrayAnchor,
-            targetLuminance = targetLuminance,
-            highlightLatitudeStops = highlightLatitudeStops,
-            shadowLatitudeStops = shadowLatitudeStops,
-        )
-        val greenFactor = channelResponseFactor(
-            deltaEv = toneDeltaEv,
-            gamma = filmLook.responseGamma.green,
-            meanGamma = preparedFilmLook.meanGamma,
-            biasEv = filmLook.exposureBiasEv.green,
-            grayAnchor = preparedFilmLook.greenGrayAnchor,
-            targetLuminance = targetLuminance,
-            highlightLatitudeStops = highlightLatitudeStops,
-            shadowLatitudeStops = shadowLatitudeStops,
-        )
-        val blueFactor = channelResponseFactor(
-            deltaEv = toneDeltaEv,
-            gamma = filmLook.responseGamma.blue,
-            meanGamma = preparedFilmLook.meanGamma,
-            biasEv = filmLook.exposureBiasEv.blue,
-            grayAnchor = preparedFilmLook.blueGrayAnchor,
-            targetLuminance = targetLuminance,
-            highlightLatitudeStops = highlightLatitudeStops,
-            shadowLatitudeStops = shadowLatitudeStops,
-        )
-        val responseRed = red * redFactor
-        val responseGreen = green * greenFactor
-        val responseBlue = blue * blueFactor
         val matrix = filmLook.colorMatrix
-        var styledRed = (
-            matrix.redFromRed * responseRed +
-                matrix.redFromGreen * responseGreen +
-                matrix.redFromBlue * responseBlue
+        val layerRed = (
+            matrix.redFromRed * red +
+                matrix.redFromGreen * green +
+                matrix.redFromBlue * blue
             ).coerceAtLeast(0.0)
-        var styledGreen = (
-            matrix.greenFromRed * responseRed +
-                matrix.greenFromGreen * responseGreen +
-                matrix.greenFromBlue * responseBlue
+        val layerGreen = (
+            matrix.greenFromRed * red +
+                matrix.greenFromGreen * green +
+                matrix.greenFromBlue * blue
             ).coerceAtLeast(0.0)
-        var styledBlue = (
-            matrix.blueFromRed * responseRed +
-                matrix.blueFromGreen * responseGreen +
-                matrix.blueFromBlue * responseBlue
+        val layerBlue = (
+            matrix.blueFromRed * red +
+                matrix.blueFromGreen * green +
+                matrix.blueFromBlue * blue
             ).coerceAtLeast(0.0)
-        val responseLuminance = luminance(styledRed, styledGreen, styledBlue)
-        if (responseLuminance > LUMINANCE_EPSILON) {
-            val responseGain = targetLuminance / responseLuminance
-            styledRed *= responseGain
-            styledGreen *= responseGain
-            styledBlue *= responseGain
-        }
+        var styledRed = preparedFilmLook.responseLut.sampleRed(exposureEv(layerRed))
+        var styledGreen = preparedFilmLook.responseLut.sampleGreen(exposureEv(layerGreen))
+        var styledBlue = preparedFilmLook.responseLut.sampleBlue(exposureEv(layerBlue))
 
         val saturationCenter = luminance(styledRed, styledGreen, styledBlue)
         styledRed = saturationCenter + (styledRed - saturationCenter) * filmLook.saturation
@@ -390,25 +344,8 @@ internal object FilmExposureSimulator {
             linearToByte(styledBlue.coerceAtLeast(0.0))
     }
 
-    private fun channelResponseFactor(
-        deltaEv: Double,
-        gamma: Double,
-        meanGamma: Double,
-        biasEv: Double,
-        grayAnchor: Double,
-        targetLuminance: Double,
-        highlightLatitudeStops: Double,
-        shadowLatitudeStops: Double,
-    ): Double {
-        if (targetLuminance <= LUMINANCE_EPSILON) return 1.0
-        val response = FilmResponseCurve.targetLuminance(
-            deltaEv = deltaEv * gamma / meanGamma + biasEv,
-            highlightLatitudeStops = highlightLatitudeStops,
-            shadowLatitudeStops = shadowLatitudeStops,
-        )
-        val normalizedResponse = response * TARGET_LUMINANCE /
-            grayAnchor.coerceAtLeast(LUMINANCE_EPSILON)
-        return normalizedResponse / targetLuminance
+    private fun exposureEv(layerExposure: Double): Double {
+        return log2(layerExposure.coerceAtLeast(LUMINANCE_EPSILON) / TARGET_LUMINANCE)
     }
 
     private fun prepareFilmLook(
@@ -418,18 +355,12 @@ internal object FilmExposureSimulator {
         sourceWidth: Int,
         frameTimestampNs: Long,
     ): PreparedFilmLook {
-        fun grayAnchor(biasEv: Double): Double {
-            return FilmResponseCurve.targetLuminance(
-                deltaEv = biasEv,
+        return PreparedFilmLook(
+            responseLut = FilmResponseLut.create(
+                filmLook = filmLook,
                 highlightLatitudeStops = highlightLatitudeStops,
                 shadowLatitudeStops = shadowLatitudeStops,
-            )
-        }
-        return PreparedFilmLook(
-            meanGamma = filmLook.responseGamma.average(),
-            redGrayAnchor = grayAnchor(filmLook.exposureBiasEv.red),
-            greenGrayAnchor = grayAnchor(filmLook.exposureBiasEv.green),
-            blueGrayAnchor = grayAnchor(filmLook.exposureBiasEv.blue),
+            ),
             grainRadius = (
                 filmLook.grainRadiusPxAt1080 * sourceWidth / GRAIN_REFERENCE_WIDTH
                 ).coerceAtLeast(MIN_GRAIN_RADIUS_PX),
@@ -493,10 +424,7 @@ internal object FilmExposureSimulator {
     }
 
     private data class PreparedFilmLook(
-        val meanGamma: Double,
-        val redGrayAnchor: Double,
-        val greenGrayAnchor: Double,
-        val blueGrayAnchor: Double,
+        val responseLut: FilmResponseLut,
         val grainRadius: Double,
         val grainSeed: Int,
     )

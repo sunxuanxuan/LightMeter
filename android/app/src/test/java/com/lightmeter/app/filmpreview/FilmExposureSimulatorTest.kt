@@ -4,6 +4,7 @@ import com.lightmeter.app.metering.ExposureMap
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlin.math.pow
 
 class FilmExposureSimulatorTest {
     @Test
@@ -242,6 +243,32 @@ class FilmExposureSimulatorTest {
     }
 
     @Test
+    fun independentChannelResponseIsNotRenormalizedToTheSharedTargetLuminance() {
+        val source = IntArray(4) { argb(alpha = 255, value = 118) }
+        val exposureMap = ExposureMap(
+            width = 2,
+            height = 2,
+            pixelEv100 = FloatArray(4) { 1f },
+            cameraSettingEv100 = 0.0,
+            timestampNs = 1L,
+        )
+        val asymmetricLook = NegativeFilmLooks.NEUTRAL.copy(
+            responseGamma = FilmRgbVector(red = 0.2, green = 0.2, blue = 1.5),
+        )
+
+        val result = render(
+            source = source,
+            sourceWidth = 2,
+            exposureMap = exposureMap,
+            filmLook = asymmetricLook,
+        ).first()
+        val outputLuminance = linearLuminance(result)
+
+        assertTrue(blue(result) > red(result))
+        assertTrue(outputLuminance < 0.28)
+    }
+
+    @Test
     fun iso800GrainHasVisibleRangeAtReferenceWidth() {
         val source = IntArray(1080) { argb(alpha = 255, value = 118) }
 
@@ -299,6 +326,21 @@ class FilmExposureSimulatorTest {
     private fun red(argb: Int): Int = (argb ushr 16) and 0xFF
 
     private fun blue(argb: Int): Int = argb and 0xFF
+
+    private fun linearLuminance(argb: Int): Double {
+        return 0.2126 * srgbByteToLinear(red(argb)) +
+            0.7152 * srgbByteToLinear((argb ushr 8) and 0xFF) +
+            0.0722 * srgbByteToLinear(blue(argb))
+    }
+
+    private fun srgbByteToLinear(channel: Int): Double {
+        val value = channel / 255.0
+        return if (value <= 0.04045) {
+            value / 12.92
+        } else {
+            ((value + 0.055) / 1.055).pow(2.4)
+        }
+    }
 
     private fun assertChannelsChangedInDirection(
         source: Int,
