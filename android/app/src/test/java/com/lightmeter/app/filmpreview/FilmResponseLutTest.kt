@@ -33,6 +33,14 @@ class FilmResponseLutTest {
         assertEquals(0.18, lut.sampleBlue(0.0), GRAY_ANCHOR_TOLERANCE)
     }
 
+    @Test
+    fun referenceNegativeGammaPreservesNormalPositiveImageContrast() {
+        val lut = createLut(NegativeFilmLooks.NEUTRAL)
+
+        assertEquals(0.09, lut.sampleGreen(-1.0), LINEAR_RESPONSE_TOLERANCE)
+        assertEquals(0.36, lut.sampleGreen(1.0), LINEAR_RESPONSE_TOLERANCE)
+    }
+
     private fun createLut(look: NegativeFilmLookProfile): FilmResponseLut {
         return FilmResponseLut.create(
             filmLook = look,
@@ -43,5 +51,6 @@ class FilmResponseLutTest {
 
     private companion object {
         const val GRAY_ANCHOR_TOLERANCE = 0.001
+        const val LINEAR_RESPONSE_TOLERANCE = 0.003
     }
 }

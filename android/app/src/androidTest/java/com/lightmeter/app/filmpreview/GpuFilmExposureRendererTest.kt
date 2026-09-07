@@ -144,6 +144,56 @@ class GpuFilmExposureRendererTest {
         }
     }
 
+    @Test
+    fun gpuMatchesCpuForFiveTapSpatialLowPass() {
+        val width = 64
+        val sourcePixels = IntArray(width) { gray(118) }
+        val source = Bitmap.createBitmap(
+            sourcePixels,
+            width,
+            1,
+            Bitmap.Config.ARGB_8888,
+        )
+        val exposureMap = ExposureMap(
+            width = width,
+            height = 1,
+            pixelEv100 = FloatArray(width) { index -> if (index < width / 2) -1f else 1f },
+            cameraSettingEv100 = 0.0,
+            timestampNs = 11L,
+        )
+        val filmLook = NegativeFilmLooks.NEUTRAL.copy(
+            lowPassSigmaPxAt1080 = 1080.0 / width,
+        )
+
+        val gpu = GpuFilmExposureRenderer.render(
+            source = source,
+            exposureMap = exposureMap,
+            referenceEv100 = 0.0,
+            highlightLatitudeStops = 3.0,
+            shadowLatitudeStops = 2.0,
+            filmLook = filmLook,
+        )
+        val cpuPixels = FilmExposureSimulator.renderPixels(
+            sourcePixels = sourcePixels,
+            exposureMap = exposureMap,
+            cameraSettingEv100 = 0.0,
+            calibrationOffset = 0.0,
+            referenceEv100 = 0.0,
+            highlightLatitudeStops = 3.0,
+            shadowLatitudeStops = 2.0,
+            sourceWidth = width,
+            filmLook = filmLook,
+        )
+        val gpuPixels = IntArray(width)
+        gpu.getPixels(gpuPixels, 0, width, 0, 0, width, 1)
+
+        gpuPixels.indices.forEach { index ->
+            assertChannelNear(cpuPixels[index], gpuPixels[index], shift = 16)
+            assertChannelNear(cpuPixels[index], gpuPixels[index], shift = 8)
+            assertChannelNear(cpuPixels[index], gpuPixels[index], shift = 0)
+        }
+    }
+
     private fun assertChannelNear(expected: Int, actual: Int, shift: Int) {
         val expectedChannel = (expected ushr shift) and 0xFF
         val actualChannel = (actual ushr shift) and 0xFF

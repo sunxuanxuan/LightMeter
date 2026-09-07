@@ -78,7 +78,8 @@ internal class FilmResponseLut private constructor(
                         index.toDouble() / (SAMPLE_COUNT - 1) *
                         (MAX_EXPOSURE_EV - MIN_EXPOSURE_EV)
                     val response = FilmResponseCurve.targetLuminance(
-                        deltaEv = exposureEv * filmLook.toneGamma * gamma + biasEv,
+                        deltaEv = exposureEv * filmLook.toneGamma *
+                            gamma / NEGATIVE_GAMMA_REFERENCE + biasEv,
                         highlightLatitudeStops = highlightLatitudeStops,
                         shadowLatitudeStops = shadowLatitudeStops,
                     )
@@ -109,6 +110,7 @@ internal class FilmResponseLut private constructor(
         }
 
         private const val MIDDLE_GRAY_LUMINANCE = 0.18
+        private const val NEGATIVE_GAMMA_REFERENCE = 0.64
         private const val MAX_ENCODED_VALUE = 0xFFFF
         private const val RGBA_CHANNELS = 4
     }
