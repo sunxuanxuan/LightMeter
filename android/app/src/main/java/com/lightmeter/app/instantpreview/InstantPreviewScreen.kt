@@ -11,7 +11,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -19,12 +18,11 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -36,7 +34,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
-import androidx.compose.material.icons.outlined.MoreHoriz
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.WbSunny
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -52,9 +51,11 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -148,50 +149,46 @@ private fun InstantPreviewWorkspace(
     var selector by rememberSaveable { mutableStateOf<InstantSelector?>(null) }
     var selectedCameraId by rememberSaveable { mutableStateOf(cameraOptions.first().id) }
     var selectedFilmId by rememberSaveable { mutableStateOf(filmOptions.first().id) }
+    val selectedCamera = cameraOptions.first { it.id == selectedCameraId }
     val selectedFilm = filmOptions.first { it.id == selectedFilmId }
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .statusBarsPadding()
-            .navigationBarsPadding(),
+            .background(INSTANT_PANEL_COLOR),
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
             InstantTopControls(
                 onBack = onBack,
+                onOpenSettings = {},
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 12.dp),
+                    .background(INSTANT_TOOLBAR_GREEN)
+                    .statusBarsPadding()
+                    .padding(horizontal = 24.dp, vertical = 12.dp),
             )
 
             BoxWithConstraints(
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f)
-                    .padding(horizontal = 20.dp, vertical = 4.dp),
-                contentAlignment = Alignment.Center,
+                    .background(INSTANT_PANEL_COLOR),
             ) {
-                val availableAspectRatio = if (maxHeight.value > 0f) {
-                    maxWidth.value / maxHeight.value
-                } else {
-                    PREVIEW_ASPECT_RATIO
-                }
-                val previewModifier = if (availableAspectRatio > PREVIEW_ASPECT_RATIO) {
-                    Modifier
-                        .fillMaxHeight()
-                        .aspectRatio(PREVIEW_ASPECT_RATIO)
-                } else {
-                    Modifier
+                val compact = maxHeight < 650.dp
+                val controlPanelHeight = if (compact) 184.dp else 196.dp
+                Box(
+                    modifier = Modifier
                         .fillMaxWidth()
-                        .aspectRatio(PREVIEW_ASPECT_RATIO)
-                }
-                val previewShape = RoundedCornerShape(8.dp)
+                        .height(2.dp)
+                        .background(INSTANT_TOOLBAR_GREEN),
+                )
 
                 Box(
-                    modifier = previewModifier
-                        .background(Color.Black, previewShape)
-                        .clip(previewShape),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(PREVIEW_ASPECT_RATIO)
+                        .offset(y = (-1).dp)
+                        .background(Color.Black),
                 ) {
                     InstantFilmViewfinder(
                         frameResource = selectedFilm.frameResource,
@@ -201,25 +198,20 @@ private fun InstantPreviewWorkspace(
                         modifier = Modifier.fillMaxSize(),
                     )
                 }
+
+                InstantControlPanel(
+                    cameraImageResource = selectedCamera.imageResource,
+                    filmImageResource = selectedFilm.imageResource,
+                    captureEnabled = hasCameraPermission,
+                    onCameraClick = { selector = InstantSelector.CAMERA },
+                    onFilmClick = { selector = InstantSelector.FILM },
+                    compact = compact,
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .height(controlPanelHeight),
+                )
             }
-
-            InstantRiskPlaceholder(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 24.dp, vertical = 8.dp),
-            )
-
-            InstantBottomBar(
-                cameraImageResource = cameraOptions
-                    .first { it.id == selectedCameraId }
-                    .imageResource,
-                filmImageResource = filmOptions
-                    .first { it.id == selectedFilmId }
-                    .imageResource,
-                captureEnabled = hasCameraPermission,
-                onCameraClick = { selector = InstantSelector.CAMERA },
-                onFilmClick = { selector = InstantSelector.FILM },
-            )
         }
 
         selector?.let { activeSelector ->
@@ -242,8 +234,125 @@ private fun InstantPreviewWorkspace(
 }
 
 @Composable
+private fun InstantControlPanel(
+    cameraImageResource: Int,
+    filmImageResource: Int,
+    captureEnabled: Boolean,
+    onCameraClick: () -> Unit,
+    onFilmClick: () -> Unit,
+    compact: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier,
+        color = INSTANT_PANEL_COLOR,
+        shape = RoundedCornerShape(topStart = 30.dp, topEnd = 30.dp),
+        shadowElevation = 8.dp,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .navigationBarsPadding()
+                .padding(
+                    start = 18.dp,
+                    top = if (compact) 14.dp else 18.dp,
+                    end = 18.dp,
+                    bottom = 12.dp,
+                ),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                InstantSelectionTile(
+                    imageResource = cameraImageResource,
+                    contentDescription = "选择拍立得机型",
+                    onClick = onCameraClick,
+                )
+                InstantCaptureButton(
+                    enabled = captureEnabled,
+                    onClick = {},
+                )
+                InstantSelectionTile(
+                    imageResource = filmImageResource,
+                    contentDescription = "选择拍立得相纸",
+                    onClick = onFilmClick,
+                )
+            }
+            Spacer(modifier = Modifier.weight(1f))
+            InstantEnvironmentPill(
+                text = "当前光线：分析中",
+            )
+        }
+    }
+}
+
+@Composable
+private fun InstantSelectionTile(
+    imageResource: Int,
+    contentDescription: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier
+            .size(72.dp)
+            .clickable(onClick = onClick),
+        color = INSTANT_SELECTOR_COLOR,
+        shape = RoundedCornerShape(12.dp),
+    ) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier.padding(8.dp),
+        ) {
+            Image(
+                painter = painterResource(imageResource),
+                contentDescription = contentDescription,
+                contentScale = ContentScale.Fit,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
+    }
+}
+
+@Composable
+private fun InstantEnvironmentPill(
+    text: String,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier.height(38.dp),
+        color = INSTANT_LIGHT_STATUS_COLOR,
+        shape = RoundedCornerShape(20.dp),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 18.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.WbSunny,
+                contentDescription = null,
+                tint = INSTANT_SUN_COLOR,
+                modifier = Modifier.size(20.dp),
+            )
+            Text(
+                text = text,
+                color = INSTANT_TEXT_COLOR,
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+            )
+        }
+    }
+}
+
+@Composable
 private fun InstantTopControls(
     onBack: () -> Unit,
+    onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Row(
@@ -251,56 +360,45 @@ private fun InstantTopControls(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        RoundIconButton(
+        InstantToolbarAction(
+            icon = Icons.AutoMirrored.Outlined.ArrowBack,
+            label = "返回",
             onClick = onBack,
-            contentDescription = "返回",
-        ) {
-            Icon(
-                imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
-                contentDescription = null,
-                modifier = Modifier.size(25.dp),
-            )
-        }
-        RoundIconButton(
-            onClick = {},
-            contentDescription = "设置",
-        ) {
-            Icon(
-                imageVector = Icons.Outlined.MoreHoriz,
-                contentDescription = null,
-                modifier = Modifier.size(25.dp),
-            )
-        }
+        )
+        InstantToolbarAction(
+            icon = Icons.Outlined.Settings,
+            label = "设置",
+            onClick = onOpenSettings,
+        )
     }
 }
 
 @Composable
-private fun RoundIconButton(
+private fun InstantToolbarAction(
+    icon: ImageVector,
+    label: String,
     onClick: () -> Unit,
-    contentDescription: String,
-    content: @Composable () -> Unit,
 ) {
-    Surface(
-        color = MaterialTheme.colorScheme.surfaceVariant,
-        shape = CircleShape,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    Column(
         modifier = Modifier
-            .size(48.dp)
+            .size(width = 64.dp, height = 54.dp)
+            .clip(RoundedCornerShape(8.dp))
             .clickable(onClick = onClick),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
     ) {
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier.fillMaxSize(),
-        ) {
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(11.dp),
-            ) {
-                content()
-            }
-        }
+        Icon(
+            imageVector = icon,
+            contentDescription = label,
+            tint = Color.White,
+            modifier = Modifier.size(26.dp),
+        )
+        Text(
+            text = label,
+            color = Color.White.copy(alpha = 0.82f),
+            style = MaterialTheme.typography.labelSmall,
+            modifier = Modifier.padding(top = 2.dp),
+        )
     }
 }
 
@@ -378,100 +476,6 @@ private fun CameraPermissionPlaceholder(
 }
 
 @Composable
-private fun InstantRiskPlaceholder(modifier: Modifier = Modifier) {
-    Surface(
-        modifier = modifier,
-        color = MaterialTheme.colorScheme.surfaceVariant,
-        shape = RoundedCornerShape(8.dp),
-    ) {
-        Text(
-            text = "曝光建议将在这里显示",
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            style = MaterialTheme.typography.bodySmall,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 10.dp),
-        )
-    }
-}
-
-@Composable
-private fun InstantBottomBar(
-    cameraImageResource: Int,
-    filmImageResource: Int,
-    captureEnabled: Boolean,
-    onCameraClick: () -> Unit,
-    onFilmClick: () -> Unit,
-) {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f),
-        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
-        border = BorderStroke(
-            1.dp,
-            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f),
-        ),
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 24.dp, vertical = 18.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            InstantPresetButton(
-                imageResource = cameraImageResource,
-                label = "机型",
-                onClick = onCameraClick,
-                modifier = Modifier.weight(1f),
-            )
-            InstantCaptureButton(
-                enabled = captureEnabled,
-                onClick = {},
-                modifier = Modifier.padding(horizontal = 20.dp),
-            )
-            InstantPresetButton(
-                imageResource = filmImageResource,
-                label = "相纸",
-                onClick = onFilmClick,
-                modifier = Modifier.weight(1f),
-            )
-        }
-    }
-}
-
-@Composable
-private fun InstantPresetButton(
-    imageResource: Int,
-    label: String,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Column(
-        modifier = modifier
-            .heightIn(min = 78.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 4.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-    ) {
-        Image(
-            painter = painterResource(imageResource),
-            contentDescription = label,
-            contentScale = ContentScale.Fit,
-            modifier = Modifier.size(42.dp),
-        )
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-}
-
-@Composable
 private fun InstantCaptureButton(
     enabled: Boolean,
     onClick: () -> Unit,
@@ -495,9 +499,9 @@ private fun InstantCaptureButton(
     Box(
         contentAlignment = Alignment.Center,
         modifier = modifier
-            .size(75.dp)
-            .background(CAPTURE_RED, CircleShape)
-            .border(3.dp, Color.White, CircleShape)
+            .size(INSTANT_CONTROL_BUTTON_SIZE)
+            .alpha(if (enabled) 1f else 0.45f)
+            .background(INSTANT_SHUTTER_RED, CircleShape)
             .clip(CircleShape)
             .clickable(enabled = enabled && !isPressed) {
                 isPressed = true
@@ -505,9 +509,14 @@ private fun InstantCaptureButton(
     ) {
         Box(
             modifier = Modifier
-                .size(53.dp)
-                .scale(innerScale)
+                .size(76.dp)
                 .background(Color.White, CircleShape),
+        )
+        Box(
+            modifier = Modifier
+                .size(68.dp)
+                .scale(innerScale)
+                .background(INSTANT_SHUTTER_RED, CircleShape),
         )
     }
 }
@@ -664,4 +673,11 @@ private const val IMAGE_ASPECT_RATIO = 46f / 62f
 private const val IMAGE_WIDTH_FRACTION = 46f / 54f
 private const val IMAGE_HEIGHT_FRACTION = 62f / 86f
 private const val IMAGE_TOP_FRACTION = 7f / 86f
-private val CAPTURE_RED = Color(0xFFD84343)
+private val INSTANT_CONTROL_BUTTON_SIZE = 88.dp
+private val INSTANT_TOOLBAR_GREEN = Color(0xFF10372C)
+private val INSTANT_PANEL_COLOR = Color(0xFFFBFCF9)
+private val INSTANT_SELECTOR_COLOR = Color(0xFFF0F2EF)
+private val INSTANT_LIGHT_STATUS_COLOR = Color(0xFFF8F3E7)
+private val INSTANT_TEXT_COLOR = Color(0xFF17251F)
+private val INSTANT_SUN_COLOR = Color(0xFFD3A52B)
+private val INSTANT_SHUTTER_RED = Color(0xFFE45649)
