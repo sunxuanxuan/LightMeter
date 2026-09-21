@@ -2,7 +2,7 @@
 
 ## 1. 目标
 
-FilmLightMeter 当前以小程序为正式产品，Android 和 iOS 仅保留历史实现。
+FilmLightMeter 当前以小程序、Android 和 iOS 三个平台为正式产品，
 目录必须让文件的平台归属可以从路径直接判断，避免将 Taro、CameraX、
 AVFoundation、Compose 或 SwiftUI 代码放入含义模糊的公共目录。
 

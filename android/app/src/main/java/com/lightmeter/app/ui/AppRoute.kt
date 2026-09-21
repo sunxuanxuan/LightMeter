@@ -60,11 +60,15 @@ import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
 import com.lightmeter.app.BuildConfig
 import com.lightmeter.app.R
+import com.lightmeter.app.filmpreview.FilmPreviewRoute
+import com.lightmeter.app.instantpreview.InstantPreviewRoute
 import com.lightmeter.app.settings.SharedPreferencesAppSettingsStore
 import com.lightmeter.app.ui.theme.AppThemeStyle
 
 private enum class AppDestination {
     MODE_SELECTION,
+    FILM_PREVIEW,
+    INSTANT_CAMERA,
     PROFESSIONAL_METERING,
 }
 
@@ -85,6 +89,8 @@ fun AppRoute(
     }
     when (destination) {
         AppDestination.MODE_SELECTION -> ModeSelectionScreen(
+            onFilmPreviewSelected = { destination = AppDestination.FILM_PREVIEW },
+            onInstantCameraSelected = { destination = AppDestination.INSTANT_CAMERA },
             themeStyle = themeStyle,
             onThemeStyleChanged = onThemeStyleChanged,
             onProfessionalMeteringSelected = if (BuildConfig.DEBUG) {
@@ -93,6 +99,19 @@ fun AppRoute(
                 null
             },
         )
+
+        AppDestination.FILM_PREVIEW -> FilmPreviewRoute(
+            onExit = { destination = AppDestination.MODE_SELECTION },
+            calibrationOffset = appSettings.calibrationOffset,
+            themeStyle = themeStyle,
+            onThemeStyleChanged = onThemeStyleChanged,
+        )
+
+        AppDestination.INSTANT_CAMERA -> {
+            InstantPreviewRoute(
+                onExit = { destination = AppDestination.MODE_SELECTION },
+            )
+        }
 
         AppDestination.PROFESSIONAL_METERING -> MeteringRoute(
             calibrationOffset = appSettings.calibrationOffset,
@@ -105,6 +124,8 @@ fun AppRoute(
 
 @Composable
 private fun ModeSelectionScreen(
+    onFilmPreviewSelected: () -> Unit,
+    onInstantCameraSelected: () -> Unit,
     themeStyle: AppThemeStyle,
     onThemeStyleChanged: (AppThemeStyle) -> Unit,
     onProfessionalMeteringSelected: (() -> Unit)?,
@@ -186,6 +207,37 @@ private fun ModeSelectionScreen(
                         .padding(top = 8.dp),
                 )
 
+                Spacer(modifier = Modifier.height(if (compact) 34.dp else 44.dp))
+                val cardHeight = if (compact) 164.dp else 188.dp
+                HomeFeatureCard(
+                    imageResource = R.drawable.home_film_roll,
+                    title = "胶片模拟",
+                    description = "多胶片预设\n预见成片效果",
+                    containerColor = HomeSecondaryCard,
+                    contentColor = HomeInk,
+                    secondaryContentColor = HomeMutedInk,
+                    arrowContainerColor = HomeGreen,
+                    arrowContentColor = Color.White,
+                    onClick = onFilmPreviewSelected,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(cardHeight),
+                )
+                Spacer(modifier = Modifier.height(if (compact) 18.dp else 24.dp))
+                HomeFeatureCard(
+                    imageResource = R.drawable.home_instant_camera,
+                    title = "拍立得预览",
+                    description = "多种拍立得相纸\n即时成像模拟",
+                    containerColor = HomeSecondaryCard,
+                    contentColor = HomeInk,
+                    secondaryContentColor = HomeMutedInk,
+                    arrowContainerColor = HomeGreen,
+                    arrowContentColor = Color.White,
+                    onClick = onInstantCameraSelected,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(cardHeight),
+                )
             }
         }
     }
