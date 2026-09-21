@@ -97,7 +97,7 @@ internal class PaymentConfirmationPollingService : Service() {
     private fun buildNotification(message: String) =
         NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
-            .setContentTitle("FilmLightMeter 订单确认")
+            .setContentTitle("一拍即合订单确认")
             .setContentText(message)
             .setContentIntent(
                 PendingIntent.getActivity(

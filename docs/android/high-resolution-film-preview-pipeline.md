@@ -11,11 +11,12 @@
 
 ## 2. 背景与问题
 
-当前 Android 实现使用 CameraX `ImageAnalysis` 的同一帧同时生成冻结 Bitmap 和
-`ExposureSnapshot`，保证了图像、曝光元数据和风险计算的时间一致性。但现有
-管线存在三个分辨率瓶颈：
+Android 初版使用 CameraX `ImageAnalysis` 的同一帧同时生成冻结 Bitmap 和
+`ExposureSnapshot`。该路径便于保证时间一致性，但分析流协商分辨率不足以作为
+最终照片源。当前实现将冻结成片改为 `ImageCapture`，分析流继续负责邻近时刻的
+测光快照。
 
-1. `ImageAnalysis` 没有声明目标分辨率，CameraX 可能协商为较低尺寸。
+1. `ImageAnalysis` 即使声明首选分辨率，CameraX 仍可能因设备流组合协商为较低尺寸。
 2. ExposureMap 长边固定为 240 px，并以单点采样生成，细小高光、阴影和边缘
    容易漏采或产生混叠。
 3. 曝光模拟先把原图限制到 720 px，再使用低分辨率 ExposureMap 决定每个输出
@@ -34,25 +35,24 @@
 
 ### 3.2 硬约束
 
-- 冻结 Bitmap、基础 ExposureMap 和曝光元数据必须来自同一个 `ImageProxy`。
-- Preview、ImageAnalysis、风险图和冻结图继续共享同一 CameraX `ViewPort`。
+- Preview、ImageAnalysis 和 ImageCapture 共享同一 CameraX `ViewPort`。
+- 高分辨率 Bitmap 来自 ImageCapture；曝光建议使用冻结请求附近的分析帧快照。
 - 分辨率或 GPU 能力不足时允许质量降级，但不能改变曝光公式、胶片宽容度和
   风险阈值。
 
 ## 4. 总体架构
 
 ```text
-CameraX ImageAnalysis: YUV_420_888
-             |
-             +-- Camera2 metadata by SENSOR_TIMESTAMP
+CameraX
+├── ImageAnalysis: 实时测光与邻近曝光快照
+└── ImageCapture: 高分辨率冻结 Bitmap
              |
              v
-      Immutable frame bundle
-      ├── cropped/rotated source Bitmap
-      ├── camera setting EV100
+      Freeze result
+      ├── cropped/rotated high-resolution Bitmap
+      ├── nearby camera setting EV100
       ├── calibration offset
-      ├── timestamp/revision
-      └── statistical ExposureMap
+      └── analysis ExposureMap
              |
              +--> ExposureRiskCalculator --> medium-resolution risk mask
              |
@@ -65,8 +65,11 @@ CameraX ImageAnalysis: YUV_420_888
 
 | 数据 | 默认尺寸 | 用途 |
 | --- | --- | --- |
-| ImageAnalysis 输入 | 优先 1920x1440 | 同帧颜色图、Y 平面和元数据 |
-| 冻结 Bitmap | ViewPort 裁剪后的输入尺寸 | UI 原图和模拟输入 |
+| ImageAnalysis 输入 | 优先 1920x1440 | 实时测光 |
+| ImageCapture 输入 | 设备可用最高分辨率 | 下载成片的原始输入 |
+| PreviewView 截图 | 屏幕取景尺寸 | 点击后的静态加载占位，不参与模拟 |
+| 冻结预览 Bitmap | 最长边 1920 px，不执行放大 | UI 原图和即时模拟输入 |
+| 下载模拟输出 | 与 ImageCapture 裁剪结果相同 | 保存到系统相册 |
 | ExposureMap | 长边 480 px | EV、裁切和局部细节统计 |
 | 模拟输出 | 与冻结 Bitmap 完全相同 | 曝光模拟显示 |
 | 风险显示纹理 | ExposureMap 尺寸，由 GPU/Compose 放大 | 半透明风险蒙层 |
@@ -75,19 +78,22 @@ CameraX ImageAnalysis: YUV_420_888
 
 ### 5.1 分辨率选择
 
-`ImageAnalysis` 使用 `ResolutionSelector`，首选 `1920x1440`，并允许 CameraX
-按设备能力选择最接近的更高或更低尺寸。选择该档位的原因：
+`ImageAnalysis` 使用 `ResolutionSelector`，首选 `1920x1440`。`ImageCapture`
+使用 `CAPTURE_MODE_MINIMIZE_LATENCY` 和设备可用最高分辨率。点击冻结时先用
+PreviewView 当前画面作为静态加载占位，但所有正式处理只使用随后返回的单张
+ImageCapture 图像。捕获完成后保留原始 Bitmap，同时生成最长边 1920 px 的预览
+副本；小于该尺寸的输入不放大。
 
-- 4:3 传感器帧经过 2:3 竖屏 ViewPort 裁剪后通常仍可得到约 1280x1920。
-- 对 1080 至 1440 宽度的手机预览不需要大倍率放大。
-- 单帧 ARGB Bitmap 约 10 MB，仍处于可控范围。
+- 预览副本在 2:3 竖屏下通常为 `1280x1920`，高于 1080p。
+- 下载输出保持设备 ImageCapture 经 2:3 ViewPort 裁剪后的原始像素尺寸。
+- PreviewView 截图不得参与胶片模拟、下载或曝光计算。
 
 运行时必须记录实际 `ImageProxy`、`cropRect`、冻结 Bitmap 和预览容器尺寸。
 不能把请求尺寸当作设备最终输出尺寸。
 
 ### 5.2 原子快照
 
-`CapturedExposureFrame` 保持以下原子关系：
+`CapturedExposureFrame` 表示唯一的正式高分辨率样本：
 
 ```text
 requestId
@@ -100,8 +106,8 @@ ExposureSnapshot
     └── revision
 ```
 
-Bitmap 和 ExposureMap 均在关闭 `ImageProxy` 前完成拷贝。任何配置 revision
-变化都会废弃当前结果。
+高分辨率捕获失败时结束冻结并提示重试，不使用加载占位图生成结果。任何配置
+revision 变化都会废弃当前结果。
 
 ## 6. 风险分析图
 
@@ -144,8 +150,9 @@ ExposureMap 默认长边从 240 提升到 480。2:3 竖屏对应约 320x480，�
 
 ### 7.1 禁止使用风险图重建亮度
 
-风险 ExposureMap 是统计数据，不能作为模拟图的空间亮度源。一次性相机模拟器
-必须从冻结 Bitmap 的每个原始 RGB 像素独立计算亮度：
+风险 ExposureMap 是统计数据，不能作为高分辨率模拟图的空间亮度源。
+ImageCapture Bitmap 与分析 ExposureMap 尺寸不同或帧来源不同时，一次性相机
+模拟器必须从冻结 Bitmap 的每个原始 RGB 像素独立计算亮度：
 
 $$
 Y_{source}=0.2126R_{linear}+0.7152G_{linear}+0.0722B_{linear}
@@ -175,7 +182,9 @@ RGB_{linear}
 \frac{Y_{target}}{\max(Y_{source},\epsilon)}
 $$
 
-输出 framebuffer 宽高必须与输入 Bitmap 完全相同。
+分析 ExposureMap 只用于近似颗粒密度包络和曝光建议。冻结页先模拟 1920 px
+工作副本；用户点击下载后，再对原始 ImageCapture Bitmap 执行全分辨率模拟。
+每次模拟的输出 framebuffer 宽高必须与该次输入 Bitmap 完全相同。
 
 ### 7.2 专业模式曝光补偿
 
@@ -197,7 +206,9 @@ Android 26 及以上统一使用 OpenGL ES 2.0 离屏渲染：
 3. Fragment Shader 执行 sRGB 线性化、逐像素 EV、胶片响应和重新编码。
 4. 渲染到与源图同尺寸的 FBO。
 5. `glReadPixels` 回读为 ARGB_8888 Bitmap。
-6. 在 `finally` 中释放 texture、FBO、program、surface 和 context。
+6. H&D、横向低通、纵向低通三个 pass 复用两张全分辨率纹理，并使用 1x1
+   EGL pbuffer，控制全分辨率下载渲染的峰值内存。
+7. 在 `finally` 中释放 texture、FBO、program、surface 和 context。
 
 EGL 初始化、shader 编译、FBO 不完整或 GL 错误时进入 CPU 回退，不允许导致
 冻结流程失败。
@@ -215,25 +226,23 @@ CPU 回退优先保证尺寸和正确性；如果低端设备仍超过预算，�
 
 ## 8. 时间预算
 
-冻结帧等待硬截止设为 600 ms：
+点击后应立即显示 PreviewView 静态占位；高分辨率捕获允许独立等待：
 
 | 阶段 | P95 预算 |
 | --- | ---: |
-| 等待并复制同帧基准数据 | 120 ms |
-| 生成 480 px ExposureMap | 80 ms |
-| 风险统计 | 150 ms |
-| GPU 全分辨率模拟与回读 | 150 ms |
-| UI 提交 | 30 ms |
-| 总计 | 530 ms |
+| 静态占位提交 | 1 帧内 |
+| ImageCapture 高分辨率捕获 | 最长 5 s |
+| 1920 px 预览模拟 | 捕获完成后异步执行 |
+| 全分辨率模拟 | 仅在用户点击下载后执行 |
 
-取得冻结帧后立即提交 Bitmap 与 ExposureSnapshot，风险统计和模拟渲染并行
-响应状态变化，不再等待手机相机切换曝光。
+UI 不等待 ImageCapture 即停止显示动态取景；高分辨率结果完成后一次性替换占位，
+不得先后展示分析帧结果和 ImageCapture 结果。
 
 ## 9. 线程与资源管理
 
 - CameraX Analyzer 保持单线程，使用 `KEEP_ONLY_LATEST`。
-- 实时取景只执行直方图测光；480 px ExposureMap 和冻结 Bitmap 仅在存在冻结
-  capture request 时生成。实时测光限制为 5 Hz；冻结请求绕过节流并处理下一帧。
+- 实时取景只执行直方图测光并缓存最近相机曝光参数；胶片预览冻结不再额外抓取
+  ImageAnalysis Bitmap 或完整 ExposureMap。
 - 风险计算和 GPU 离屏渲染在 `Dispatchers.Default` 执行。
 - UI 线程只接收不可变 Bitmap 和风险结果。
 - 替换冻结图、模拟图或捕获请求时及时 recycle 不再使用的 Bitmap。

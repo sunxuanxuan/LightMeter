@@ -315,7 +315,7 @@ print_summary() {
   printf 'iOS SDK: %s\n' "$sdk_version"
   printf 'XcodeGen: %s\n' "$(xcodegen --version)"
   printf '\n工程：%s/FilmLightMeter.xcodeproj\n' "$IOS_ROOT"
-  printf 'Simulator 构建产物：%s/DerivedData/Build/Products/Debug-iphonesimulator/FilmLightMeter.app\n' "$IOS_ROOT"
+  printf 'Simulator 构建产物：%s/DerivedData/Build/Products/Debug-iphonesimulator/Click & Click.app\n' "$IOS_ROOT"
   printf '\n真机运行：用 Xcode 打开工程，在 Signing & Capabilities 选择 Team 后运行。\n'
   printf '可分发 IPA：需要 Apple Developer Program、分发证书和 Provisioning Profile。\n'
 }

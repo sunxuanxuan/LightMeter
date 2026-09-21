@@ -115,6 +115,8 @@ data class MeteringResult(
     val measuredLuminance: Double,
     val timestampNs: Long,
     val revision: Long = 0L,
+    val cameraSettingEv100: Double = Double.NaN,
+    val calibrationOffset: Double = 0.0,
 )
 
 data class ExposureSnapshot(

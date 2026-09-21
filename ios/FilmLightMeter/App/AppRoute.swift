@@ -62,11 +62,11 @@ private struct ModeSelectionScreen: View {
     var body: some View {
         VStack(spacing: 0) {
             Spacer()
-            Text("FilmLightMeter")
+            Text("一拍即合")
                 .font(.system(size: 38, weight: .bold, design: .rounded))
                 .foregroundStyle(.orange)
                 .frame(maxWidth: .infinity)
-            Text("体验胶片摄影魅力")
+            Text("Click & Click")
                 .font(.title2.bold())
                 .padding(.top, 10)
                 .padding(.bottom, 32)

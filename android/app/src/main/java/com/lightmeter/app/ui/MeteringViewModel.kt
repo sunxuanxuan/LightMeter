@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlin.math.abs
 import kotlin.math.log2
+import kotlin.math.pow
 import kotlin.math.roundToInt
 
 enum class CameraPermissionState {
@@ -576,22 +577,56 @@ private val apertureStops = listOf(
 )
 
 private val shutterStops = listOf(
-    ShutterStop("1/2000", 1.0 / 2000.0),
-    ShutterStop("1/1000", 1.0 / 1000.0),
-    ShutterStop("1/500", 1.0 / 500.0),
-    ShutterStop("1/250", 1.0 / 250.0),
-    ShutterStop("1/125", 1.0 / 125.0),
-    ShutterStop("1/60", 1.0 / 60.0),
-    ShutterStop("1/30", 1.0 / 30.0),
-    ShutterStop("1/15", 1.0 / 15.0),
-    ShutterStop("1/8", 1.0 / 8.0),
-    ShutterStop("1/4", 1.0 / 4.0),
-    ShutterStop("1/2", 1.0 / 2.0),
-    ShutterStop("1s", 1.0),
-    ShutterStop("2s", 2.0),
-    ShutterStop("4s", 4.0),
-    ShutterStop("8s", 8.0),
-)
+    "1/2000",
+    "1/1600",
+    "1/1250",
+    "1/1000",
+    "1/800",
+    "1/640",
+    "1/500",
+    "1/400",
+    "1/320",
+    "1/250",
+    "1/200",
+    "1/160",
+    "1/125",
+    "1/100",
+    "1/80",
+    "1/60",
+    "1/50",
+    "1/40",
+    "1/30",
+    "1/25",
+    "1/20",
+    "1/15",
+    "1/13",
+    "1/10",
+    "1/8",
+    "1/6",
+    "1/5",
+    "1/4",
+    "1/3",
+    "0.4s",
+    "1/2",
+    "0.6s",
+    "0.8s",
+    "1s",
+    "1.3s",
+    "1.6s",
+    "2s",
+    "2.5s",
+    "3.2s",
+    "4s",
+    "5s",
+    "6s",
+    "8s",
+).mapIndexed { thirdStopIndex, label ->
+    ShutterStop(
+        label = label,
+        seconds = FASTEST_SHUTTER_SECONDS *
+            2.0.pow(thirdStopIndex * MeteringViewModel.EV_THIRD_STEP),
+    )
+}
 
 private val commonAperturePriority = listOf(5.6, 8.0, 4.0, 11.0, 2.8, 16.0)
 
@@ -720,3 +755,4 @@ private fun safeShutterSeconds(focalLengthMm: Double): Double {
 
 private const val MAX_EQUIVALENT_EXPOSURE_ERROR = 1.0 / 6.0
 private const val EXPOSURE_ERROR_EPSILON = 1e-9
+private const val FASTEST_SHUTTER_SECONDS = 1.0 / 2000.0

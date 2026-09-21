@@ -2,13 +2,18 @@ package com.lightmeter.app.camera
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.graphics.Bitmap
 import android.hardware.camera2.CameraCharacteristics
+import android.util.Log
 import android.util.Size
 import androidx.camera.camera2.interop.Camera2CameraInfo
 import androidx.camera.camera2.interop.Camera2Interop
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
+import androidx.camera.core.ImageCapture
+import androidx.camera.core.ImageCaptureException
+import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
 import androidx.camera.core.UseCaseGroup
 import androidx.camera.core.ZoomState
@@ -21,6 +26,8 @@ import androidx.core.view.doOnLayout
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.Observer
+import com.lightmeter.app.BuildConfig
+import com.lightmeter.app.metering.ImageProxyBitmapConverter
 import com.lightmeter.app.metering.MeteringAnalyzer
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -32,8 +39,10 @@ class CameraController(
 ) {
     private val appContext = context.applicationContext
     private val analysisExecutor: ExecutorService = Executors.newSingleThreadExecutor()
+    private val captureExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     private var cameraProvider: ProcessCameraProvider? = null
     private var camera: Camera? = null
+    private var imageCapture: ImageCapture? = null
     private var requestedZoomRatio = 1.0f
     private var lastAppliedZoomRatio = Float.NaN
     private var observedZoomState: LiveData<ZoomState>? = null
@@ -48,6 +57,7 @@ class CameraController(
         onZoomStateChanged: (CameraZoomState) -> Unit,
         onReady: () -> Unit,
         onError: (Throwable) -> Unit,
+        enableHighResolutionCapture: Boolean = false,
     ) {
         val providerFuture = ProcessCameraProvider.getInstance(appContext)
         providerFuture.addListener(
@@ -87,19 +97,57 @@ class CameraController(
                         val analysis = analysisBuilder
                             .build()
                             .also { it.setAnalyzer(analysisExecutor, analyzer) }
-                        val useCaseGroup = UseCaseGroup.Builder()
-                            .setViewPort(viewPort)
-                            .addUseCase(preview)
-                            .addUseCase(analysis)
-                            .build()
+                        val highResolutionCapture = if (enableHighResolutionCapture) {
+                            ImageCapture.Builder()
+                                .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
+                                .setTargetRotation(previewView.display.rotation)
+                                .setResolutionSelector(
+                                    ResolutionSelector.Builder()
+                                        .setResolutionStrategy(
+                                            ResolutionStrategy.HIGHEST_AVAILABLE_STRATEGY,
+                                        )
+                                        .build(),
+                                )
+                                .build()
+                        } else {
+                            null
+                        }
+                        fun buildUseCaseGroup(capture: ImageCapture?): UseCaseGroup {
+                            val builder = UseCaseGroup.Builder()
+                                .setViewPort(viewPort)
+                                .addUseCase(preview)
+                                .addUseCase(analysis)
+                            capture?.let(builder::addUseCase)
+                            return builder.build()
+                        }
 
                         provider.unbindAll()
-                        val boundCamera = provider.bindToLifecycle(
-                            lifecycleOwner,
-                            CameraSelector.DEFAULT_BACK_CAMERA,
-                            useCaseGroup,
-                        )
+                        var activeImageCapture = highResolutionCapture
+                        val boundCamera = runCatching {
+                            provider.bindToLifecycle(
+                                lifecycleOwner,
+                                CameraSelector.DEFAULT_BACK_CAMERA,
+                                buildUseCaseGroup(highResolutionCapture),
+                            )
+                        }.getOrElse { captureError ->
+                            if (highResolutionCapture == null) throw captureError
+                            if (BuildConfig.DEBUG) {
+                                Log.w(
+                                    TAG,
+                                    "ImageCapture binding failed; using analysis-frame fallback",
+                                    captureError,
+                                )
+                            }
+                            provider.unbindAll()
+                            activeImageCapture = null
+                            provider.bindToLifecycle(
+                                lifecycleOwner,
+                                CameraSelector.DEFAULT_BACK_CAMERA,
+                                buildUseCaseGroup(null),
+                            )
+                        }
                         camera = boundCamera
+                        imageCapture = activeImageCapture
                         clearZoomStateObserver()
                         val zoomStateSource = boundCamera.cameraInfo.zoomState
                         val observer = Observer<ZoomState> { zoomState ->
@@ -157,6 +205,48 @@ class CameraController(
         applyRequestedZoom()
     }
 
+    fun captureHighResolution(
+        onCaptured: (Bitmap) -> Unit,
+        onError: (Throwable) -> Unit,
+    ) {
+        val capture = imageCapture
+        if (capture == null) {
+            onError(IllegalStateException("High-resolution capture is unavailable"))
+            return
+        }
+        capture.takePicture(
+            captureExecutor,
+            object : ImageCapture.OnImageCapturedCallback() {
+                override fun onCaptureSuccess(image: ImageProxy) {
+                    try {
+                        val bitmap = ImageProxyBitmapConverter.convert(image)
+                        if (BuildConfig.DEBUG) {
+                            Log.d(
+                                TAG,
+                                "highResolutionCapture image=%dx%d crop=%s output=%dx%d".format(
+                                    image.width,
+                                    image.height,
+                                    image.cropRect.toShortString(),
+                                    bitmap.width,
+                                    bitmap.height,
+                                ),
+                            )
+                        }
+                        onCaptured(bitmap)
+                    } catch (error: Throwable) {
+                        onError(error)
+                    } finally {
+                        image.close()
+                    }
+                }
+
+                override fun onError(exception: ImageCaptureException) {
+                    onError(exception)
+                }
+            },
+        )
+    }
+
     private fun applyRequestedZoom() {
         val currentCamera = camera ?: return
         val zoomState = currentCamera.cameraInfo.zoomState.value ?: return
@@ -185,6 +275,7 @@ class CameraController(
         cameraProvider?.unbindAll()
         cameraProvider = null
         camera = null
+        imageCapture = null
         lastAppliedZoomRatio = Float.NaN
     }
 
@@ -192,9 +283,11 @@ class CameraController(
         released = true
         unbind()
         analysisExecutor.shutdown()
+        captureExecutor.shutdown()
     }
 
     private companion object {
+        const val TAG = "CameraController"
         val ANALYSIS_PREFERRED_SIZE = Size(1920, 1440)
     }
 }

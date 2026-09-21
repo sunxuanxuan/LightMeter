@@ -1,7 +1,6 @@
 package com.lightmeter.app.metering
 
 import android.graphics.Bitmap
-import android.graphics.Matrix
 import android.graphics.Rect
 import android.os.Build
 import android.hardware.camera2.CameraCaptureSession
@@ -29,6 +28,7 @@ data class CapturedExposureFrame(
     val requestId: Int,
     val bitmap: Bitmap,
     val snapshot: ExposureSnapshot,
+    val deriveExposureFromBitmap: Boolean = false,
 )
 
 class MeteringAnalyzer(
@@ -138,7 +138,11 @@ class MeteringAnalyzer(
             val currentConfig = config.get()
             val luminanceRange = luminanceRangeFor(image)
             val luminance = measureLuminance(image, currentConfig, luminanceRange) ?: return
-            val ev = calculateEv100(metadata, luminance, currentConfig.calibrationOffset)
+            val exposureSeconds = metadata.exposureTimeNs / 1_000_000_000.0
+            val cameraSettingEv100 = cameraSettingEv100(metadata, exposureSeconds)
+            val ev = cameraSettingEv100 +
+                log2(luminance / TARGET_LUMINANCE) +
+                currentConfig.calibrationOffset
             var mapDurationMs = 0L
             var bitmapDurationMs = 0L
             val currentSnapshot: ExposureSnapshot?
@@ -225,6 +229,8 @@ class MeteringAnalyzer(
                         measuredLuminance = luminance,
                         timestampNs = timestampNs,
                         revision = currentConfig.revision,
+                        cameraSettingEv100 = cameraSettingEv100,
+                        calibrationOffset = currentConfig.calibrationOffset,
                     ),
                 )
             }
@@ -234,46 +240,7 @@ class MeteringAnalyzer(
     }
 
     private fun createCapturedBitmap(image: ImageProxy): Bitmap? {
-        return runCatching {
-            val source = image.toBitmap()
-            val cropRect = image.cropRect
-            val safeLeft = cropRect.left.coerceIn(0, source.width - 1)
-            val safeTop = cropRect.top.coerceIn(0, source.height - 1)
-            val safeRight = cropRect.right.coerceIn(safeLeft + 1, source.width)
-            val safeBottom = cropRect.bottom.coerceIn(safeTop + 1, source.height)
-            val cropped = if (
-                safeLeft == 0 &&
-                safeTop == 0 &&
-                safeRight == source.width &&
-                safeBottom == source.height
-            ) {
-                source
-            } else {
-                Bitmap.createBitmap(
-                    source,
-                    safeLeft,
-                    safeTop,
-                    safeRight - safeLeft,
-                    safeBottom - safeTop,
-                ).also { source.recycle() }
-            }
-            val rotationDegrees = image.imageInfo.rotationDegrees
-            if (rotationDegrees == 0) {
-                cropped
-            } else {
-                Bitmap.createBitmap(
-                    cropped,
-                    0,
-                    0,
-                    cropped.width,
-                    cropped.height,
-                    Matrix().apply { postRotate(rotationDegrees.toFloat()) },
-                    true,
-                ).also { rotated ->
-                    if (rotated !== cropped) cropped.recycle()
-                }
-            }
-        }.getOrNull()
+        return runCatching { ImageProxyBitmapConverter.convert(image) }.getOrNull()
     }
 
     private fun metadataForTimestamp(timestampNs: Long): CameraExposureMetadata? {
@@ -467,16 +434,6 @@ class MeteringAnalyzer(
         return sum / retained.coerceAtLeast(1)
     }
 
-    private fun calculateEv100(
-        metadata: CameraExposureMetadata,
-        luminance: Double,
-        calibrationOffset: Double,
-    ): Double {
-        val exposureSeconds = metadata.exposureTimeNs / 1_000_000_000.0
-        val settingEv100 = cameraSettingEv100(metadata, exposureSeconds)
-        return settingEv100 + log2(luminance / TARGET_LUMINANCE) + calibrationOffset
-    }
-
     private fun createExposureMap(
         image: ImageProxy,
         metadata: CameraExposureMetadata,
@@ -489,15 +446,13 @@ class MeteringAnalyzer(
 
         val rotationDegrees = image.imageInfo.rotationDegrees
         val isQuarterTurn = rotationDegrees == 90 || rotationDegrees == 270
-        val mapWidth: Int
-        val mapHeight: Int
-        if (isQuarterTurn) {
-            mapWidth = cropRect.height()
-            mapHeight = cropRect.width()
-        } else {
-            mapWidth = cropRect.width()
-            mapHeight = cropRect.height()
-        }
+        val rotatedWidth = if (isQuarterTurn) cropRect.height() else cropRect.width()
+        val rotatedHeight = if (isQuarterTurn) cropRect.width() else cropRect.height()
+        val mapScale = (
+            EXPOSURE_MAP_LONG_EDGE_PX / max(rotatedWidth, rotatedHeight).toDouble()
+            ).coerceAtMost(1.0)
+        val mapWidth = (rotatedWidth * mapScale).roundToInt().coerceAtLeast(1)
+        val mapHeight = (rotatedHeight * mapScale).roundToInt().coerceAtLeast(1)
 
         val exposureSeconds = metadata.exposureTimeNs / 1_000_000_000.0
         val settingEv100 = cameraSettingEv100(metadata, exposureSeconds)
@@ -520,24 +475,30 @@ class MeteringAnalyzer(
         for (mapY in 0 until mapHeight) {
             for (mapX in 0 until mapWidth) {
                 val mapIndex = mapY * mapWidth + mapX
+                val rotatedX = (
+                    (mapX + 0.5) * rotatedWidth / mapWidth
+                    ).toInt().coerceIn(0, rotatedWidth - 1)
+                val rotatedY = (
+                    (mapY + 0.5) * rotatedHeight / mapHeight
+                    ).toInt().coerceIn(0, rotatedHeight - 1)
                 val sourceX: Int
                 val sourceY: Int
                 when (rotationDegrees) {
                     90 -> {
-                        sourceX = cropRect.left + mapY
-                        sourceY = cropRect.bottom - mapX - 1
+                        sourceX = cropRect.left + rotatedY
+                        sourceY = cropRect.bottom - rotatedX - 1
                     }
                     180 -> {
-                        sourceX = cropRect.right - mapX - 1
-                        sourceY = cropRect.bottom - mapY - 1
+                        sourceX = cropRect.right - rotatedX - 1
+                        sourceY = cropRect.bottom - rotatedY - 1
                     }
                     270 -> {
-                        sourceX = cropRect.right - mapY - 1
-                        sourceY = cropRect.top + mapX
+                        sourceX = cropRect.right - rotatedY - 1
+                        sourceY = cropRect.top + rotatedX
                     }
                     else -> {
-                        sourceX = cropRect.left + mapX
-                        sourceY = cropRect.top + mapY
+                        sourceX = cropRect.left + rotatedX
+                        sourceY = cropRect.top + rotatedY
                     }
                 }
                 val index = sourceY * plane.rowStride + sourceX * plane.pixelStride
@@ -601,6 +562,7 @@ class MeteringAnalyzer(
         private const val SAMPLE_STEP = 4
         private const val FINE_SAMPLE_STEP = 2
         private const val MIN_SAMPLE_COUNT = 32
+        private const val EXPOSURE_MAP_LONG_EDGE_PX = 480
         private const val TRIM_RATIO = 0.05
         private const val TARGET_LUMINANCE = 0.18
         private const val LUMINANCE_EPSILON = 1e-6

@@ -11,7 +11,7 @@ struct ActivationScreen: View {
             Image(systemName: "camera.aperture")
                 .font(.system(size: 72))
                 .foregroundStyle(.orange)
-            Text("激活 FilmLightMeter")
+            Text("激活一拍即合")
                 .font(.largeTitle.bold())
             Text("在官网购买时填写设备 ID，然后粘贴付款后生成的签名激活凭证。")
                 .multilineTextAlignment(.center)

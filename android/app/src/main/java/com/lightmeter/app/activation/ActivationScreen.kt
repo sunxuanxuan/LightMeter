@@ -65,7 +65,7 @@ fun ActivationScreen(
             verticalArrangement = Arrangement.Center,
         ) {
             Text(
-                text = "FilmLightMeter",
+                text = "一拍即合",
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.primary,

@@ -101,9 +101,9 @@ internal object FilmPhotoSaver {
         }
     }
 
-    private const val ALBUM_NAME = "FilmLightMeter"
-    private const val FILE_PREFIX = "FilmLightMeter_"
+    private const val ALBUM_NAME = "Click & Click"
+    private const val FILE_PREFIX = "ClickAndClick_"
     private const val FILE_DATE_PATTERN = "yyyyMMdd_HHmmss_SSS"
     private const val MIME_TYPE = "image/jpeg"
-    private const val JPEG_QUALITY = 95
+    private const val JPEG_QUALITY = 98
 }

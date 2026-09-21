@@ -2,21 +2,25 @@
 
 ## 1. 目标
 
-FilmLightMeter 同时维护 Android 和 iOS 客户端。目录必须让文件的平台归属
-可以从路径直接判断，避免将 CameraX、AVFoundation、Compose 或 SwiftUI
-代码放入含义模糊的公共目录。
+FilmLightMeter 当前以小程序为正式产品，Android 和 iOS 仅保留历史实现。
+目录必须让文件的平台归属可以从路径直接判断，避免将 Taro、CameraX、
+AVFoundation、Compose 或 SwiftUI 代码放入含义模糊的公共目录。
 
 ## 2. 标准结构
 
 ```text
 FilmLightMeter/
+├── miniapp/
+│   ├── src/                 Taro 小程序源码、页面和资源
+│   ├── config/              Taro 跨端构建配置
+│   └── package.json         小程序依赖与脚本
 ├── android/
-│   ├── app/                 Android 应用源码和资源
+│   ├── app/                 Android 历史应用源码和资源
 │   ├── gradle/              Gradle Wrapper 与版本目录
 │   └── scripts/             Android 环境脚本
 ├── ios/
-│   ├── FilmLightMeter/      iOS App Target，实施阶段创建
-│   ├── FilmLightMeterTests/ iOS 单元测试，实施阶段创建
+│   ├── FilmLightMeter/      iOS 历史 App Target
+│   ├── FilmLightMeterTests/ iOS 历史单元测试
 │   ├── tools/               跨平台激活凭证签发工具
 │   └── README.md
 ├── website/                 Next.js 官网、订单与离线凭证服务
@@ -30,6 +34,13 @@ FilmLightMeter/
 ```
 
 ## 3. 归属规则
+
+放入 `miniapp/` 的内容：
+
+- Taro、React、TypeScript 和 CSS Modules 代码。
+- 微信、抖音、支付宝小程序及 H5 的页面与平台配置。
+- 小程序相机、Canvas 成片处理、本地状态和 TabBar 资源。
+- 小程序构建产物必须输出到 `miniapp/dist/`，不得占用仓库根目录的 `dist/`。
 
 放入 `android/` 或 `docs/android/` 的内容：
 
@@ -62,7 +73,7 @@ FilmLightMeter/
 
 ## 4. 命名规则
 
-- 平台目录使用固定名称 `android` 和 `ios`，不使用 `mobile`、`app` 等
+- 平台目录使用固定名称 `miniapp`、`android` 和 `ios`，不使用 `mobile`、`app` 等
   无法表达归属的顶层名称。
 - 文档文件名使用小写 kebab-case。
 - 平台内部可沿用平台惯例：Kotlin 包名使用小写，Swift 类型文件使用
@@ -71,6 +82,8 @@ FilmLightMeter/
 - 构建产物、IDE 用户状态、签名证书和密钥不得提交。
 
 ## 5. 构建入口
+
+小程序工具链必须以 `miniapp/` 为项目目录运行。
 
 Android 命令必须从 `android/` 执行：
 

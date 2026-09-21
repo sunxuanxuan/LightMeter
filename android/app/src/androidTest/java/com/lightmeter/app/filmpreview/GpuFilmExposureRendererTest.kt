@@ -194,6 +194,55 @@ class GpuFilmExposureRendererTest {
         }
     }
 
+    @Test
+    fun gpuCanDeriveExposureFromHigherResolutionSource() {
+        val width = 4
+        val height = 4
+        val sourcePixels = IntArray(width * height) { index ->
+            gray(48 + index * 10)
+        }
+        val source = Bitmap.createBitmap(
+            sourcePixels,
+            width,
+            height,
+            Bitmap.Config.ARGB_8888,
+        )
+        val analysisExposureMap = ExposureMap(
+            width = 2,
+            height = 2,
+            pixelEv100 = FloatArray(4),
+            cameraSettingEv100 = 0.0,
+            timestampNs = 13L,
+        )
+
+        val gpu = GpuFilmExposureRenderer.render(
+            source = source,
+            exposureMap = analysisExposureMap,
+            referenceEv100 = 0.0,
+            highlightLatitudeStops = 3.0,
+            shadowLatitudeStops = 2.0,
+            deriveExposureFromSource = true,
+        )
+        val cpuPixels = FilmExposureSimulator.renderPixels(
+            sourcePixels = sourcePixels,
+            exposureMap = null,
+            cameraSettingEv100 = analysisExposureMap.cameraSettingEv100,
+            calibrationOffset = analysisExposureMap.calibrationOffset,
+            referenceEv100 = 0.0,
+            highlightLatitudeStops = 3.0,
+            shadowLatitudeStops = 2.0,
+            sourceWidth = width,
+        )
+        val gpuPixels = IntArray(sourcePixels.size)
+        gpu.getPixels(gpuPixels, 0, width, 0, 0, width, height)
+
+        gpuPixels.indices.forEach { index ->
+            assertChannelNear(cpuPixels[index], gpuPixels[index], shift = 16)
+            assertChannelNear(cpuPixels[index], gpuPixels[index], shift = 8)
+            assertChannelNear(cpuPixels[index], gpuPixels[index], shift = 0)
+        }
+    }
+
     private fun assertChannelNear(expected: Int, actual: Int, shift: Int) {
         val expectedChannel = (expected ushr shift) and 0xFF
         val actualChannel = (actual ushr shift) and 0xFF

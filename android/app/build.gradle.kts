@@ -1,4 +1,5 @@
 import java.util.Properties
+import com.android.build.api.variant.impl.VariantOutputImpl
 
 plugins {
     alias(libs.plugins.android.application)
@@ -79,6 +80,19 @@ android {
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        }
+    }
+}
+
+androidComponents {
+    onVariants(selector().all()) { variant ->
+        variant.outputs.forEach { output ->
+            val fileName = if (variant.buildType == "release") {
+                "Click & Click.apk"
+            } else {
+                "Click & Click-${variant.name}.apk"
+            }
+            (output as VariantOutputImpl).outputFileName.set(fileName)
         }
     }
 }

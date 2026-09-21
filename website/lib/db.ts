@@ -224,7 +224,7 @@ function seedLocalReleases(database: DatabaseSync) {
   const now = new Date().toISOString();
   const configuredPath =
     process.env.ANDROID_APK_PATH ??
-    "../android/app/build/outputs/apk/release/app-release.apk";
+    "../android/app/build/outputs/apk/release/Click & Click.apk";
   const apkPath = path.resolve(
     /* turbopackIgnore: true */
     process.cwd(),

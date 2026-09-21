@@ -1,5 +1,6 @@
 package com.lightmeter.app.ui
 
+import android.graphics.Bitmap
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.Canvas
 import androidx.compose.runtime.Composable
@@ -21,11 +22,16 @@ import com.lightmeter.app.camera.CameraController
 import com.lightmeter.app.camera.CameraOptics
 import com.lightmeter.app.camera.CameraZoomState
 import com.lightmeter.app.metering.CapturedExposureFrame
+import com.lightmeter.app.metering.ExposureMap
+import com.lightmeter.app.metering.ExposureSnapshot
 import com.lightmeter.app.metering.MeteringAnalyzer
 import com.lightmeter.app.metering.MeteringConfig
 import com.lightmeter.app.metering.MeteringResult
 import com.lightmeter.app.metering.NormalizedMeteringRect
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withTimeoutOrNull
+import java.util.concurrent.atomic.AtomicReference
 
 @Composable
 fun CameraPreviewView(
@@ -40,11 +46,16 @@ fun CameraPreviewView(
     onReady: () -> Unit,
     onError: (Throwable) -> Unit,
     modifier: Modifier = Modifier,
+    enableHighResolutionCapture: Boolean = false,
+    onFreezePlaceholderCaptured: (Int, Bitmap?) -> Unit = { _, _ -> },
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val currentOnMeteringResult = rememberUpdatedState(onMeteringResult)
     val currentOnFrameCaptured = rememberUpdatedState(onFrameCaptured)
+    val currentOnFreezePlaceholderCaptured =
+        rememberUpdatedState(onFreezePlaceholderCaptured)
+    val latestMeteringResult = remember { AtomicReference<MeteringResult?>(null) }
     val previewView = remember {
         PreviewView(context).apply {
             implementationMode = PreviewView.ImplementationMode.COMPATIBLE
@@ -53,6 +64,7 @@ fun CameraPreviewView(
     }
     val analyzer = remember {
         MeteringAnalyzer(meteringConfig) { result ->
+            latestMeteringResult.set(result)
             currentOnMeteringResult.value(result)
         }
     }
@@ -65,28 +77,52 @@ fun CameraPreviewView(
 
     LaunchedEffect(freezeRequestId, shouldCaptureFrame) {
         if (shouldCaptureFrame && freezeRequestId > 0) {
-            analyzer.requestFrameCapture(freezeRequestId)
-            val capturedFrame = try {
-                awaitCapturedFrame(
-                    analyzer = analyzer,
-                    requestId = freezeRequestId,
+            if (enableHighResolutionCapture) {
+                currentOnFreezePlaceholderCaptured.value(
+                    freezeRequestId,
+                    previewView.bitmap,
                 )
-            } finally {
-                analyzer.cancelFrameCapture(freezeRequestId)
+                val bitmap = awaitHighResolutionFrame(cameraController)
+                val meteringResult = latestMeteringResult.get()
+                if (
+                    bitmap == null ||
+                    meteringResult == null ||
+                    !meteringResult.cameraSettingEv100.isFinite()
+                ) {
+                    bitmap?.recycle()
+                    currentOnFrameCaptured.value(null)
+                    return@LaunchedEffect
+                }
+                val snapshot = meteringResult.toExposureSnapshot()
+                currentOnFrameCaptured.value(
+                    CapturedExposureFrame(
+                        requestId = freezeRequestId,
+                        bitmap = bitmap,
+                        snapshot = snapshot,
+                        deriveExposureFromBitmap = true,
+                    ),
+                )
+            } else {
+                analyzer.requestFrameCapture(freezeRequestId)
+                val capturedFrame = try {
+                    awaitCapturedFrame(
+                        analyzer = analyzer,
+                        requestId = freezeRequestId,
+                    )
+                } finally {
+                    analyzer.cancelFrameCapture(freezeRequestId)
+                }
+                currentOnFrameCaptured.value(capturedFrame)
             }
-            if (capturedFrame == null) {
-                currentOnFrameCaptured.value(null)
-                return@LaunchedEffect
-            }
-            currentOnFrameCaptured.value(capturedFrame)
         }
     }
 
-    DisposableEffect(lifecycleOwner, previewView) {
+    DisposableEffect(lifecycleOwner, previewView, enableHighResolutionCapture) {
         cameraController.bind(
             lifecycleOwner = lifecycleOwner,
             previewView = previewView,
             analyzer = analyzer,
+            enableHighResolutionCapture = enableHighResolutionCapture,
             onOpticsAvailable = onOpticsAvailable,
             onZoomStateChanged = onZoomStateChanged,
             onReady = onReady,
@@ -101,6 +137,45 @@ fun CameraPreviewView(
         factory = { previewView },
         modifier = modifier,
     )
+}
+
+private fun MeteringResult.toExposureSnapshot(): ExposureSnapshot {
+    val exposureMap = ExposureMap(
+        width = 1,
+        height = 1,
+        pixelEv100 = floatArrayOf(ev100.toFloat()),
+        cameraSettingEv100 = cameraSettingEv100,
+        calibrationOffset = calibrationOffset,
+        timestampNs = timestampNs,
+        revision = revision,
+    )
+    return ExposureSnapshot(
+        exposureMap = exposureMap,
+        meteredEv100 = ev100,
+        timestampNs = timestampNs,
+        revision = revision,
+    )
+}
+
+private suspend fun awaitHighResolutionFrame(
+    cameraController: CameraController,
+): Bitmap? {
+    val result = CompletableDeferred<Bitmap?>()
+    cameraController.captureHighResolution(
+        onCaptured = { bitmap ->
+            if (!result.complete(bitmap)) bitmap.recycle()
+        },
+        onError = {
+            result.complete(null)
+        },
+    )
+    return try {
+        withTimeoutOrNull(HIGH_RESOLUTION_CAPTURE_TIMEOUT_MS) {
+            result.await()
+        }
+    } finally {
+        if (!result.isCompleted) result.cancel()
+    }
 }
 
 @Composable
@@ -153,3 +228,4 @@ private suspend fun awaitCapturedFrame(
 }
 private const val FRAME_CAPTURE_TIMEOUT_NS = 1_500_000_000L
 private const val FRAME_CAPTURE_POLL_INTERVAL_MS = 10L
+private const val HIGH_RESOLUTION_CAPTURE_TIMEOUT_MS = 5_000L

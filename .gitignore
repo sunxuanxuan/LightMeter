@@ -11,6 +11,9 @@ captures/
 .chrome-pdf-profile/
 .chrome-shot-profile/
 .vscode/
+.pai/
+node_modules/
+.local-home/
 dist/
 .externalNativeBuild/
 .cxx/

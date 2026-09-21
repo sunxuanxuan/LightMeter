@@ -68,13 +68,12 @@ internal object FilmExposureSimulator {
         highlightLatitudeStops: Double,
         shadowLatitudeStops: Double,
         filmLook: NegativeFilmLookProfile = NegativeFilmLooks.NEUTRAL,
+        deriveExposureFromSource: Boolean = false,
     ): Bitmap {
         require(referenceEv100.isFinite())
         require(highlightLatitudeStops > 0.0)
         require(shadowLatitudeStops > 0.0)
         require(exposureMap.cameraSettingEv100.isFinite())
-        require(exposureMap.width == source.width)
-        require(exposureMap.height == source.height)
 
         val startedAtMs = SystemClock.elapsedRealtime()
         val gpuResult = runCatching {
@@ -85,6 +84,7 @@ internal object FilmExposureSimulator {
                 highlightLatitudeStops = highlightLatitudeStops,
                 shadowLatitudeStops = shadowLatitudeStops,
                 filmLook = filmLook,
+                deriveExposureFromSource = deriveExposureFromSource,
             )
         }
         gpuResult.getOrNull()?.let { result ->
@@ -108,7 +108,10 @@ internal object FilmExposureSimulator {
         val result = Bitmap.createBitmap(
             renderPixels(
                 sourcePixels = sourcePixels,
-                exposureMap = exposureMap,
+                exposureMap = exposureMap.takeIf {
+                    !deriveExposureFromSource &&
+                    it.width == source.width && it.height == source.height
+                },
                 cameraSettingEv100 = exposureMap.cameraSettingEv100,
                 calibrationOffset = exposureMap.calibrationOffset,
                 referenceEv100 = referenceEv100,

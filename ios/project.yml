@@ -16,6 +16,7 @@ targets:
   FilmLightMeter:
     type: application
     platform: iOS
+    productName: "Click & Click"
     sources:
       - path: FilmLightMeter
         excludes:
@@ -23,7 +24,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.lightmeter.app.ios
-        PRODUCT_NAME: FilmLightMeter
+        PRODUCT_NAME: "Click & Click"
         INFOPLIST_FILE: FilmLightMeter/SupportingFiles/Info.plist
         GENERATE_INFOPLIST_FILE: NO
         SWIFT_STRICT_CONCURRENCY: targeted
