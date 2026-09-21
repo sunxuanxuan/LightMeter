@@ -377,23 +377,54 @@ private fun FilmPreviewWorkspace(
     val preset = state.selectedPreset ?: return
     var showsSettings by rememberSaveable { mutableStateOf(false) }
     var selector by rememberSaveable { mutableStateOf<PreviewSelector?>(null) }
+    var originalFrozenFrame by remember { mutableStateOf<Bitmap?>(null) }
     var frozenFrame by remember { mutableStateOf<Bitmap?>(null) }
     var simulatedFrame by remember { mutableStateOf<Bitmap?>(null) }
     var frozenSnapshot by remember { mutableStateOf<ExposureSnapshot?>(null) }
+    var deriveExposureFromFrozenFrame by remember { mutableStateOf(false) }
     var comparisonSplit by rememberSaveable { mutableStateOf(0.5f) }
     var previewSize by remember { mutableStateOf(IntSize.Zero) }
     var cameraOptics by remember { mutableStateOf<CameraOptics?>(null) }
     var cameraZoomState by remember { mutableStateOf(CameraZoomState()) }
     var isSavingPhoto by remember { mutableStateOf(false) }
-    var pendingLegacySave by remember { mutableStateOf<Bitmap?>(null) }
+    var isHighResolutionCapturePending by remember { mutableStateOf(false) }
+    var pendingLegacySave by remember { mutableStateOf(false) }
 
-    fun savePhoto(bitmap: Bitmap) {
+    fun savePhoto() {
         if (isSavingPhoto) return
+        val original = originalFrozenFrame ?: return
+        val snapshot = frozenSnapshot ?: return
+        val previewSource = frozenFrame
+        val previewResult = simulatedFrame
+        val shouldReusePreviewResult =
+            original === previewSource && previewResult != null
         isSavingPhoto = true
         coroutineScope.launch {
-            val result = withContext(Dispatchers.IO) {
-                FilmPhotoSaver.save(context.applicationContext, bitmap)
+            val fullResolutionResult = if (shouldReusePreviewResult) {
+                previewResult
+            } else {
+                withContext(Dispatchers.Default) {
+                    runCatching {
+                        FilmExposureSimulator.render(
+                            source = original,
+                            exposureMap = snapshot.exposureMap,
+                            referenceEv100 = FilmPreviewEngine.presetEv100(preset),
+                            highlightLatitudeStops = preset.film.highlightLatitudeStops,
+                            shadowLatitudeStops = preset.film.shadowLatitudeStops,
+                            filmLook = preset.film.look,
+                            deriveExposureFromSource = deriveExposureFromFrozenFrame,
+                        )
+                    }.getOrNull()
+                }
             }
+            val result = if (fullResolutionResult == null) {
+                Result.failure(IllegalStateException("Unable to render full-resolution photo"))
+            } else {
+                withContext(Dispatchers.IO) {
+                    FilmPhotoSaver.save(context.applicationContext, fullResolutionResult)
+                }
+            }
+            if (!shouldReusePreviewResult) fullResolutionResult?.recycle()
             isSavingPhoto = false
             if (result.isSuccess) {
                 Toast.makeText(context, "照片已保存到相册", Toast.LENGTH_SHORT).show()
@@ -407,27 +438,27 @@ private fun FilmPreviewWorkspace(
     val storagePermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
-        val bitmap = pendingLegacySave
-        pendingLegacySave = null
-        if (granted && bitmap != null) {
-            savePhoto(bitmap)
+        val shouldSave = pendingLegacySave
+        pendingLegacySave = false
+        if (granted && shouldSave) {
+            savePhoto()
         } else if (!granted) {
             Toast.makeText(context, "需要存储权限才能保存照片", Toast.LENGTH_SHORT).show()
         }
     }
 
     fun requestPhotoSave() {
-        val bitmap = simulatedFrame ?: return
+        if (originalFrozenFrame == null || simulatedFrame == null) return
         val needsLegacyPermission = Build.VERSION.SDK_INT < Build.VERSION_CODES.Q &&
             ContextCompat.checkSelfPermission(
                 context,
                 Manifest.permission.WRITE_EXTERNAL_STORAGE,
             ) != PackageManager.PERMISSION_GRANTED
         if (needsLegacyPermission) {
-            pendingLegacySave = bitmap
+            pendingLegacySave = true
             storagePermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
         } else {
-            savePhoto(bitmap)
+            savePhoto()
         }
     }
 
@@ -476,38 +507,57 @@ private fun FilmPreviewWorkspace(
     }
 
     LaunchedEffect(
-        frozenFrame,
+        originalFrozenFrame,
         frozenSnapshot,
         presetReferenceEv100,
         preset.film.highlightLatitudeStops,
         preset.film.shadowLatitudeStops,
         preset.film.look,
+        deriveExposureFromFrozenFrame,
     ) {
-        val source = frozenFrame
+        val source = originalFrozenFrame
         val snapshot = frozenSnapshot
-        simulatedFrame = if (source == null || snapshot == null) {
-            null
+        if (source == null || snapshot == null) {
+            frozenFrame = null
+            simulatedFrame = null
         } else {
-            withContext(Dispatchers.Default) {
-                runCatching {
+            val previewResult = withContext(Dispatchers.Default) {
+                val previewSource = createPreviewBitmap(source)
+                val simulation = runCatching {
                     FilmExposureSimulator.render(
-                        source = source,
+                        source = previewSource,
                         exposureMap = snapshot.exposureMap,
                         referenceEv100 = presetReferenceEv100,
                         highlightLatitudeStops = preset.film.highlightLatitudeStops,
                         shadowLatitudeStops = preset.film.shadowLatitudeStops,
                         filmLook = preset.film.look,
+                        deriveExposureFromSource = deriveExposureFromFrozenFrame,
                     )
                 }.getOrNull()
+                Pair(previewSource, simulation)
+            }
+            if (previewResult.second != null) {
+                frozenFrame = previewResult.first
+                simulatedFrame = previewResult.second
+            } else if (frozenFrame == null) {
+                frozenFrame = previewResult.first
+            } else if (previewResult.first !== source) {
+                previewResult.first.recycle()
+            }
+            if (deriveExposureFromFrozenFrame) {
+                isHighResolutionCapturePending = false
             }
         }
     }
 
     LaunchedEffect(state.isFrozen) {
         if (!state.isFrozen) {
+            originalFrozenFrame = null
             frozenFrame = null
             simulatedFrame = null
             frozenSnapshot = null
+            deriveExposureFromFrozenFrame = false
+            isHighResolutionCapturePending = false
         }
     }
     LaunchedEffect(state.isFrozen, state.freezeRequestId) {
@@ -572,9 +622,22 @@ private fun FilmPreviewWorkspace(
                                 },
                                 freezeRequestId = state.freezeRequestId,
                                 shouldCaptureFrame = state.isFrozen,
+                                enableHighResolutionCapture = true,
                                 onMeteringResult = {
                                     if (it.revision == presetRevision) {
                                         onMeteringResult(it)
+                                    }
+                                },
+                                onFreezePlaceholderCaptured = { requestId, bitmap ->
+                                    if (
+                                        !state.isFrozen ||
+                                        requestId != state.freezeRequestId
+                                    ) {
+                                        bitmap?.recycle()
+                                    } else {
+                                        frozenFrame = bitmap
+                                        simulatedFrame = null
+                                        isHighResolutionCapturePending = true
                                     }
                                 },
                                 onFrameCaptured = { capturedFrame ->
@@ -590,8 +653,10 @@ private fun FilmPreviewWorkspace(
                                         onFreezeCaptureFailed()
                                     } else {
                                         onFrozenSnapshot(requestId, snapshot)
-                                        frozenFrame = bitmap
-                                        simulatedFrame = null
+                                        isHighResolutionCapturePending = true
+                                        deriveExposureFromFrozenFrame =
+                                            capturedFrame?.deriveExposureFromBitmap == true
+                                        originalFrozenFrame = bitmap
                                         frozenSnapshot = snapshot
                                     }
                                 },
@@ -656,6 +721,7 @@ private fun FilmPreviewWorkspace(
                     filmImageResource = filmImageResource(preset.film),
                     isFrozen = state.isFrozen,
                     isResultReady = simulatedFrame != null,
+                    isDownloadReady = !isHighResolutionCapturePending,
                     isSavingPhoto = isSavingPhoto,
                     captureEnabled = state.isFrozen ||
                         (
@@ -718,6 +784,7 @@ private fun PreviewControlPanel(
     filmImageResource: Int,
     isFrozen: Boolean,
     isResultReady: Boolean,
+    isDownloadReady: Boolean,
     isSavingPhoto: Boolean,
     captureEnabled: Boolean,
     environmentText: String,
@@ -749,6 +816,7 @@ private fun PreviewControlPanel(
         ) {
             if (isFrozen && isResultReady) {
                 PreviewResultActions(
+                    isDownloadReady = isDownloadReady,
                     isSavingPhoto = isSavingPhoto,
                     onReturnClick = onReturnClick,
                     onDownloadClick = onDownloadClick,
@@ -816,6 +884,7 @@ private fun PreviewSelectionTile(
 
 @Composable
 private fun PreviewResultActions(
+    isDownloadReady: Boolean,
     isSavingPhoto: Boolean,
     onReturnClick: () -> Unit,
     onDownloadClick: () -> Unit,
@@ -835,11 +904,14 @@ private fun PreviewResultActions(
             shape = CircleShape,
             modifier = Modifier
                 .size(CONTROL_BUTTON_SIZE)
-                .alpha(if (isSavingPhoto) 0.6f else 1f)
-                .clickable(enabled = !isSavingPhoto, onClick = onDownloadClick),
+                .alpha(if (isDownloadReady && !isSavingPhoto) 1f else 0.6f)
+                .clickable(
+                    enabled = isDownloadReady && !isSavingPhoto,
+                    onClick = onDownloadClick,
+                ),
         ) {
             Box(contentAlignment = Alignment.Center) {
-                if (isSavingPhoto) {
+                if (!isDownloadReady || isSavingPhoto) {
                     CircularProgressIndicator(
                         color = Color.White,
                         strokeWidth = 2.dp,
@@ -923,9 +995,17 @@ private fun FilmSimulationComparison(
         )
         val splitX = size.width * splitFraction
 
-        drawImage(sourceImage, dstSize = destinationSize)
+        drawImage(
+            image = sourceImage,
+            dstSize = destinationSize,
+            filterQuality = FilterQuality.High,
+        )
         clipRect(left = splitX) {
-            drawImage(simulatedImage, dstSize = destinationSize)
+            drawImage(
+                image = simulatedImage,
+                dstSize = destinationSize,
+                filterQuality = FilterQuality.High,
+            )
         }
         drawLine(
             color = Color.White,
@@ -1697,7 +1777,33 @@ private fun environmentLightText(evaluation: FilmPreviewEvaluation?): String {
     }
 }
 
+internal fun createPreviewBitmap(source: Bitmap): Bitmap {
+    val (targetWidth, targetHeight) = previewBitmapDimensions(
+        width = source.width,
+        height = source.height,
+    )
+    if (targetWidth == source.width && targetHeight == source.height) return source
+    return Bitmap.createScaledBitmap(
+        source,
+        targetWidth,
+        targetHeight,
+        true,
+    )
+}
+
+internal fun previewBitmapDimensions(width: Int, height: Int): Pair<Int, Int> {
+    require(width > 0 && height > 0)
+    val longestEdge = maxOf(width, height)
+    if (longestEdge <= PREVIEW_RENDER_LONG_EDGE_PX) return Pair(width, height)
+    val scale = PREVIEW_RENDER_LONG_EDGE_PX / longestEdge.toDouble()
+    return Pair(
+        (width * scale).roundToInt().coerceAtLeast(1),
+        (height * scale).roundToInt().coerceAtLeast(1),
+    )
+}
+
 private const val PREVIEW_ASPECT_RATIO = 2f / 3f
+private const val PREVIEW_RENDER_LONG_EDGE_PX = 1920
 private const val PREVIEW_ZOOM_TOLERANCE = 0.02f
 private const val COMPARISON_MIN_SPLIT = 0f
 private const val COMPARISON_MAX_SPLIT = 1f

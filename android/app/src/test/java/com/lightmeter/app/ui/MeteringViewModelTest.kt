@@ -16,6 +16,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlin.math.log2
 
 class MeteringViewModelTest {
     @Test
@@ -66,6 +67,73 @@ class MeteringViewModelTest {
         assertEquals(3.0, viewModel.state.value.exposureCompensation, 0.0)
         viewModel.selectExposureCompensation(-6.0)
         assertEquals(-3.0, viewModel.state.value.exposureCompensation, 0.0)
+    }
+
+    @Test
+    fun shutterCandidatesUseThirdStopSequence() {
+        val candidates = MeteringViewModel().state.value.shutterCandidates
+
+        assertEquals(43, candidates.size)
+        assertEquals(
+            listOf("1/2000", "1/1600", "1/1250", "1/1000"),
+            candidates.take(4),
+        )
+        assertEquals(
+            listOf("1s", "1.3s", "1.6s", "2s"),
+            candidates.dropWhile { it != "1s" }.take(4),
+        )
+        assertEquals("8s", candidates.last())
+    }
+
+    @Test
+    fun shutterStepUsesThirdStopAndRematchesAperture() {
+        val viewModel = MeteringViewModel()
+        viewModel.onMeteringResult(
+            MeteringResult(
+                ev100 = 12.0,
+                measuredLuminance = 0.18,
+                timestampNs = 1L,
+            ),
+        )
+        val before = requireNotNull(viewModel.state.value.primaryExposure)
+        val beforeIndex = viewModel.state.value.shutterCandidates.indexOf(before.shutterLabel)
+
+        viewModel.stepShutter(1)
+
+        val after = requireNotNull(viewModel.state.value.primaryExposure)
+        val afterIndex = viewModel.state.value.shutterCandidates.indexOf(after.shutterLabel)
+        assertEquals(beforeIndex + 1, afterIndex)
+        assertEquals(
+            MeteringViewModel.EV_THIRD_STEP,
+            log2(after.shutterSeconds / before.shutterSeconds),
+            1e-9,
+        )
+        assertTrue(after.aperture > before.aperture)
+        assertTrue(after.error <= 1.0 / 6.0)
+    }
+
+    @Test
+    fun apertureStepRematchesToThirdStopShutter() {
+        val viewModel = MeteringViewModel()
+        viewModel.onMeteringResult(
+            MeteringResult(
+                ev100 = 12.0,
+                measuredLuminance = 0.18,
+                timestampNs = 1L,
+            ),
+        )
+        val before = requireNotNull(viewModel.state.value.primaryExposure)
+        val beforeShutterIndex =
+            viewModel.state.value.shutterCandidates.indexOf(before.shutterLabel)
+
+        viewModel.stepAperture(1)
+
+        val after = requireNotNull(viewModel.state.value.primaryExposure)
+        val afterShutterIndex =
+            viewModel.state.value.shutterCandidates.indexOf(after.shutterLabel)
+        assertTrue(after.aperture > before.aperture)
+        assertTrue(afterShutterIndex > beforeShutterIndex)
+        assertTrue(after.error <= 1.0 / 6.0)
     }
 
     @Test

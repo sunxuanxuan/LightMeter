@@ -429,7 +429,7 @@ Release APK 必须满足：
 
 1. `applicationId` 仍为 `com.lightmeter.app`；
 2. 仍使用现有 Release 签名；
-3. 下载页仍只发布 `outputs/apk/release/app-release.apk`；
+3. 下载页仍只发布 `outputs/apk/release/Click & Click.apk`；
 4. 不包含 `INTERNET`、`POST_NOTIFICATIONS` 或通知监听 Service；
 5. 不包含监控 API 地址、监控密钥、通知解析规则和调试入口；
 6. 激活逻辑、设备 ID 算法和 Ed25519 公钥保持不变；
@@ -438,9 +438,9 @@ Release APK 必须满足：
 CI 增加 Release 审计：
 
 ```text
-apkanalyzer manifest permissions app-release.apk
-apkanalyzer manifest services app-release.apk
-apkanalyzer dex packages app-release.apk
+apkanalyzer manifest permissions "Click & Click.apk"
+apkanalyzer manifest services "Click & Click.apk"
+apkanalyzer dex packages "Click & Click.apk"
 ```
 
 若 Release 出现网络权限或 `paymentmonitor` 包，构建直接失败。
@@ -472,8 +472,8 @@ apkanalyzer dex packages app-release.apk
 ```bash
 cd android
 ./gradlew :app:assembleDebug :app:assembleRelease
-adb install -r app/build/outputs/apk/debug/app-debug.apk
-adb install -r app/build/outputs/apk/release/app-release.apk
+adb install -r "app/build/outputs/apk/debug/Click & Click-debug.apk"
+adb install -r "app/build/outputs/apk/release/Click & Click.apk"
 adb shell pm list packages | grep com.lightmeter.app
 ```
 

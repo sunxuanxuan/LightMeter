@@ -1,0 +1,149 @@
+@use '@/styles/variables.scss' as *;
+
+.page {
+  width: 100%;
+  max-width: 430PX;
+  min-height: 100vh;
+  margin: 0 auto;
+  padding: 0 $page-padding 64rpx;
+  background: $color-bg-page;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 16PX;
+  margin: 0 (-$page-padding);
+  padding: calc(env(safe-area-inset-top) + 32rpx) $page-padding $spacing-lg;
+  background: $color-primary;
+}
+
+.backButton {
+  @include button-reset;
+  width: 48PX;
+  min-width: 48PX;
+  height: 48PX;
+  border: 0;
+  border-radius: $radius-round;
+  background: rgba(255, 255, 255, 0.1);
+  color: $color-text-white;
+  font-size: 34PX;
+
+  &:active {
+    opacity: 0.8;
+  }
+}
+
+.brand {
+  display: block;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: $font-size-sm;
+}
+
+.title {
+  display: block;
+  margin-top: $spacing-xs;
+  color: $color-text-white;
+  font-size: $font-size-xxl;
+  font-weight: $font-weight-bold;
+}
+
+.section {
+  padding: $spacing-xl 0;
+  border-bottom: 2rpx solid $color-divider;
+}
+
+.sectionTitle {
+  display: block;
+  margin-bottom: $spacing-lg;
+  color: $color-text-primary;
+  font-size: $font-size-lg;
+  font-weight: $font-weight-semibold;
+}
+
+.privacyRow {
+  display: flex;
+  align-items: flex-start;
+  gap: $spacing-md;
+}
+
+.privacyMark {
+  @include flex-center;
+  flex: 0 0 auto;
+  width: 64rpx;
+  height: 64rpx;
+  border-radius: $radius-round;
+  background: rgba(63, 125, 98, 0.12);
+  color: $color-success;
+  font-size: $font-size-lg;
+  font-weight: $font-weight-bold;
+}
+
+.rowContent {
+  min-width: 0;
+}
+
+.rowTitle {
+  display: block;
+  color: $color-text-primary;
+  font-size: $font-size-md;
+  font-weight: $font-weight-semibold;
+}
+
+.rowDescription {
+  display: block;
+  margin-top: $spacing-xs;
+  color: $color-text-tertiary;
+  font-size: $font-size-sm;
+  line-height: $line-height-normal;
+}
+
+.featureList {
+  display: grid;
+  gap: $spacing-md;
+}
+
+.feature {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 72rpx;
+}
+
+.featureName {
+  color: $color-text-secondary;
+  font-size: $font-size-md;
+}
+
+.featureValue {
+  color: $color-text-primary;
+  font-size: $font-size-sm;
+  font-weight: $font-weight-semibold;
+}
+
+.resetButton {
+  @include button-reset;
+  width: 100%;
+  min-width: 0;
+  height: $button-height-md;
+  border: 2rpx solid $color-error;
+  border-radius: $radius-button;
+  background: transparent;
+  color: $color-error;
+  font-size: $font-size-md;
+  font-weight: $font-weight-semibold;
+
+  &:active {
+    opacity: 0.82;
+    transform: scale(0.98);
+  }
+}
+
+.footnote {
+  display: block;
+  margin-top: $spacing-lg;
+  color: $color-text-tertiary;
+  font-size: $font-size-xs;
+  line-height: $line-height-normal;
+  text-align: center;
+}

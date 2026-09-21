@@ -1,0 +1,200 @@
+@use '@/styles/variables.scss' as *;
+
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.36);
+}
+
+.sheet {
+  width: 100%;
+  max-width: 430PX;
+  padding: 12PX 0 22PX;
+  border-radius: 26PX 26PX 0 0;
+  background: $color-bg-card;
+  box-shadow: $shadow-popup;
+}
+
+.handle {
+  width: 36PX;
+  height: 4PX;
+  margin: 0 auto 16PX;
+  border-radius: $radius-round;
+  background: $color-border;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  padding: 0 22PX 12PX;
+}
+
+.title {
+  color: $color-text-primary;
+  font-size: 16PX;
+  font-weight: $font-weight-semibold;
+}
+
+.list {
+  @include scroll-x-container;
+  width: 100%;
+}
+
+.option {
+  @include button-reset;
+  position: relative;
+  display: inline-flex;
+  width: 112PX;
+  min-width: 112PX;
+  height: 104PX;
+  margin-left: 12PX;
+  padding: 8PX;
+  vertical-align: top;
+  border: 1PX solid $color-border;
+  border-radius: 10PX;
+  background: $color-control;
+  overflow: hidden;
+  transition: all $transition-fast;
+
+  &:first-child {
+    margin-left: 20PX;
+  }
+
+  &:last-child {
+    margin-right: 20PX;
+  }
+
+  &:active {
+    opacity: 0.86;
+    transform: scale(0.98);
+  }
+}
+
+.selected {
+  border-color: $color-primary;
+  background: rgba(16, 55, 44, 0.08);
+}
+
+.objectPreview {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 6PX;
+}
+
+.editBadge {
+  @include flex-center;
+  position: absolute;
+  right: 7PX;
+  bottom: 7PX;
+  width: 24PX;
+  height: 24PX;
+  border: 2PX solid $color-bg-card;
+  border-radius: $radius-round;
+  background: $color-primary;
+  color: $color-text-white;
+  font-size: 17PX;
+  font-weight: $font-weight-semibold;
+  line-height: 20PX;
+}
+
+.editorHeader {
+  display: flex;
+  min-height: 42PX;
+  padding: 0 20PX 10PX;
+  align-items: center;
+  gap: 10PX;
+}
+
+.editorBack {
+  @include button-reset;
+  width: 36PX;
+  min-width: 36PX;
+  height: 36PX;
+  border: 1PX solid $color-border;
+  border-radius: $radius-round;
+  background: $color-control;
+  color: $color-primary;
+  font-size: 28PX;
+
+  &:active {
+    opacity: 0.8;
+    transform: scale(0.96);
+  }
+}
+
+.editor {
+  padding: 0 20PX 4PX;
+}
+
+.fieldGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12PX;
+}
+
+.field {
+  min-width: 0;
+}
+
+.fieldLabel {
+  display: block;
+  margin-bottom: 6PX;
+  color: $color-text-secondary;
+  font-size: 12PX;
+  font-weight: $font-weight-medium;
+  line-height: 16PX;
+}
+
+.fieldInput {
+  width: 100%;
+  height: 42PX;
+  padding: 0 12PX;
+  border: 1PX solid $color-border;
+  border-radius: 8PX;
+  background: $color-control;
+  color: $color-text-primary;
+  font-size: 15PX;
+  line-height: 42PX;
+}
+
+.editorStatus {
+  display: block;
+  min-height: 18PX;
+  margin-top: 10PX;
+  color: $color-text-tertiary;
+  font-size: 11PX;
+  line-height: 18PX;
+}
+
+.editorError {
+  color: $color-error;
+}
+
+.saveButton {
+  @include button-reset;
+  width: 100%;
+  min-width: 0;
+  height: 44PX;
+  margin-top: 10PX;
+  border: 0;
+  border-radius: 22PX;
+  background: $color-primary;
+  color: $color-text-white;
+  font-size: 15PX;
+  font-weight: $font-weight-semibold;
+
+  &:active {
+    opacity: 0.86;
+    transform: scale(0.99);
+  }
+
+  &[disabled] {
+    background: $color-text-disabled;
+    opacity: 0.72;
+  }
+}

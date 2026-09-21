@@ -35,7 +35,7 @@ struct FilmPreviewScreen: View {
             frozenChromeVisible = true
         }
         .alert(
-            "FilmLightMeter",
+            "一拍即合",
             isPresented: Binding(
                 get: { viewModel.errorMessage != nil },
                 set: { _ in }
@@ -386,7 +386,7 @@ private struct FilmPreviewPermissionView: View {
                 .font(.system(size: 54))
             Text("需要相机权限")
                 .font(.title2.bold())
-            Text("请在系统设置中允许 FilmLightMeter 使用相机。")
+            Text("请在系统设置中允许一拍即合使用相机。")
                 .foregroundStyle(.secondary)
             Button("打开设置") {
                 guard let url = URL(string: UIApplication.openSettingsURLString) else {

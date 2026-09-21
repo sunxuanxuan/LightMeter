@@ -1,0 +1,384 @@
+@use '@/styles/variables.scss' as *;
+
+.page {
+  position: relative;
+  display: flex;
+  width: 100%;
+  max-width: 430PX;
+  height: 100vh;
+  margin: 0 auto;
+  overflow: hidden;
+  flex-direction: column;
+  background: $color-bg-page;
+}
+
+:global(body) .page {
+  box-shadow: 0 0 24PX rgba(15, 39, 31, 0.16);
+}
+
+.topBar {
+  position: relative;
+  z-index: 5;
+  display: flex;
+  width: 100%;
+  height: calc(78PX + env(safe-area-inset-top));
+  flex: 0 0 auto;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 64PX;
+  padding: calc(env(safe-area-inset-top) + 8PX) 0 8PX;
+  background: $color-primary;
+}
+
+.toolbarAction {
+  @include button-reset;
+  width: 64PX;
+  min-width: 64PX;
+  height: 54PX;
+  flex-direction: column;
+  border: 0;
+  border-radius: 8PX;
+  background: transparent;
+  color: $color-text-white;
+
+  &:active {
+    background: rgba(255, 255, 255, 0.1);
+    opacity: 0.82;
+  }
+}
+
+.toolbarIcon,
+.settingsIcon {
+  display: block;
+  height: 29PX;
+  color: $color-text-white;
+  font-size: 31PX;
+  line-height: 29PX;
+  text-align: center;
+}
+
+.settingsIcon {
+  font-size: 24PX;
+}
+
+.toolbarLabel {
+  display: block;
+  margin-top: 2PX;
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 11PX;
+  line-height: 14PX;
+  text-align: center;
+}
+
+.workspace {
+  position: relative;
+  width: 100%;
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  background: $color-bg-page;
+}
+
+.stage {
+  position: absolute;
+  left: 0;
+  top: -1PX;
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  overflow: hidden;
+  background: $color-viewfinder;
+  touch-action: none;
+}
+
+.instantStage {
+  aspect-ratio: 54 / 86;
+}
+
+.camera,
+.demoImage,
+.result,
+.resultImage {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.instantImageWindow {
+  position: absolute;
+  z-index: 1;
+  left: 50%;
+  top: 8.14%;
+  width: 85.19%;
+  height: 72.09%;
+  overflow: hidden;
+  border-radius: 2PX;
+  background: $color-viewfinder;
+  transform: translateX(-50%);
+}
+
+.instantFrame {
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.viewfinderMask {
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.viewfinderOpening {
+  position: absolute;
+  inset: 8% 7%;
+  border: 1PX solid rgba(255, 255, 255, 0.78);
+  box-shadow: 0 0 0 999PX rgba(0, 0, 0, 0.52);
+}
+
+.result {
+  position: relative;
+  overflow: hidden;
+}
+
+.instantResult {
+  background: $color-film-white;
+}
+
+.originalMask {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+.originalImage {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100vw;
+  max-width: 430PX;
+  height: 100%;
+}
+
+.splitLine {
+  position: absolute;
+  top: 0;
+  width: 2PX;
+  height: 100%;
+  background: rgba(255, 255, 255, 0.92);
+  transform: translateX(-1PX);
+}
+
+.splitHandle {
+  @include flex-center;
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 36PX;
+  height: 36PX;
+  border-radius: $radius-round;
+  background: $color-text-white;
+  color: $color-primary;
+  font-size: 16PX;
+  transform: translate(-50%, -50%);
+  box-shadow: $shadow-float;
+}
+
+.resultLabels {
+  position: absolute;
+  left: 16PX;
+  right: 16PX;
+  top: 14PX;
+  display: flex;
+  justify-content: space-between;
+  color: $color-text-white;
+  font-size: 12PX;
+  text-shadow: 0 1PX 4PX rgba(0, 0, 0, 0.7);
+}
+
+.processing {
+  @include flex-center;
+  width: 100%;
+  height: 100%;
+  flex-direction: column;
+  gap: 8PX;
+  color: $color-text-white;
+  font-size: 13PX;
+}
+
+.processingMark {
+  font-size: 32PX;
+  letter-spacing: 0;
+  animation: pulse 1s ease-in-out infinite;
+}
+
+.controlPanel {
+  position: absolute;
+  z-index: 10;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  height: 196PX;
+  padding: 18PX 18PX 12PX;
+  flex-direction: column;
+  border-radius: 30PX 30PX 0 0;
+  background: $color-bg-page;
+  box-shadow: 0 -4PX 12PX rgba(15, 39, 31, 0.13);
+}
+
+.controlRow {
+  display: flex;
+  width: 100%;
+  height: 88PX;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.selectionButton {
+  @include button-reset;
+  width: 72PX;
+  min-width: 72PX;
+  height: 72PX;
+  padding: 8PX;
+  border: 0;
+  border-radius: 12PX;
+  background: $color-control;
+  overflow: hidden;
+
+  &:active {
+    opacity: 0.78;
+    transform: scale(0.97);
+  }
+}
+
+.selectionImage {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.shutter {
+  @include button-reset;
+  width: 88PX;
+  min-width: 88PX;
+  height: 88PX;
+  border: 0;
+  border-radius: $radius-round;
+  background: $color-shutter;
+
+  &:active {
+    opacity: 0.92;
+    transform: scale(0.95);
+  }
+
+  &[disabled] {
+    opacity: 0.45;
+  }
+}
+
+.shutterRing {
+  width: 76PX;
+  height: 76PX;
+  border: 4PX solid $color-text-white;
+  border-radius: $radius-round;
+  background: $color-shutter;
+}
+
+.resultActions {
+  display: flex;
+  width: 100%;
+  height: 88PX;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-evenly;
+}
+
+.returnAction,
+.saveAction {
+  @include button-reset;
+  width: 88PX;
+  min-width: 88PX;
+  height: 88PX;
+  border-radius: $radius-round;
+  font-size: 34PX;
+
+  &:active {
+    opacity: 0.84;
+    transform: scale(0.96);
+  }
+}
+
+.returnAction {
+  border: 2PX solid $color-shutter;
+  background: $color-control;
+  color: $color-primary;
+}
+
+.saveAction {
+  border: 0;
+  background: $color-shutter;
+  color: $color-text-white;
+}
+
+.advicePill {
+  display: flex;
+  width: fit-content;
+  max-width: 100%;
+  height: 38PX;
+  min-height: 38PX;
+  margin: auto auto 0;
+  padding: 0 18PX;
+  align-items: center;
+  justify-content: center;
+  border-radius: 20PX;
+  background: $color-status;
+}
+
+.sunMark {
+  flex: 0 0 auto;
+  margin-right: 8PX;
+  color: $color-sun;
+  font-size: 20PX;
+  line-height: 20PX;
+}
+
+.adviceText {
+  @include text-ellipsis;
+  color: $color-text-primary;
+  font-size: 14PX;
+  font-weight: $font-weight-medium;
+}
+
+.processingCanvas {
+  position: fixed;
+  left: -2000PX;
+  top: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+@media (max-height: 700PX) {
+  .controlPanel {
+    height: 184PX;
+    padding-top: 14PX;
+  }
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+
+  50% {
+    opacity: 1;
+  }
+}

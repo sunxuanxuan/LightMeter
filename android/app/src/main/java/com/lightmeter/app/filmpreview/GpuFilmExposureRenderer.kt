@@ -22,10 +22,12 @@ internal object GpuFilmExposureRenderer {
         highlightLatitudeStops: Double,
         shadowLatitudeStops: Double,
         filmLook: NegativeFilmLookProfile = NegativeFilmLooks.NEUTRAL,
+        deriveExposureFromSource: Boolean = false,
     ): Bitmap {
         require(referenceEv100.isFinite())
-        require(exposureMap.width == source.width)
-        require(exposureMap.height == source.height)
+        val shouldDeriveExposureFromSource = deriveExposureFromSource ||
+            exposureMap.width != source.width ||
+            exposureMap.height != source.height
 
         val session = EglSession(source.width, source.height)
         return try {
@@ -38,6 +40,7 @@ internal object GpuFilmExposureRenderer {
                 highlightLatitudeStops = highlightLatitudeStops.toFloat(),
                 shadowLatitudeStops = shadowLatitudeStops.toFloat(),
                 filmLook = filmLook,
+                deriveExposureFromSource = shouldDeriveExposureFromSource,
             )
         } finally {
             session.close()
@@ -61,6 +64,7 @@ internal object GpuFilmExposureRenderer {
                 highlightLatitudeStops = 1f,
                 shadowLatitudeStops = 1f,
                 filmLook = NegativeFilmLooks.NEUTRAL,
+                deriveExposureFromSource = false,
             )
         } finally {
             session.close()
@@ -79,8 +83,6 @@ internal object GpuFilmExposureRenderer {
         private var exposureMapTexture = 0
         private var filmResponseLutTexture = 0
         private var filmTexture = 0
-        private var horizontalBlurTexture = 0
-        private var outputTexture = 0
         private var framebuffer = 0
 
         init {
@@ -103,6 +105,7 @@ internal object GpuFilmExposureRenderer {
             highlightLatitudeStops: Float,
             shadowLatitudeStops: Float,
             filmLook: NegativeFilmLookProfile,
+            deriveExposureFromSource: Boolean,
         ): Bitmap {
             GLES20.glViewport(0, 0, width, height)
             GLES20.glUseProgram(program)
@@ -142,6 +145,18 @@ internal object GpuFilmExposureRenderer {
             GLES20.glUniform1i(uniform("uFilmResponseLut"), 2)
             GLES20.glUniform1f(uniform("uExposureCompensation"), exposureCompensation)
             GLES20.glUniform1f(uniform("uReferenceEv100"), referenceEv100)
+            GLES20.glUniform1f(
+                uniform("uCameraSettingEv100"),
+                exposureMap?.cameraSettingEv100?.toFloat() ?: 0f,
+            )
+            GLES20.glUniform1f(
+                uniform("uCalibrationOffset"),
+                exposureMap?.calibrationOffset?.toFloat() ?: 0f,
+            )
+            GLES20.glUniform1i(
+                uniform("uDeriveExposureFromSource"),
+                if (deriveExposureFromSource) 1 else 0,
+            )
             GLES20.glUniform1f(uniform("uHighlightLatitude"), highlightLatitudeStops)
             GLES20.glUniform1f(uniform("uShadowLatitude"), shadowLatitudeStops)
             val matrix = filmLook.colorMatrix
@@ -215,7 +230,7 @@ internal object GpuFilmExposureRenderer {
             if (simulationMode == EXPOSURE_COMPENSATION_MODE) {
                 drawPass(
                     inputTexture = sourceTexture,
-                    targetTexture = outputTexture,
+                    targetTexture = filmTexture,
                     renderPass = EXPOSURE_COMPENSATION_PASS,
                 )
             } else {
@@ -226,12 +241,12 @@ internal object GpuFilmExposureRenderer {
                 )
                 drawPass(
                     inputTexture = filmTexture,
-                    targetTexture = horizontalBlurTexture,
+                    targetTexture = sourceTexture,
                     renderPass = HORIZONTAL_BLUR_PASS,
                 )
                 drawPass(
-                    inputTexture = horizontalBlurTexture,
-                    targetTexture = outputTexture,
+                    inputTexture = sourceTexture,
+                    targetTexture = filmTexture,
                     renderPass = VERTICAL_BLUR_AND_GRAIN_PASS,
                 )
             }
@@ -264,8 +279,6 @@ internal object GpuFilmExposureRenderer {
                     exposureMapTexture,
                     filmResponseLutTexture,
                     filmTexture,
-                    horizontalBlurTexture,
-                    outputTexture,
                 )
                     .filter { it != 0 }
                 if (textures.isNotEmpty()) {
@@ -347,9 +360,9 @@ internal object GpuFilmExposureRenderer {
                 config,
                 intArrayOf(
                     EGL14.EGL_WIDTH,
-                    width,
+                    1,
                     EGL14.EGL_HEIGHT,
-                    height,
+                    1,
                     EGL14.EGL_NONE,
                 ),
                 0,
@@ -377,14 +390,12 @@ internal object GpuFilmExposureRenderer {
             )
             filmResponseLutTexture = createTexture(filter = GLES20.GL_NEAREST)
             filmTexture = createRenderTexture()
-            horizontalBlurTexture = createRenderTexture()
-            outputTexture = createRenderTexture()
 
             val framebuffers = IntArray(1)
             GLES20.glGenFramebuffers(1, framebuffers, 0)
             framebuffer = framebuffers[0]
             GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, framebuffer)
-            attachOutputTexture(outputTexture)
+            attachOutputTexture(filmTexture)
             checkGlError("initialize")
         }
 
@@ -621,6 +632,9 @@ internal object GpuFilmExposureRenderer {
         uniform int uRenderPass;
         uniform float uExposureCompensation;
         uniform float uReferenceEv100;
+        uniform float uCameraSettingEv100;
+        uniform float uCalibrationOffset;
+        uniform int uDeriveExposureFromSource;
         uniform float uHighlightLatitude;
         uniform float uShadowLatitude;
         uniform mat3 uLayerMixMatrix;
@@ -817,7 +831,11 @@ internal object GpuFilmExposureRenderer {
                 linearRgb,
                 vec3(0.2126, 0.7152, 0.0722)
             );
-            float pixelEv100 = exposureMapEv100(vTextureCoordinate);
+            float pixelEv100 = uDeriveExposureFromSource == 1
+                ? uCameraSettingEv100 +
+                    log2(max(sourceLuminance, LUMINANCE_EPSILON) / TARGET_LUMINANCE) +
+                    uCalibrationOffset
+                : exposureMapEv100(vTextureCoordinate);
             float deltaEv = pixelEv100 - uReferenceEv100;
             float relativeExposure = TARGET_LUMINANCE * exp2(deltaEv);
             float gain = relativeExposure / max(sourceLuminance, LUMINANCE_EPSILON);

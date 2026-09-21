@@ -1,0 +1,153 @@
+@use '@/styles/variables.scss' as *;
+
+.page {
+  width: 100%;
+  max-width: 430PX;
+  min-height: 100vh;
+  margin: 0 auto;
+  padding: 0 24PX 36PX;
+  background: $color-bg-page;
+  box-shadow: 0 0 24PX rgba(15, 39, 31, 0.12);
+}
+
+.header {
+  display: flex;
+  height: calc(74PX + env(safe-area-inset-top));
+  align-items: flex-end;
+  justify-content: flex-start;
+  padding-bottom: 14PX;
+}
+
+.settingsButton {
+  @include button-reset;
+  width: 46PX;
+  min-width: 46PX;
+  height: 46PX;
+  border: 0;
+  border-radius: $radius-round;
+  background: $color-primary;
+  color: $color-text-white;
+
+  &:active {
+    opacity: 0.84;
+    transform: scale(0.96);
+  }
+}
+
+.settingsIcon {
+  display: block;
+  width: 32PX;
+  height: 32PX;
+  color: $color-text-white;
+  font-size: 31PX;
+  line-height: 32PX;
+  text-align: center;
+}
+
+.brand,
+.subtitle {
+  display: block;
+  width: 100%;
+  text-align: center;
+}
+
+.brand {
+  margin-top: 42PX;
+  color: $color-primary;
+  font-size: 36PX;
+  font-weight: $font-weight-bold;
+  line-height: 42PX;
+}
+
+.subtitle {
+  margin-top: 8PX;
+  color: $color-text-primary;
+  font-size: 19PX;
+  font-weight: $font-weight-medium;
+  line-height: 26PX;
+}
+
+.cards {
+  display: grid;
+  gap: 24PX;
+  margin-top: 44PX;
+}
+
+.featureCard {
+  @include button-reset;
+  width: 100%;
+  height: 188PX;
+  padding: 16PX 18PX;
+  border: 0;
+  border-radius: 8PX;
+  background: #e9eeea;
+  color: $color-text-primary;
+
+  &:active {
+    opacity: 0.88;
+    transform: scale(0.99);
+  }
+}
+
+.featureImage {
+  width: 43%;
+  height: 100%;
+  flex: 0 0 43%;
+}
+
+.featureCopy {
+  display: flex;
+  height: 100%;
+  min-width: 0;
+  padding-left: 12PX;
+  flex: 1 1 auto;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.copySpacer {
+  flex: 1 1 auto;
+}
+
+.featureTitle {
+  color: $color-text-primary;
+  font-size: 22PX;
+  font-weight: $font-weight-semibold;
+  line-height: 28PX;
+}
+
+.featureDescription {
+  margin-top: 8PX;
+  color: $color-text-tertiary;
+  font-size: 14PX;
+  line-height: 21PX;
+  text-align: left;
+  white-space: pre-line;
+}
+
+.arrowButton {
+  @include flex-center;
+  align-self: flex-end;
+  width: 42PX;
+  height: 42PX;
+  border-radius: $radius-round;
+  background: $color-primary;
+  color: $color-text-white;
+  font-size: 32PX;
+  line-height: 38PX;
+}
+
+@media (max-height: 720px) {
+  .brand {
+    margin-top: 20PX;
+  }
+
+  .cards {
+    gap: 18PX;
+    margin-top: 34PX;
+  }
+
+  .featureCard {
+    height: 164PX;
+  }
+}

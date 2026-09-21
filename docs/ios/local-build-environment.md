@@ -118,7 +118,7 @@ xcrun --sdk iphoneos --show-sdk-version
 初始化脚本默认生成：
 
 ```text
-ios/DerivedData/Build/Products/Debug-iphonesimulator/FilmLightMeter.app
+ios/DerivedData/Build/Products/Debug-iphonesimulator/Click & Click.app
 ```
 
 它只能安装到 iOS Simulator，不能安装到真实 iPhone。相机测光也不能用

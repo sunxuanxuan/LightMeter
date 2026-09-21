@@ -1,0 +1,13 @@
+{
+  "miniprogramRoot": "./",
+  "projectname": "click-and-click-miniapp",
+  "description": "Click & Click disposable and instant camera preview mini app",
+  "appid": "touristappid",
+  "setting": {
+    "urlCheck": true,
+    "es6": false,
+    "postcss": false,
+    "minified": false
+  },
+  "compileType": "miniprogram"
+}

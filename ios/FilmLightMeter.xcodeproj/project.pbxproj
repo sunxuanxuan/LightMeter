@@ -16,12 +16,12 @@
 		4F2A8F469824DEBBF82F2B8F /* FilmExposureRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6529DBEEA4DDAA0F37F3D509 /* FilmExposureRenderer.swift */; };
 		4F833135BE10E6FB5BDEFB1C /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 1D1F2D31B1B0540BAAB12368 /* Assets.xcassets */; };
 		501C51ED9144A0C9E2711E10 /* FilmPreviewEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 791884E94ED4AA0C75C75F10 /* FilmPreviewEngine.swift */; };
-		51F07793618E710D6A0AE154 /* FilmGrainModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51F07792618E710D6A0AE154 /* FilmGrainModel.swift */; };
 		5CAE466733B07B056341E68A /* ExposureEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA18E494DC1047496B8DBEA5 /* ExposureEngine.swift */; };
 		5DBC56DD467AEE2E5CB9960C /* SettingsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB173AFED1BD0246B5E90799 /* SettingsStore.swift */; };
 		5F4D558A46D7F702B8E9CB15 /* MeteringScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 19F09894D5F314AD40A7EA1B /* MeteringScreen.swift */; };
 		6E531800430D78C6B11076E5 /* FilmPreviewViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8171822E378D0E1759149098 /* FilmPreviewViewModel.swift */; };
 		6E635365C6482A0455C637A9 /* DisposableCameraPreset.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A8E1FA04B1D25ED5FED5EED /* DisposableCameraPreset.swift */; };
+		7019181BBF0D1825FFE08EAF /* FilmGrainModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD1BD07C1D1D29A0866FC46F /* FilmGrainModel.swift */; };
 		7B6B6E338559E42DEB783006 /* FilmPreviewSettingsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6EB131135E64BB193780B501 /* FilmPreviewSettingsStore.swift */; };
 		828711FAFE5BB1C7EAD0F34B /* ActivationScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 491A1EE45F2B222E316DA9CB /* ActivationScreen.swift */; };
 		82D06A2FE0C20BD27685646C /* FilmPreviewSettingsScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 233A5DF990F2D1651133A9AD /* FilmPreviewSettingsScreen.swift */; };
@@ -50,6 +50,7 @@
 /* Begin PBXFileReference section */
 		0EE6E29FB6F5CF716D34101A /* MeteringModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeteringModels.swift; sourceTree = "<group>"; };
 		1151647B0BC8739AAF07B339 /* ViewfinderEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewfinderEngine.swift; sourceTree = "<group>"; };
+		11F88E0BAED00D888450B632 /* Click & Click.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = "Click & Click.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		19F09894D5F314AD40A7EA1B /* MeteringScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeteringScreen.swift; sourceTree = "<group>"; };
 		1AF8FDF2FD0FFAC60FD9C103 /* ActivationCredentialVerifierTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivationCredentialVerifierTests.swift; sourceTree = "<group>"; };
 		1D1F2D31B1B0540BAAB12368 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -57,7 +58,6 @@
 		378B05CC9FF226480A638BAE /* FilmLightMeterTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = FilmLightMeterTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		4326896FB21824E89EFFB966 /* AppRoute.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppRoute.swift; sourceTree = "<group>"; };
 		491A1EE45F2B222E316DA9CB /* ActivationScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivationScreen.swift; sourceTree = "<group>"; };
-		51F07792618E710D6A0AE154 /* FilmGrainModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilmGrainModel.swift; sourceTree = "<group>"; };
 		52C0A47DB5E5D0E67B7A4248 /* MeteringViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeteringViewModel.swift; sourceTree = "<group>"; };
 		54FB5AB8A4030AE3003DC1CA /* ExposureRiskEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExposureRiskEngine.swift; sourceTree = "<group>"; };
 		57082285A9345A1FADEF4FEF /* ActivationStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivationStore.swift; sourceTree = "<group>"; };
@@ -70,8 +70,8 @@
 		8171822E378D0E1759149098 /* FilmPreviewViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilmPreviewViewModel.swift; sourceTree = "<group>"; };
 		8A8E1FA04B1D25ED5FED5EED /* DisposableCameraPreset.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DisposableCameraPreset.swift; sourceTree = "<group>"; };
 		A3EA6CB2641360ABB8CE605D /* SettingsScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsScreen.swift; sourceTree = "<group>"; };
-		AAC720A060E027B5BB4D4184 /* FilmLightMeter.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = FilmLightMeter.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		BAAD01F8565425CA6D4C9057 /* CameraPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraPreview.swift; sourceTree = "<group>"; };
+		BD1BD07C1D1D29A0866FC46F /* FilmGrainModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilmGrainModel.swift; sourceTree = "<group>"; };
 		BE486EF7815D51E6007A9EE4 /* CameraService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraService.swift; sourceTree = "<group>"; };
 		DB173AFED1BD0246B5E90799 /* SettingsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsStore.swift; sourceTree = "<group>"; };
 		E480E57E97069D09805DEC72 /* FilmLatitudePreset.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilmLatitudePreset.swift; sourceTree = "<group>"; };
@@ -154,8 +154,8 @@
 				8A8E1FA04B1D25ED5FED5EED /* DisposableCameraPreset.swift */,
 				FA18E494DC1047496B8DBEA5 /* ExposureEngine.swift */,
 				54FB5AB8A4030AE3003DC1CA /* ExposureRiskEngine.swift */,
+				BD1BD07C1D1D29A0866FC46F /* FilmGrainModel.swift */,
 				E480E57E97069D09805DEC72 /* FilmLatitudePreset.swift */,
-				51F07792618E710D6A0AE154 /* FilmGrainModel.swift */,
 				791884E94ED4AA0C75C75F10 /* FilmPreviewEngine.swift */,
 				7A94AC5AF936B7D6A1971C81 /* MeteringEngine.swift */,
 				0EE6E29FB6F5CF716D34101A /* MeteringModels.swift */,
@@ -204,7 +204,7 @@
 		E458964091C64514D460CEA1 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				AAC720A060E027B5BB4D4184 /* FilmLightMeter.app */,
+				11F88E0BAED00D888450B632 /* Click & Click.app */,
 				378B05CC9FF226480A638BAE /* FilmLightMeterTests.xctest */,
 			);
 			name = Products;
@@ -273,7 +273,7 @@
 			packageProductDependencies = (
 			);
 			productName = FilmLightMeter;
-			productReference = AAC720A060E027B5BB4D4184 /* FilmLightMeter.app */;
+			productReference = 11F88E0BAED00D888450B632 /* Click & Click.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -341,9 +341,9 @@
 				5CAE466733B07B056341E68A /* ExposureEngine.swift in Sources */,
 				1943A00E132B025BA02A45A5 /* ExposureRiskEngine.swift in Sources */,
 				4F2A8F469824DEBBF82F2B8F /* FilmExposureRenderer.swift in Sources */,
+				7019181BBF0D1825FFE08EAF /* FilmGrainModel.swift in Sources */,
 				9B8315B011F81BC139B91858 /* FilmLatitudePreset.swift in Sources */,
 				D750F0949CBD9744EEF5290F /* FilmLightMeterApp.swift in Sources */,
-				51F07793618E710D6A0AE154 /* FilmGrainModel.swift in Sources */,
 				501C51ED9144A0C9E2711E10 /* FilmPreviewEngine.swift in Sources */,
 				CA0D2542190BE60ADC7DCA96 /* FilmPreviewScreen.swift in Sources */,
 				82D06A2FE0C20BD27685646C /* FilmPreviewSettingsScreen.swift in Sources */,
@@ -392,7 +392,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.lightmeter.app.ios.tests;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/FilmLightMeter.app/FilmLightMeter";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Click & Click.app/Click & Click";
 			};
 			name = Release;
 		};
@@ -409,7 +409,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.lightmeter.app.ios.tests;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/FilmLightMeter.app/FilmLightMeter";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Click & Click.app/Click & Click";
 			};
 			name = Debug;
 		};
@@ -493,7 +493,7 @@
 					"@executable_path/Frameworks",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.lightmeter.app.ios;
-				PRODUCT_NAME = FilmLightMeter;
+				PRODUCT_NAME = "Click & Click";
 				SDKROOT = iphoneos;
 				SWIFT_STRICT_CONCURRENCY = targeted;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -573,7 +573,7 @@
 					"@executable_path/Frameworks",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.lightmeter.app.ios;
-				PRODUCT_NAME = FilmLightMeter;
+				PRODUCT_NAME = "Click & Click";
 				SDKROOT = iphoneos;
 				SWIFT_STRICT_CONCURRENCY = targeted;
 				TARGETED_DEVICE_FAMILY = "1,2";
