@@ -80,6 +80,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
@@ -805,21 +806,32 @@ private fun ViewfinderOverlay(
     Canvas(
         modifier = modifier.then(interactionModifier),
     ) {
-        state.spotMeteringPoint?.let { point ->
+        if (state.meteringMode == MeteringMode.SPOT) {
             val frame = viewfinder.toComposeRect(size.width, size.height)
-            drawCircle(
-                color = Color.White,
-                radius = meteringRadius(
-                    width = frame.width,
-                    height = frame.height,
-                    areaPercent = state.spotAreaPercent,
-                ) * 0.25f,
-                center = Offset(
-                    x = size.width * point.x.toFloat(),
-                    y = size.height * point.y.toFloat(),
-                ),
-                style = Stroke(width = 2.dp.toPx()),
+            val point = state.spotMeteringPoint ?: NormalizedPoint(
+                x = viewfinder.centerX,
+                y = viewfinder.centerY,
             )
+            clipRect(
+                left = frame.left,
+                top = frame.top,
+                right = frame.right,
+                bottom = frame.bottom,
+            ) {
+                drawCircle(
+                    color = Color.White,
+                    radius = meteringRadius(
+                        width = frame.width,
+                        height = frame.height,
+                        areaPercent = state.spotAreaPercent,
+                    ),
+                    center = Offset(
+                        x = size.width * point.x.toFloat(),
+                        y = size.height * point.y.toFloat(),
+                    ),
+                    style = Stroke(width = 2.dp.toPx()),
+                )
+            }
         }
     }
 }
